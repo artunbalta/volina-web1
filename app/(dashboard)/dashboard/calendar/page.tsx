@@ -372,7 +372,7 @@ export default function CalendarPage() {
           ) : (
             <Button
               variant="outline"
-              onClick={() => signIn("google")}
+              onClick={() => signIn("google", { callbackUrl: "/dashboard/calendar" })}
               className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300"
             >
               <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">

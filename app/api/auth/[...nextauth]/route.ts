@@ -30,9 +30,26 @@ const handler = NextAuth({
       session.accessToken = token.accessToken as string;
       return session;
     },
+    async redirect({ url, baseUrl }) {
+      // After Google OAuth, redirect back to calendar page
+      if (url.includes("/api/auth/callback/google")) {
+        return `${baseUrl}/dashboard/calendar`;
+      }
+      // If the url is relative, prepend the base url
+      if (url.startsWith("/")) {
+        return `${baseUrl}${url}`;
+      }
+      // If the url is on the same origin, allow it
+      if (url.startsWith(baseUrl)) {
+        return url;
+      }
+      // Default to dashboard/calendar for Google OAuth flow
+      return `${baseUrl}/dashboard/calendar`;
+    },
   },
   pages: {
     signIn: "/login",
+    error: "/login", // Redirect OAuth errors to login page
   },
 });
 
