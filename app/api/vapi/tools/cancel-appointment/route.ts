@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       .from("profiles")
       .select("id")
       .eq("vapi_org_id", vapiOrgId)
-      .single();
+      .single() as { data: { id: string } | null; error: unknown };
 
     if (profileError || !profile) {
       return NextResponse.json({
@@ -83,7 +83,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data: appointments, error: fetchError } = await appointmentQuery;
+    const { data: appointments, error: fetchError } = await appointmentQuery as {
+      data: { id: string; patient_name: string; start_time: string }[] | null;
+      error: unknown;
+    };
 
     if (fetchError) {
       console.error("Error finding appointment:", fetchError);

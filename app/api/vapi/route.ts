@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       .from("profiles")
       .select("id")
       .eq("vapi_org_id", vapiOrgId)
-      .single();
+      .single() as { data: { id: string } | null; error: unknown };
 
     if (profileError || !profile) {
       console.error("No user found for Vapi orgId:", vapiOrgId);
@@ -107,27 +107,29 @@ export async function POST(request: NextRequest) {
     const duration = Math.round((endTime - startTime) / 1000);
 
     // Insert call record into database
+    const insertData = {
+      user_id: userId,
+      vapi_call_id: call.id,
+      recording_url: recordingUrl || null,
+      transcript: transcript || null,
+      summary: analysis?.summary || summary || null,
+      sentiment,
+      duration,
+      type: callType,
+      caller_phone: call.customer?.number || null,
+      metadata: {
+        orgId: call.orgId,
+        status: call.status,
+        endedReason: call.endedReason,
+        structuredData: analysis?.structuredData,
+      },
+    };
+
     const { data: callData, error: callError } = await supabase
       .from("calls")
-      .insert({
-        user_id: userId,
-        vapi_call_id: call.id,
-        recording_url: recordingUrl || null,
-        transcript: transcript || null,
-        summary: analysis?.summary || summary || null,
-        sentiment,
-        duration,
-        type: callType,
-        caller_phone: call.customer?.number || null,
-        metadata: {
-          orgId: call.orgId,
-          status: call.status,
-          endedReason: call.endedReason,
-          structuredData: analysis?.structuredData,
-        },
-      })
+      .insert(insertData as never)
       .select()
-      .single();
+      .single() as { data: { id: string } | null; error: unknown };
 
     if (callError) {
       console.error("Error inserting call:", callError);

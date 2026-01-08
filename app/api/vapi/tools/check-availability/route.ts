@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       .from("profiles")
       .select("id")
       .eq("vapi_org_id", vapiOrgId)
-      .single();
+      .single() as { data: { id: string } | null; error: unknown };
 
     if (profileError || !profile) {
       return NextResponse.json({
@@ -65,7 +65,10 @@ export async function POST(request: NextRequest) {
       query = query.eq("doctor_id", doctor_id);
     }
 
-    const { data: existingAppointments, error } = await query;
+    const { data: existingAppointments, error } = await query as { 
+      data: { start_time: string; end_time: string; doctor_id: string }[] | null; 
+      error: unknown 
+    };
 
     if (error) {
       console.error("Error fetching appointments:", error);

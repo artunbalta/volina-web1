@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       .from("profiles")
       .select("id")
       .eq("vapi_org_id", vapiOrgId)
-      .single();
+      .single() as { data: { id: string } | null; error: unknown };
 
     if (profileError || !profile) {
       return NextResponse.json({
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
         .select("id")
         .eq("user_id", userId)
         .eq("is_active", true)
-        .limit(1);
+        .limit(1) as { data: { id: string }[] | null };
       
       selectedDoctorId = doctors?.[0]?.id;
     }
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
       .eq("doctor_id", selectedDoctorId)
       .eq("start_time", startDateTime)
       .neq("status", "cancelled")
-      .single();
+      .single() as { data: { id: string } | null };
 
     if (existingAppointment) {
       return NextResponse.json({
@@ -126,22 +126,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the appointment
+    const appointmentData = {
+      user_id: userId,
+      doctor_id: selectedDoctorId,
+      patient_name,
+      patient_phone: patient_phone || null,
+      patient_email: patient_email || null,
+      start_time: startDateTime,
+      end_time: `${date}T${endTime}:00`,
+      status: "scheduled",
+      notes: notes || null,
+      created_via_ai: true,
+    };
+    
     const { data: appointment, error } = await supabase
       .from("appointments")
-      .insert({
-        user_id: userId,
-        doctor_id: selectedDoctorId,
-        patient_name,
-        patient_phone: patient_phone || null,
-        patient_email: patient_email || null,
-        start_time: startDateTime,
-        end_time: `${date}T${endTime}:00`,
-        status: "scheduled",
-        notes: notes || null,
-        created_via_ai: true,
-      })
+      .insert(appointmentData as never)
       .select()
-      .single();
+      .single() as { data: { id: string } | null; error: unknown };
 
     if (error) {
       console.error("Error creating appointment:", error);
