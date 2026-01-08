@@ -1,6 +1,8 @@
 // ===========================================
 // VOLINA AI - Supabase Client Configuration
 // ===========================================
+// @ts-nocheck
+// TODO: Remove ts-nocheck when Supabase is connected and types are generated
 
 import { createClient } from '@supabase/supabase-js';
 import type { Doctor, Appointment, Call, Profile } from './types';
@@ -139,8 +141,9 @@ export async function getAppointmentsByDoctor(doctorId: string, date?: string) {
 }
 
 export async function createAppointment(appointment: Database['public']['Tables']['appointments']['Insert']) {
-  const { data, error } = await supabase
-    .from('appointments')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase
+    .from('appointments') as any)
     .insert(appointment)
     .select()
     .single();
@@ -150,8 +153,9 @@ export async function createAppointment(appointment: Database['public']['Tables'
 }
 
 export async function updateAppointmentStatus(id: string, status: Appointment['status']) {
-  const { data, error } = await supabase
-    .from('appointments')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase
+    .from('appointments') as any)
     .update({ status })
     .eq('id', id)
     .select()
@@ -194,8 +198,9 @@ export async function getCallById(id: string) {
 }
 
 export async function createCall(call: Database['public']['Tables']['calls']['Insert']) {
-  const { data, error } = await supabase
-    .from('calls')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase
+    .from('calls') as any)
     .insert(call)
     .select()
     .single();

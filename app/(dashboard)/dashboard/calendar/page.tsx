@@ -183,11 +183,12 @@ export default function CalendarPage() {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNewAppointment, setShowNewAppointment] = useState(false);
+  const defaultDoctorId = mockDoctors[0]?.id ?? "";
   const [newAppointment, setNewAppointment] = useState({
     name: "",
     email: "",
     phone: "",
-    assignee: mockDoctors.length > 0 ? mockDoctors[0].id : "",
+    assignee: defaultDoctorId,
     time: "09:00",
     notes: "",
   });
@@ -253,7 +254,9 @@ export default function CalendarPage() {
     }
 
     const baseDate = format(selectedDate, "yyyy-MM-dd");
-    const [hours, minutes] = newAppointment.time.split(":").map(Number);
+    const timeParts = newAppointment.time.split(":");
+    const hours = parseInt(timeParts[0] || "9", 10);
+    const minutes = parseInt(timeParts[1] || "0", 10);
     
     // Calculate end time (30 minutes after start)
     let endHours = hours;
@@ -302,7 +305,7 @@ export default function CalendarPage() {
         name: "",
         email: "",
         phone: "",
-        assignee: mockDoctors.length > 0 ? mockDoctors[0].id : "",
+        assignee: mockDoctors[0]?.id ?? "",
         time: "09:00",
         notes: "",
       });
