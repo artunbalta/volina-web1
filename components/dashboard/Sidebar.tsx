@@ -65,10 +65,10 @@ export function Sidebar() {
   const getUserInitials = () => {
     if (!user?.full_name) return "U";
     const names = user.full_name.split(" ");
-    if (names.length >= 2) {
+    if (names.length >= 2 && names[0] && names[1]) {
       return `${names[0][0]}${names[1][0]}`.toUpperCase();
     }
-    return names[0][0].toUpperCase();
+    return names[0]?.[0]?.toUpperCase() || "U";
   };
 
   return (
