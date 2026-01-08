@@ -1,18 +1,15 @@
 # Dependencies
-/node_modules
-/.pnp
+node_modules/
+.pnp/
 .pnp.js
-.yarn/install-state.gz
 
 # Testing
-/coverage
+coverage/
 
 # Next.js
-/.next/
-/out/
-
-# Production
-/build
+.next/
+out/
+build/
 
 # Misc
 .DS_Store
@@ -24,8 +21,11 @@ yarn-debug.log*
 yarn-error.log*
 
 # Local env files
-.env*.local
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Vercel
 .vercel
@@ -40,6 +40,7 @@ next-env.d.ts
 *.swp
 *.swo
 
-# Supabase
-/supabase/.branches
-/supabase/.temp
+# Google Calendar credentials (SENSITIVE - DO NOT COMMIT!)
+calendar_json/
+*.json.bak
+client_secret*.json
