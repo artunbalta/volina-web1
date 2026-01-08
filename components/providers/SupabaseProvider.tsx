@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/lib/types";
 
 interface AuthContextType {
@@ -19,70 +18,40 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          // Fetch user profile
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-          
-          setUser(profile);
-        }
-      } catch (error) {
-        console.error("Error checking session:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    // Mock mode - simulate loading and set a demo user
+    const timer = setTimeout(() => {
+      setUser({
+        id: "demo-user-id",
+        email: "demo@volina.ai",
+        full_name: "Demo User",
+        avatar_url: null,
+        role: "admin",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      setIsLoading(false);
+    }, 500);
 
-    checkSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === "SIGNED_IN" && session?.user) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-          
-          setUser(profile);
-        } else if (event === "SIGNED_OUT") {
-          setUser(null);
-        }
-      }
-    );
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    // Mock mode - always succeed
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    setUser({
+      id: "demo-user-id",
+      email: email,
+      full_name: "Demo User",
+      avatar_url: null,
+      role: "admin",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
-
-    if (error) {
-      throw error;
-    }
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    
-    if (error) {
-      throw error;
-    }
-    
+    // Mock mode - always succeed
+    await new Promise((resolve) => setTimeout(resolve, 200));
     setUser(null);
   };
 
@@ -110,4 +79,3 @@ export function useAuth() {
   
   return context;
 }
-
