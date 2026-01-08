@@ -329,7 +329,7 @@ export async function getCallStats() {
     .from('calls')
     .select('duration')
     .eq('user_id', userId)
-    .not('duration', 'is', null);
+    .not('duration', 'is', null) as { data: { duration: number }[] | null };
 
   const avgDuration = durationData && durationData.length > 0
     ? durationData.reduce((sum, c) => sum + (c.duration || 0), 0) / durationData.length
@@ -339,7 +339,7 @@ export async function getCallStats() {
   const { data: typeData } = await supabase
     .from('calls')
     .select('type')
-    .eq('user_id', userId);
+    .eq('user_id', userId) as { data: { type: string }[] | null };
 
   const typeDistribution = typeData?.reduce((acc, call) => {
     acc[call.type] = (acc[call.type] || 0) + 1;
