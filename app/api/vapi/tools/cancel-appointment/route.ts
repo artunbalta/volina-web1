@@ -121,11 +121,14 @@ export async function POST(request: NextRequest) {
           result: {
             success: false,
             error: `Found ${appointments.length} appointments. Please provide more details to identify the specific appointment.`,
-            appointments: appointments.map(apt => ({
-              patient_name: apt.patient_name,
-              date: apt.start_time.split("T")[0],
-              time: apt.start_time.split("T")[1].substring(0, 5),
-            })),
+            appointments: appointments.map(apt => {
+              const timeParts = apt.start_time.split("T");
+              return {
+                patient_name: apt.patient_name,
+                date: timeParts[0] || "",
+                time: timeParts[1]?.substring(0, 5) || "",
+              };
+            }),
           },
         }],
       });
