@@ -368,14 +368,14 @@ export async function getDailyActivity(days = 7) {
     .select('created_at, type')
     .eq('user_id', userId)
     .gte('created_at', startDate.toISOString())
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }) as { data: { created_at: string; type: string }[] | null };
 
   // Fetch appointments
   const { data: appointments } = await supabase
     .from('appointments')
     .select('created_at')
     .eq('user_id', userId)
-    .gte('created_at', startDate.toISOString());
+    .gte('created_at', startDate.toISOString()) as { data: { created_at: string }[] | null };
 
   // Group by day
   const dailyData: Record<string, { calls: number; appointments: number }> = {};
@@ -383,20 +383,22 @@ export async function getDailyActivity(days = 7) {
   for (let i = 0; i < days; i++) {
     const date = new Date();
     date.setDate(date.getDate() - (days - 1 - i));
-    const dateStr = date.toISOString().split('T')[0];
-    dailyData[dateStr] = { calls: 0, appointments: 0 };
+    const dateStr = date.toISOString().split('T')[0] ?? '';
+    if (dateStr) {
+      dailyData[dateStr] = { calls: 0, appointments: 0 };
+    }
   }
 
   calls?.forEach(call => {
-    const dateStr = call.created_at.split('T')[0];
-    if (dailyData[dateStr]) {
+    const dateStr = call.created_at?.split('T')[0];
+    if (dateStr && dailyData[dateStr]) {
       dailyData[dateStr].calls++;
     }
   });
 
   appointments?.forEach(apt => {
-    const dateStr = apt.created_at.split('T')[0];
-    if (dailyData[dateStr]) {
+    const dateStr = apt.created_at?.split('T')[0];
+    if (dateStr && dailyData[dateStr]) {
       dailyData[dateStr].appointments++;
     }
   });
@@ -418,7 +420,7 @@ export async function getRecentActivity(limit = 10) {
     .select('id, type, summary, sentiment, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(limit) as { data: { id: string; type: string; summary: string | null; sentiment: string | null; created_at: string }[] | null };
 
   // Convert to activity format
   return (calls || []).map(call => ({
