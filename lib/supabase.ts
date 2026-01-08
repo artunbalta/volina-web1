@@ -120,7 +120,7 @@ export async function createDoctor(doctor: Omit<Doctor, 'id' | 'created_at' | 'u
 
   const { data, error } = await supabase
     .from('doctors')
-    .insert({ ...doctor, user_id: userId } as any)
+    .insert({ ...doctor, user_id: userId } as never)
     .select()
     .single();
 
@@ -196,7 +196,7 @@ export async function createAppointment(appointment: Omit<Appointment, 'id' | 'c
 
   const { data, error } = await supabase
     .from('appointments')
-    .insert({ ...appointment, user_id: userId } as any)
+    .insert({ ...appointment, user_id: userId } as never)
     .select()
     .single();
 
@@ -210,7 +210,7 @@ export async function createAppointment(appointment: Omit<Appointment, 'id' | 'c
 export async function updateAppointmentStatus(id: string, status: Appointment['status']): Promise<Appointment | null> {
   const { data, error } = await supabase
     .from('appointments')
-    .update({ status } as any)
+    .update({ status } as never)
     .eq('id', id)
     .select()
     .single();
@@ -283,7 +283,7 @@ export async function createCall(call: Omit<Call, 'id' | 'created_at' | 'updated
 
   const { data, error } = await supabase
     .from('calls')
-    .insert({ ...call, user_id: userId } as any)
+    .insert({ ...call, user_id: userId } as never)
     .select()
     .single();
 
@@ -448,7 +448,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
 export async function updateProfile(userId: string, updates: Partial<Profile>): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .update(updates as any)
+    .update(updates as never)
     .eq('id', userId)
     .select()
     .single();
