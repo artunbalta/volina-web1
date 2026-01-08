@@ -74,20 +74,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const callData = {
+      vapi_call_id: body.vapi_call_id || null,
+      appointment_id: body.appointment_id || null,
+      recording_url: body.recording_url || null,
+      transcript: body.transcript || null,
+      summary: body.summary || null,
+      sentiment: body.sentiment || "neutral",
+      duration: body.duration || null,
+      type: body.type,
+      caller_phone: body.caller_phone || null,
+      metadata: body.metadata || {},
+    };
+
     const { data, error } = await supabase
       .from("calls")
-      .insert({
-        vapi_call_id: body.vapi_call_id || null,
-        appointment_id: body.appointment_id || null,
-        recording_url: body.recording_url || null,
-        transcript: body.transcript || null,
-        summary: body.summary || null,
-        sentiment: body.sentiment || "neutral",
-        duration: body.duration || null,
-        type: body.type,
-        caller_phone: body.caller_phone || null,
-        metadata: body.metadata || {},
-      })
+      .insert(callData as never)
       .select()
       .single();
 
