@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,8 +10,9 @@ import { Eye, EyeOff, Loader2, Mail, Lock, AlertCircle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signIn, isAuthenticated, isLoading: authLoading } = useAuth();
   
   const [email, setEmail] = useState("");
@@ -19,6 +20,22 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Check for OAuth errors in URL
+  useEffect(() => {
+    const errorParam = searchParams.get("error");
+    if (errorParam) {
+      const errorMessages: Record<string, string> = {
+        OAuthCallback: "Google Calendar bağlantısı başarısız oldu. Lütfen Google Cloud Console'da test kullanıcısı olarak eklendiğinizden emin olun.",
+        OAuthAccountNotLinked: "Bu email adresi başka bir hesapla ilişkilendirilmiş.",
+        OAuthSignin: "Google ile giriş başarısız oldu.",
+        OAuthCreateAccount: "Hesap oluşturulamadı.",
+        Callback: "Callback hatası oluştu.",
+      };
+      const errorMessage = errorMessages[errorParam] || "Bir hata oluştu. Lütfen tekrar deneyin.";
+      setError(errorMessage);
+    }
+  }, [searchParams]);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -231,5 +248,20 @@ export default function LoginPage() {
         <div className="absolute -top-16 -left-16 w-64 h-64 bg-white/5 rounded-full" />
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 }
