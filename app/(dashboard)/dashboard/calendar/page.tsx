@@ -82,8 +82,9 @@ export default function CalendarPage() {
       setAppointments(appointmentsData);
       
       // Set default assignee if doctors loaded and no assignee set
-      if (doctorsData.length > 0 && !newAppointment.assignee && doctorsData[0]) {
-        setNewAppointment(prev => ({ ...prev, assignee: doctorsData[0].id }));
+      const firstDoctor = doctorsData[0];
+      if (firstDoctor && !newAppointment.assignee) {
+        setNewAppointment(prev => ({ ...prev, assignee: firstDoctor.id }));
       }
     } catch (error) {
       console.error("Error loading calendar data:", error);
