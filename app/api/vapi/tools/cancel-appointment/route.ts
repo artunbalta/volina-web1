@@ -136,6 +136,18 @@ export async function POST(request: NextRequest) {
 
     // Cancel the appointment
     const appointment = appointments[0];
+    if (!appointment) {
+      return NextResponse.json({
+        results: [{
+          toolCallId: body.message?.toolCallList?.[0]?.id || "error",
+          result: {
+            success: false,
+            error: "Appointment not found",
+          },
+        }],
+      });
+    }
+    
     const { error: updateError } = await supabase
       .from("appointments")
       .update({ status: "cancelled" } as never)
