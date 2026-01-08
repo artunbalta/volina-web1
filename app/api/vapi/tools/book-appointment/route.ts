@@ -158,6 +158,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (!appointment) {
+      return NextResponse.json({
+        results: [{
+          toolCallId: body.message?.toolCallList?.[0]?.id || "error",
+          result: {
+            success: false,
+            error: "Failed to create appointment - no data returned",
+          },
+        }],
+      });
+    }
+
     return NextResponse.json({
       results: [{
         toolCallId: body.message?.toolCallList?.[0]?.id || "book-appointment",

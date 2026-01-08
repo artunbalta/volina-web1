@@ -140,6 +140,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!callData) {
+      console.error("Call data is null after insert");
+      return NextResponse.json(
+        { error: "Failed to save call record", details: "No data returned from insert" },
+        { status: 500 }
+      );
+    }
+
     console.log("Successfully processed Vapi webhook:", {
       callId: callData.id,
       vapiCallId: call.id,
