@@ -240,15 +240,13 @@ export async function getCalls(limit = 50): Promise<Call[]> {
   const userId = await getCurrentUserId();
   if (!userId) return [];
 
+  // Select only needed fields for better performance
   const { data, error } = await supabase
     .from('calls')
-    .select(`
-      *,
-      appointment:appointments(*)
-    `)
+    .select('id, vapi_call_id, recording_url, transcript, summary, sentiment, duration, type, caller_phone, created_at, updated_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(limit) as { data: Call[] | null; error: unknown };
 
   if (error) {
     console.error('Error fetching calls:', error);

@@ -47,7 +47,7 @@ export default function CallsPage() {
   // Load calls
   const loadCalls = useCallback(async () => {
     try {
-      const data = await getCalls(100);
+      const data = await getCalls(50);
       setCalls(data);
     } catch (error) {
       console.error("Error loading calls:", error);
