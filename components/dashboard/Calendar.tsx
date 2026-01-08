@@ -10,7 +10,6 @@ import {
   formatTime 
 } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { supabase, subscribeToAppointments } from "@/lib/supabase";
 import type { Doctor, Appointment } from "@/lib/types";
 
 interface CalendarProps {
@@ -31,28 +30,7 @@ export function Calendar({
   const [appointments, setAppointments] = useState(initialAppointments);
   const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
 
-  // Subscribe to realtime updates
-  useEffect(() => {
-    const channel = subscribeToAppointments((payload) => {
-      if (payload.eventType === "INSERT" && payload.new) {
-        setAppointments((prev) => [...prev, payload.new as Appointment]);
-      } else if (payload.eventType === "UPDATE" && payload.new) {
-        setAppointments((prev) =>
-          prev.map((apt) =>
-            apt.id === (payload.new as Appointment).id ? (payload.new as Appointment) : apt
-          )
-        );
-      } else if (payload.eventType === "DELETE" && payload.old) {
-        setAppointments((prev) =>
-          prev.filter((apt) => apt.id !== (payload.old as Appointment).id)
-        );
-      }
-    });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  // Realtime updates disabled in mock mode
 
   // Update appointments when initial data changes
   useEffect(() => {

@@ -269,4 +269,3 @@ export function calculateGridPosition(
   
   return { gridRow, gridRowEnd };
 }
-

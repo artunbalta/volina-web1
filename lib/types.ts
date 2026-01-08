@@ -192,4 +192,3 @@ export interface RealtimePayload<T> {
   table: string;
   commit_timestamp: string;
 }
-
