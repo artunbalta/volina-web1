@@ -133,8 +133,9 @@ export async function POST(request: NextRequest) {
 
     if (callError) {
       console.error("Error inserting call:", callError);
+      const errorMessage = callError instanceof Error ? callError.message : String(callError);
       return NextResponse.json(
-        { error: "Failed to save call record", details: callError.message },
+        { error: "Failed to save call record", details: errorMessage },
         { status: 500 }
       );
     }

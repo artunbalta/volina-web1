@@ -36,8 +36,9 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Error fetching calls:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return NextResponse.json(
-        { error: "Failed to fetch calls", details: error.message },
+        { error: "Failed to fetch calls", details: errorMessage },
         { status: 500 }
       );
     }
@@ -95,8 +96,9 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("Error creating call:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return NextResponse.json(
-        { error: "Failed to create call", details: error.message },
+        { error: "Failed to create call", details: errorMessage },
         { status: 500 }
       );
     }
