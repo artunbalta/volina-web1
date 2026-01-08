@@ -54,20 +54,44 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state
   useEffect(() => {
+    let mounted = true;
+    let timeoutId: NodeJS.Timeout;
+
     const initializeAuth = async () => {
       try {
+        // Set a timeout to prevent infinite loading
+        timeoutId = setTimeout(() => {
+          if (mounted) {
+            console.warn("Auth initialization timeout, setting isLoading to false");
+            setIsLoading(false);
+          }
+        }, 5000); // 5 second timeout
+
         // Get initial session
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
-        setSession(initialSession);
+        if (error) {
+          console.error("Error getting session:", error);
+          if (mounted) {
+            setIsLoading(false);
+          }
+          return;
+        }
         
-        if (initialSession?.user) {
-          await fetchProfile(initialSession.user);
+        if (mounted) {
+          setSession(initialSession);
+          
+          if (initialSession?.user) {
+            await fetchProfile(initialSession.user);
+          }
         }
       } catch (error) {
         console.error("Error initializing auth:", error);
       } finally {
-        setIsLoading(false);
+        if (mounted) {
+          clearTimeout(timeoutId);
+          setIsLoading(false);
+        }
       }
     };
 
@@ -76,6 +100,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        if (!mounted) return;
+        
         setSession(currentSession);
         
         if (event === "SIGNED_IN" && currentSession?.user) {
@@ -91,6 +117,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     );
 
     return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
