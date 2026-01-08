@@ -5,6 +5,7 @@
 // Database Types
 export interface Doctor {
   id: string;
+  user_id: string;
   name: string;
   specialty: string;
   color_code: string;
@@ -18,6 +19,7 @@ export interface Doctor {
 
 export interface Appointment {
   id: string;
+  user_id: string;
   doctor_id: string;
   patient_name: string;
   patient_phone: string | null;
@@ -42,6 +44,7 @@ export type AppointmentStatus =
 
 export interface Call {
   id: string;
+  user_id: string;
   vapi_call_id: string | null;
   appointment_id: string | null;
   recording_url: string | null;
@@ -68,6 +71,7 @@ export interface Profile {
   full_name: string | null;
   avatar_url: string | null;
   role: UserRole;
+  vapi_org_id?: string | null;
   created_at: string;
   updated_at: string;
 }

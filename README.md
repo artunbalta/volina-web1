@@ -17,7 +17,8 @@ Volina is a modern SaaS platform that enables businesses across all industries t
 - **📅 Real-time Calendar CRM** - Live appointment updates with Supabase subscriptions
 - **📊 Analytics Dashboard** - KPIs, charts, and call insights
 - **🔊 Call Transcripts** - Full transcription and audio playback
-- **🤖 3D Interactive Robot** - Engaging landing page with Spline 3D
+- **🔐 Real Authentication** - Secure login with Supabase Auth
+- **👥 Multi-user Support** - Each user has their own data
 
 ---
 
@@ -29,72 +30,8 @@ Volina is a modern SaaS platform that enables businesses across all industries t
 | Styling | Tailwind CSS, Shadcn/UI, Lucide Icons |
 | Database | Supabase (PostgreSQL, Auth, Realtime) |
 | Voice AI | Vapi.ai (Web SDK + API) |
-| 3D Graphics | Spline (@splinetool/react-spline) |
 | Charts | Recharts |
 | Hosting | Vercel (Serverless/Edge) |
-| Automation | n8n (Webhook processing) |
-
----
-
-## 📁 Project Structure
-
-```
-volina-web/
-├── app/
-│   ├── (auth)/
-│   │   └── login/
-│   │       └── page.tsx
-│   ├── (dashboard)/
-│   │   └── dashboard/
-│   │       ├── layout.tsx
-│   │       ├── page.tsx              # Overview
-│   │       ├── calls/
-│   │       │   └── page.tsx          # Call Logs
-│   │       └── calendar/
-│   │           └── page.tsx          # Calendar CRM
-│   ├── api/
-│   │   ├── vapi/
-│   │   │   └── route.ts              # Vapi webhook handler
-│   │   └── calls/
-│   │       └── route.ts              # Calls API
-│   ├── layout.tsx
-│   ├── page.tsx                      # Landing Page
-│   └── globals.css
-├── components/
-│   ├── landing/
-│   │   ├── Hero.tsx
-│   │   ├── Header.tsx
-│   │   ├── TeamSection.tsx
-│   │   └── Footer.tsx
-│   ├── dashboard/
-│   │   ├── Sidebar.tsx
-│   │   ├── Calendar.tsx
-│   │   ├── CallsTable.tsx
-│   │   ├── KPICards.tsx
-│   │   └── Charts.tsx
-│   ├── ui/                           # Shadcn/UI components
-│   │   ├── button.tsx
-│   │   ├── card.tsx
-│   │   ├── dialog.tsx
-│   │   └── ...
-│   └── providers/
-│       └── SupabaseProvider.tsx
-├── lib/
-│   ├── supabase.ts                   # Supabase client
-│   ├── vapi.ts                       # Vapi client
-│   ├── types.ts                      # TypeScript definitions
-│   └── utils.ts                      # Utility functions
-├── hooks/
-│   ├── useSupabase.ts
-│   ├── useVapi.ts
-│   └── useRealtime.ts
-├── schema.sql                        # Database schema
-├── package.json
-├── tailwind.config.ts
-├── next.config.mjs
-├── vercel.json
-└── README.md
-```
 
 ---
 
@@ -105,7 +42,7 @@ volina-web/
 - Node.js 18.17 or later
 - npm, yarn, or pnpm
 - Supabase account
-- Vapi.ai account
+- Vapi.ai account (for voice features)
 
 ### 1. Clone and Install
 
@@ -118,7 +55,17 @@ cd volina-web
 npm install
 ```
 
-### 2. Environment Variables
+### 2. Supabase Setup
+
+1. Go to [Supabase](https://supabase.com) and create a new project
+2. Navigate to **SQL Editor**
+3. Run `schema.sql` to create the database tables
+4. Go to **Authentication > Users** and create two users:
+   - `artunbalta1@gmail.com` (password: `Ardu0307`) - Real user for live data
+   - `admin@volina.online` (password: `Volina1313.`) - Demo user with mock data
+5. Run `seed.sql` to populate mock data for the admin user
+
+### 3. Environment Variables
 
 Create a `.env.local` file in the root directory:
 
@@ -133,29 +80,11 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 
-# Vapi.ai Configuration
+# Vapi.ai Configuration (optional - for voice calls)
 # Get these from: Vapi Dashboard > Settings > API Keys
 NEXT_PUBLIC_VAPI_PUBLIC_KEY=your-vapi-public-key
-VAPI_PRIVATE_KEY=your-vapi-private-key
-VAPI_ASSISTANT_ID=your-vapi-assistant-id
-
-# n8n Webhook (Optional - for automation)
-N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/volina
-
-# App Configuration
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_VAPI_ASSISTANT_ID=your-vapi-assistant-id
 ```
-
-### 3. Database Setup
-
-1. Go to your Supabase Dashboard
-2. Navigate to SQL Editor
-3. Copy and run the contents of `schema.sql`
-4. This will create:
-   - `profiles` - User authentication
-   - `doctors` - Healthcare providers (seeded with 3 mock doctors)
-   - `appointments` - Patient appointments
-   - `calls` - Voice call logs
 
 ### 4. Run Development Server
 
@@ -165,92 +94,112 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 5. Test Login
+### 5. Login
 
-Use these mock credentials:
-- **Email:** `admin@volina.org`
-- **Password:** any password
+Use these credentials:
 
----
+**Real User (for live VAPI data):**
+- Email: `artunbalta1@gmail.com`
+- Password: `Ardu0307`
 
-## 📡 API Endpoints
-
-### Vapi Webhook Handler
-
-```
-POST /api/vapi
-```
-
-Receives `end-of-call-report` webhooks from Vapi.ai.
-
-### Calls API
-
-```
-GET /api/calls        # List all calls
-POST /api/calls       # Create new call record
-GET /api/calls/:id    # Get call details
-```
+**Demo User (with mock data):**
+- Email: `admin@volina.online`
+- Password: `Volina1313.`
 
 ---
 
-## 🔄 n8n Integration
+## 📡 Vapi Webhook Setup
 
-The platform integrates with n8n for processing Vapi webhooks:
+To receive call data from your Vapi assistant:
 
-1. **Webhook Trigger**: n8n receives `end-of-call-report` from Vapi
-2. **Data Processing**: Extract transcript, summary, sentiment
-3. **Database Insert**: Add records to Supabase `calls` and `appointments`
-4. **Real-time Update**: Dashboard updates automatically via subscriptions
+### 1. Set Webhook URL in Vapi
 
-### Sample n8n Workflow
+Go to your Vapi assistant settings and set the webhook URL:
+```
+https://your-domain.com/api/vapi
+```
 
-```json
-{
-  "nodes": [
-    {
-      "name": "Vapi Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "parameters": {
-        "path": "volina-vapi"
-      }
-    },
-    {
-      "name": "Process Call Data",
-      "type": "n8n-nodes-base.code",
-      "parameters": {
-        "jsCode": "// Extract call data from Vapi payload"
-      }
-    },
-    {
-      "name": "Supabase Insert",
-      "type": "n8n-nodes-base.supabase",
-      "parameters": {
-        "operation": "insert",
-        "table": "calls"
-      }
-    }
-  ]
-}
+### 2. Link User to Vapi Organization
+
+In Supabase SQL Editor, run:
+```sql
+UPDATE profiles 
+SET vapi_org_id = 'your-vapi-org-id' 
+WHERE email = 'artunbalta1@gmail.com';
+```
+
+### 3. Configure Vapi Tools
+
+Add these server URLs for your assistant tools:
+
+| Tool | Server URL |
+|------|------------|
+| check-availability | `https://your-domain.com/api/vapi/tools/check-availability` |
+| book-appointment | `https://your-domain.com/api/vapi/tools/book-appointment` |
+| cancel-appointment | `https://your-domain.com/api/vapi/tools/cancel-appointment` |
+
+---
+
+## 📁 Project Structure
+
+```
+volina-web/
+├── app/
+│   ├── login/
+│   │   └── page.tsx          # Login page
+│   ├── (dashboard)/
+│   │   └── dashboard/
+│   │       ├── layout.tsx
+│   │       ├── page.tsx      # Dashboard overview
+│   │       ├── calls/
+│   │       │   └── page.tsx  # Call logs
+│   │       ├── calendar/
+│   │       │   └── page.tsx  # Calendar CRM
+│   │       └── settings/
+│   │           └── page.tsx  # Settings & team management
+│   ├── api/
+│   │   ├── vapi/
+│   │   │   ├── route.ts      # Vapi webhook handler
+│   │   │   └── tools/
+│   │   │       ├── book-appointment/
+│   │   │       ├── cancel-appointment/
+│   │   │       └── check-availability/
+│   │   └── calls/
+│   │       └── route.ts
+│   ├── layout.tsx
+│   ├── page.tsx              # Landing page
+│   └── globals.css
+├── components/
+│   ├── dashboard/
+│   │   ├── Sidebar.tsx
+│   │   ├── Calendar.tsx
+│   │   ├── CallsTable.tsx
+│   │   └── ...
+│   ├── providers/
+│   │   ├── SupabaseProvider.tsx
+│   │   └── ThemeProvider.tsx
+│   └── ui/                   # Shadcn/UI components
+├── lib/
+│   ├── supabase.ts           # Supabase client & queries
+│   ├── vapi.ts               # Vapi client
+│   ├── types.ts              # TypeScript types
+│   └── utils.ts
+├── schema.sql                # Database schema
+├── seed.sql                  # Demo data for admin user
+└── env.example               # Environment variables template
 ```
 
 ---
 
-## 🎨 Theme & Design
+## 🔒 User Data Isolation
 
-### Color Palette
+Each user's data is completely isolated:
 
-| Color | Hex | Usage |
-|-------|-----|-------|
-| Primary Blue | `#0055FF` | Main accent, CTAs |
-| White | `#FFFFFF` | Backgrounds, text |
-| Gray 50 | `#F9FAFB` | Subtle backgrounds |
-| Gray 900 | `#111827` | Dark text |
+- **Calls** - Users only see their own call logs
+- **Appointments** - Users only see their own appointments
+- **Team Members** - Each user manages their own team (doctors/agents)
 
-### Design Principles
-
-- **Minimalist**: Clean layouts with purposeful whitespace
-- **Clinical**: Professional, trustworthy aesthetic
-- **Accessible**: WCAG 2.1 AA compliant
+This is enforced via Row Level Security (RLS) policies in Supabase.
 
 ---
 
@@ -260,17 +209,12 @@ The platform integrates with n8n for processing Vapi webhooks:
 
 1. Push code to GitHub
 2. Import project in Vercel Dashboard
-3. Add environment variables
+3. Add environment variables (from `.env.local`)
 4. Deploy!
-
-```bash
-# Or use Vercel CLI
-vercel --prod
-```
 
 ### Environment Variables in Vercel
 
-Add all variables from `.env.local` to your Vercel project:
+Add all variables to your Vercel project:
 - Settings > Environment Variables
 - Add each variable for Production, Preview, and Development
 
@@ -303,15 +247,6 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-## 🤝 Support
-
-- **Documentation**: [docs.volina.ai](https://docs.volina.ai)
-- **Issues**: [GitHub Issues](https://github.com/your-org/volina-web/issues)
-- **Email**: support@volina.ai
-
----
-
 <div align="center">
   <p>Built with ❤️ by the Volina Team</p>
 </div>
-

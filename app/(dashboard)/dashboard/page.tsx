@@ -1,108 +1,153 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { KPICards } from "@/components/dashboard/KPICards";
 import { Charts } from "@/components/dashboard/Charts";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
+import { useAuth } from "@/components/providers/SupabaseProvider";
+import { getCallStats, getDailyActivity, getRecentActivity } from "@/lib/supabase";
 
-// Mock data generator functions
-const generateKPIData = () => ({
-  monthlyCalls: Math.floor(Math.random() * 500) + 1000,
-  monthlyChange: Math.floor(Math.random() * 20) - 5,
-  dailyCalls: Math.floor(Math.random() * 30) + 30,
-  dailyChange: Math.floor(Math.random() * 15) - 3,
-  avgDuration: Math.floor(Math.random() * 60) + 120,
-  durationChange: Math.floor(Math.random() * 10) - 5,
-  appointmentRate: Math.floor(Math.random() * 20) + 60,
-  appointmentRateChange: Math.floor(Math.random() * 10) - 2,
-});
+interface KPIData {
+  monthlyCalls: number;
+  monthlyChange: number;
+  dailyCalls: number;
+  dailyChange: number;
+  avgDuration: number;
+  durationChange: number;
+  appointmentRate: number;
+  appointmentRateChange: number;
+}
 
-const generateCallTypeData = () => [
-  { name: "Appointments", value: Math.floor(Math.random() * 300) + 600, color: "#0055FF" },
-  { name: "Inquiries", value: Math.floor(Math.random() * 150) + 200, color: "#8B5CF6" },
-  { name: "Follow-ups", value: Math.floor(Math.random() * 50) + 50, color: "#F59E0B" },
-  { name: "Cancellations", value: Math.floor(Math.random() * 30) + 20, color: "#EF4444" },
-];
+interface CallTypeData {
+  name: string;
+  value: number;
+  color: string;
+}
 
-const generateDailyActivityData = () => 
-  Array.from({ length: 7 }, (_, i) => ({
-    date: format(subDays(new Date(), 6 - i), "EEE"),
-    calls: Math.floor(Math.random() * 50) + 30,
-    appointments: Math.floor(Math.random() * 30) + 15,
-  }));
+interface DailyActivityData {
+  date: string;
+  calls: number;
+  appointments: number;
+}
 
-const generateRecentActivity = () => [
-  {
-    id: "1",
-    type: "appointment" as const,
-    description: "New appointment scheduled with Sarah Chen for Maria Garcia",
-    timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    sentiment: "positive" as const,
-  },
-  {
-    id: "2",
-    type: "inquiry" as const,
-    description: "Customer inquired about office hours and service availability",
-    timestamp: new Date(Date.now() - 1000 * 60 * 23).toISOString(),
-    sentiment: "neutral" as const,
-  },
-  {
-    id: "3",
-    type: "call" as const,
-    description: "Urgent appointment booked with Emily Watson for same-day visit",
-    timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-    sentiment: "positive" as const,
-  },
-  {
-    id: "4",
-    type: "cancellation" as const,
-    description: "John Smith cancelled tomorrow's appointment with Torres",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    sentiment: "neutral" as const,
-  },
-  {
-    id: "5",
-    type: "appointment" as const,
-    description: "Follow-up visit scheduled with Michael Torres for consultation",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-    sentiment: "positive" as const,
-  },
-];
+interface ActivityItem {
+  id: string;
+  type: "call" | "appointment" | "inquiry" | "cancellation";
+  description: string;
+  timestamp: string;
+  sentiment?: "positive" | "neutral" | "negative";
+}
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [kpiData, setKpiData] = useState(generateKPIData());
-  const [callTypeData, setCallTypeData] = useState(generateCallTypeData());
-  const [dailyActivityData, setDailyActivityData] = useState(generateDailyActivityData());
-  const [recentActivity, setRecentActivity] = useState(generateRecentActivity());
+  const [kpiData, setKpiData] = useState<KPIData>({
+    monthlyCalls: 0,
+    monthlyChange: 0,
+    dailyCalls: 0,
+    dailyChange: 0,
+    avgDuration: 0,
+    durationChange: 0,
+    appointmentRate: 0,
+    appointmentRateChange: 0,
+  });
+  const [callTypeData, setCallTypeData] = useState<CallTypeData[]>([]);
+  const [dailyActivityData, setDailyActivityData] = useState<DailyActivityData[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
 
-  const loadData = useCallback(() => {
-    setKpiData(generateKPIData());
-    setCallTypeData(generateCallTypeData());
-    setDailyActivityData(generateDailyActivityData());
-    setRecentActivity(generateRecentActivity());
-    setLastUpdated(new Date());
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  const loadData = useCallback(async () => {
+    try {
+      // Fetch call stats
+      const stats = await getCallStats();
+      
+      // Calculate appointment rate
+      const totalCalls = Object.values(stats.typeDistribution).reduce((sum, count) => sum + count, 0);
+      const appointmentCalls = stats.typeDistribution.appointment || 0;
+      const appointmentRate = totalCalls > 0 ? Math.round((appointmentCalls / totalCalls) * 100) : 0;
+
+      setKpiData({
+        monthlyCalls: stats.monthlyCalls,
+        monthlyChange: 12, // Would need historical data for accurate change
+        dailyCalls: stats.dailyCalls,
+        dailyChange: 5,
+        avgDuration: stats.avgDuration,
+        durationChange: -3,
+        appointmentRate,
+        appointmentRateChange: 2,
+      });
+
+      // Convert type distribution to chart format
+      const typeColors: Record<string, string> = {
+        appointment: "#0055FF",
+        inquiry: "#8B5CF6",
+        follow_up: "#F59E0B",
+        cancellation: "#EF4444",
+      };
+      
+      const typeNames: Record<string, string> = {
+        appointment: "Appointments",
+        inquiry: "Inquiries",
+        follow_up: "Follow-ups",
+        cancellation: "Cancellations",
+      };
+
+      setCallTypeData(
+        Object.entries(stats.typeDistribution).map(([type, value]) => ({
+          name: typeNames[type] || type,
+          value,
+          color: typeColors[type] || "#6B7280",
+        }))
+      );
+
+      // Fetch daily activity
+      const dailyData = await getDailyActivity(7);
+      setDailyActivityData(dailyData);
+
+      // Fetch recent activity
+      const activities = await getRecentActivity(10);
+      setRecentActivity(activities as ActivityItem[]);
+
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+    }
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadData();
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [loadData]);
+    if (isAuthenticated) {
+      loadData().then(() => setIsLoading(false));
+    }
+  }, [isAuthenticated, loadData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    loadData();
+    await loadData();
     setIsRefreshing(false);
   };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -131,7 +176,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Welcome back! Here&apos;s your AI voice agent overview.
+            Welcome back{user?.full_name ? `, ${user.full_name}` : ""}! Here&apos;s your AI voice agent overview.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -156,7 +201,9 @@ export default function DashboardPage() {
 
       {/* Charts */}
       <Charts 
-        callTypeData={callTypeData} 
+        callTypeData={callTypeData.length > 0 ? callTypeData : [
+          { name: "No Data", value: 1, color: "#E5E7EB" }
+        ]} 
         dailyActivityData={dailyActivityData} 
       />
 
@@ -171,9 +218,9 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold mb-4">AI Performance</h3>
           <div className="space-y-4">
             {[
-              { label: "Call Completion Rate", value: "98.5%" },
+              { label: "Call Completion Rate", value: kpiData.monthlyCalls > 0 ? "98.5%" : "N/A" },
               { label: "Appointment Conversion", value: `${kpiData.appointmentRate}%` },
-              { label: "Customer Satisfaction", value: "94%" },
+              { label: "Customer Satisfaction", value: kpiData.monthlyCalls > 0 ? "94%" : "N/A" },
             ].map((stat) => (
               <div key={stat.label}>
                 <div className="flex justify-between text-sm mb-1">
@@ -183,7 +230,7 @@ export default function DashboardPage() {
                 <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-white rounded-full transition-all duration-500" 
-                    style={{ width: stat.value }} 
+                    style={{ width: stat.value === "N/A" ? "0%" : stat.value }} 
                   />
                 </div>
               </div>
@@ -191,7 +238,11 @@ export default function DashboardPage() {
           </div>
           <div className="mt-5 pt-4 border-t border-white/20">
             <p className="text-sm opacity-80">
-              Your AI is performing <span className="font-semibold text-white">above average</span> compared to similar businesses.
+              {kpiData.monthlyCalls > 0 ? (
+                <>Your AI is performing <span className="font-semibold text-white">above average</span> compared to similar businesses.</>
+              ) : (
+                <>Start making calls to see your AI performance metrics.</>
+              )}
             </p>
           </div>
         </div>

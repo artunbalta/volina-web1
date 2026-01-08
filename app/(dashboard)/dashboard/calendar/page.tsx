@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { format, addDays, subDays, isSameDay, parseISO } from "date-fns";
 import { 
   ChevronLeft, 
@@ -28,201 +29,103 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { formatTime, getStatusColor } from "@/lib/utils";
+import { useAuth } from "@/components/providers/SupabaseProvider";
+import { 
+  getDoctors, 
+  getAppointments, 
+  createAppointment, 
+  updateAppointmentStatus, 
+  deleteAppointment,
+  subscribeToAppointments 
+} from "@/lib/supabase";
 import type { Doctor, Appointment } from "@/lib/types";
-
-// Mock data
-const mockDoctors: Doctor[] = [
-  {
-    id: "d1a2b3c4-5678-90ab-cdef-111111111111",
-    name: "Sarah Chen",
-    specialty: "Sales",
-    color_code: "#0055FF",
-    avatar_url: null,
-    email: "sarah.chen@volina.ai",
-    phone: "+1 (555) 123-4567",
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "d1a2b3c4-5678-90ab-cdef-222222222222",
-    name: "Michael Torres",
-    specialty: "Support",
-    color_code: "#10B981",
-    avatar_url: null,
-    email: "michael.torres@volina.ai",
-    phone: "+1 (555) 234-5678",
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "d1a2b3c4-5678-90ab-cdef-333333333333",
-    name: "Emily Watson",
-    specialty: "Consulting",
-    color_code: "#F59E0B",
-    avatar_url: null,
-    email: "emily.watson@volina.ai",
-    phone: "+1 (555) 345-6789",
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
-
-const generateMockAppointments = (date: Date): Appointment[] => {
-  const baseDate = format(date, "yyyy-MM-dd");
-  
-  return [
-    {
-      id: "apt-1",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-111111111111",
-      patient_name: "John Smith",
-      patient_phone: "+1 (555) 111-0001",
-      patient_email: "john.smith@email.com",
-      start_time: `${baseDate}T09:00:00`,
-      end_time: `${baseDate}T09:30:00`,
-      status: "scheduled",
-      notes: "Sales consultation",
-      created_via_ai: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "apt-2",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-111111111111",
-      patient_name: "Maria Garcia",
-      patient_phone: "+1 (555) 111-0002",
-      patient_email: "maria.garcia@email.com",
-      start_time: `${baseDate}T10:00:00`,
-      end_time: `${baseDate}T10:30:00`,
-      status: "confirmed",
-      notes: "Follow-up call",
-      created_via_ai: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "apt-3",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-111111111111",
-      patient_name: "Robert Johnson",
-      patient_phone: "+1 (555) 111-0003",
-      patient_email: "robert.j@email.com",
-      start_time: `${baseDate}T14:00:00`,
-      end_time: `${baseDate}T14:30:00`,
-      status: "scheduled",
-      notes: "Product demo",
-      created_via_ai: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "apt-4",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-222222222222",
-      patient_name: "Lisa Anderson",
-      patient_phone: "+1 (555) 222-0001",
-      patient_email: "lisa.a@email.com",
-      start_time: `${baseDate}T11:00:00`,
-      end_time: `${baseDate}T11:30:00`,
-      status: "scheduled",
-      notes: "Technical support",
-      created_via_ai: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "apt-5",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-222222222222",
-      patient_name: "David Wilson",
-      patient_phone: "+1 (555) 222-0002",
-      patient_email: "david.w@email.com",
-      start_time: `${baseDate}T15:00:00`,
-      end_time: `${baseDate}T15:30:00`,
-      status: "confirmed",
-      notes: "Account review",
-      created_via_ai: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "apt-6",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-333333333333",
-      patient_name: "Jennifer Brown",
-      patient_phone: "+1 (555) 333-0001",
-      patient_email: "jennifer.b@email.com",
-      start_time: `${baseDate}T09:30:00`,
-      end_time: `${baseDate}T10:00:00`,
-      status: "scheduled",
-      notes: "Strategy meeting",
-      created_via_ai: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "apt-7",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-333333333333",
-      patient_name: "Chris Martinez",
-      patient_phone: "+1 (555) 333-0002",
-      patient_email: "chris.m@email.com",
-      start_time: `${baseDate}T13:00:00`,
-      end_time: `${baseDate}T13:30:00`,
-      status: "scheduled",
-      notes: "Project kickoff",
-      created_via_ai: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-};
 
 
 export default function CalendarPage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNewAppointment, setShowNewAppointment] = useState(false);
-  const defaultDoctorId = mockDoctors[0]?.id ?? "";
   const [newAppointment, setNewAppointment] = useState({
     name: "",
     email: "",
     phone: "",
-    assignee: defaultDoctorId,
+    assignee: "",
     time: "09:00",
     notes: "",
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Initial load - only run once
+  // Redirect if not authenticated
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setAppointments(generateMockAppointments(selectedDate));
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, router]);
 
-  // When date changes, preserve existing appointments and add mock data for new date if needed
-  useEffect(() => {
-    setAppointments(prev => {
-      const existingForDate = prev.filter(apt => 
-        isSameDay(parseISO(apt.start_time), selectedDate)
-      );
+  // Load data
+  const loadData = useCallback(async () => {
+    try {
+      const [doctorsData, appointmentsData] = await Promise.all([
+        getDoctors(),
+        getAppointments(format(selectedDate, "yyyy-MM-dd")),
+      ]);
       
-      // If no appointments exist for this date, add mock data
-      if (existingForDate.length === 0) {
-        const otherDates = prev.filter(apt => 
-          !isSameDay(parseISO(apt.start_time), selectedDate)
-        );
-        return [...otherDates, ...generateMockAppointments(selectedDate)];
+      setDoctors(doctorsData);
+      setAppointments(appointmentsData);
+      
+      // Set default assignee if doctors loaded and no assignee set
+      if (doctorsData.length > 0 && !newAppointment.assignee) {
+        setNewAppointment(prev => ({ ...prev, assignee: doctorsData[0].id }));
       }
-      
-      // Keep all existing appointments
-      return prev;
+    } catch (error) {
+      console.error("Error loading calendar data:", error);
+    }
+  }, [selectedDate, newAppointment.assignee]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadData().then(() => setIsLoading(false));
+    }
+  }, [isAuthenticated, loadData]);
+
+  // Subscribe to realtime updates
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const subscription = subscribeToAppointments((payload) => {
+      if (payload.eventType === "INSERT" && payload.new) {
+        const newApt = payload.new as Appointment;
+        if (isSameDay(parseISO(newApt.start_time), selectedDate)) {
+          setAppointments(prev => [...prev, newApt]);
+        }
+      } else if (payload.eventType === "UPDATE" && payload.new) {
+        setAppointments(prev => prev.map(apt => 
+          apt.id === (payload.new as Appointment).id ? payload.new as Appointment : apt
+        ));
+      } else if (payload.eventType === "DELETE" && payload.old) {
+        setAppointments(prev => prev.filter(apt => apt.id !== (payload.old as Appointment).id));
+      }
     });
-  }, [selectedDate]);
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [isAuthenticated, selectedDate]);
+
+  // Reload appointments when date changes
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      getAppointments(format(selectedDate, "yyyy-MM-dd")).then(setAppointments);
+    }
+  }, [selectedDate, isAuthenticated, isLoading]);
 
   const handlePrevDay = () => {
     setSelectedDate((prev) => subDays(prev, 1));
@@ -238,8 +141,7 @@ export default function CalendarPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setAppointments(generateMockAppointments(selectedDate));
+    await loadData();
     setIsRefreshing(false);
   };
 
@@ -247,11 +149,13 @@ export default function CalendarPage() {
     setSelectedAppointment(appointment);
   };
 
-  const handleCreateAppointment = () => {
-    if (!newAppointment.name.trim()) {
-      alert("Please enter a client name");
+  const handleCreateAppointment = async () => {
+    if (!newAppointment.name.trim() || !newAppointment.assignee) {
+      alert("Please enter a client name and select an assignee");
       return;
     }
+
+    setIsSaving(true);
 
     const baseDate = format(selectedDate, "yyyy-MM-dd");
     const timeParts = newAppointment.time.split(":");
@@ -267,72 +171,84 @@ export default function CalendarPage() {
     }
     const endTimeStr = `${endHours.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`;
 
-    const newApt: Appointment = {
-      id: `apt-${Date.now()}`,
+    const appointmentData = {
       doctor_id: newAppointment.assignee,
       patient_name: newAppointment.name.trim(),
-      patient_phone: newAppointment.phone.trim(),
-      patient_email: newAppointment.email.trim(),
+      patient_phone: newAppointment.phone.trim() || null,
+      patient_email: newAppointment.email.trim() || null,
       start_time: `${baseDate}T${newAppointment.time}:00`,
       end_time: `${baseDate}T${endTimeStr}:00`,
-      status: "scheduled",
-      notes: newAppointment.notes.trim(),
+      status: "scheduled" as const,
+      notes: newAppointment.notes.trim() || null,
       created_via_ai: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
-    
-    // Add to appointments list - use functional update to ensure we get latest state
-    setAppointments((prev) => {
-      // Check for duplicate (same time and doctor)
-      const duplicate = prev.find(
-        apt => apt.doctor_id === newApt.doctor_id &&
-        apt.start_time === newApt.start_time
-      );
-      if (duplicate) {
-        alert("An appointment already exists at this time for this team member");
-        return prev;
-      }
-      return [...prev, newApt];
-    });
-    
-    setSaveSuccess(true);
-    
-    setTimeout(() => {
-      setSaveSuccess(false);
-      setShowNewAppointment(false);
-      setNewAppointment({
-        name: "",
-        email: "",
-        phone: "",
-        assignee: mockDoctors[0]?.id ?? "",
-        time: "09:00",
-        notes: "",
-      });
-    }, 1500);
-  };
 
-  const handleConfirmAppointment = () => {
-    if (selectedAppointment) {
-      setAppointments(appointments.map(apt => 
-        apt.id === selectedAppointment.id 
-          ? { ...apt, status: "confirmed" as const }
-          : apt
-      ));
-      setSelectedAppointment({ ...selectedAppointment, status: "confirmed" });
+    try {
+      const newApt = await createAppointment(appointmentData);
+      
+      if (newApt) {
+        setAppointments(prev => [...prev, newApt]);
+        setSaveSuccess(true);
+        
+        setTimeout(() => {
+          setSaveSuccess(false);
+          setShowNewAppointment(false);
+          setNewAppointment({
+            name: "",
+            email: "",
+            phone: "",
+            assignee: doctors[0]?.id || "",
+            time: "09:00",
+            notes: "",
+          });
+        }, 1500);
+      } else {
+        alert("Failed to create appointment. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error creating appointment:", error);
+      alert("Failed to create appointment. Please try again.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleCancelAppointment = () => {
+  const handleConfirmAppointment = async () => {
     if (selectedAppointment) {
-      setAppointments(appointments.filter(apt => apt.id !== selectedAppointment.id));
-      setSelectedAppointment(null);
+      const updated = await updateAppointmentStatus(selectedAppointment.id, "confirmed");
+      if (updated) {
+        setAppointments(appointments.map(apt => 
+          apt.id === selectedAppointment.id 
+            ? { ...apt, status: "confirmed" as const }
+            : apt
+        ));
+        setSelectedAppointment({ ...selectedAppointment, status: "confirmed" });
+      }
+    }
+  };
+
+  const handleCancelAppointment = async () => {
+    if (selectedAppointment) {
+      const success = await deleteAppointment(selectedAppointment.id);
+      if (success) {
+        setAppointments(appointments.filter(apt => apt.id !== selectedAppointment.id));
+        setSelectedAppointment(null);
+      }
     }
   };
 
   const getDoctor = (doctorId: string) => {
-    return mockDoctors.find((d) => d.id === doctorId);
+    return doctors.find((d) => d.id === doctorId);
   };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -345,6 +261,37 @@ export default function CalendarPage() {
           </div>
         </div>
         <div className="h-[700px] bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse" />
+      </div>
+    );
+  }
+
+  // Show empty state if no doctors
+  if (doctors.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Calendar CRM</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">
+              Manage appointments across all team members with real-time updates.
+            </p>
+          </div>
+        </div>
+        
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-12 text-center">
+          <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <User className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            No team members yet
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto mb-6">
+            Add team members (doctors/agents) to start scheduling appointments. You can do this from the Settings page.
+          </p>
+          <Button onClick={() => router.push("/dashboard/settings")}>
+            Go to Settings
+          </Button>
+        </div>
       </div>
     );
   }
@@ -405,7 +352,7 @@ export default function CalendarPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        {mockDoctors.map((doctor) => {
+        {doctors.map((doctor) => {
           const doctorAppointments = appointments.filter(
             (apt) => apt.doctor_id === doctor.id
           );
@@ -440,7 +387,7 @@ export default function CalendarPage() {
 
       {/* Calendar */}
       <Calendar
-        doctors={mockDoctors}
+        doctors={doctors}
         appointments={appointments}
         selectedDate={selectedDate}
         onAppointmentClick={handleAppointmentClick}
@@ -626,7 +573,7 @@ export default function CalendarPage() {
                   onChange={(e) => setNewAppointment({ ...newAppointment, assignee: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                 >
-                  {mockDoctors.map((doctor) => (
+                  {doctors.map((doctor) => (
                     <option key={doctor.id} value={doctor.id}>
                       {doctor.name} - {doctor.specialty}
                     </option>
@@ -677,12 +624,17 @@ export default function CalendarPage() {
             </Button>
             <Button 
               onClick={handleCreateAppointment}
-              disabled={!newAppointment.name || saveSuccess}
+              disabled={!newAppointment.name || !newAppointment.assignee || saveSuccess || isSaving}
             >
               {saveSuccess ? (
                 <>
                   <Check className="w-4 h-4 mr-2" />
                   Created!
+                </>
+              ) : isSaving ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
                 </>
               ) : (
                 <>

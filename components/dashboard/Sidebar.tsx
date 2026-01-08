@@ -13,13 +13,15 @@ import {
   ChevronRight,
   User,
   Moon,
-  Sun
+  Sun,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useState } from "react";
 import { useTheme } from "@/components/providers/ThemeProvider";
+import { useAuth } from "@/components/providers/SupabaseProvider";
 
 const navItems = [
   {
@@ -43,11 +45,30 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const { user, signOut } = useAuth();
 
-  const handleLogout = () => {
-    // Clear any auth state here if needed
-    router.push("/");
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut();
+      router.push("/login");
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!user?.full_name) return "U";
+    const names = user.full_name.split(" ");
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return names[0][0].toUpperCase();
   };
 
   return (
@@ -147,14 +168,18 @@ export function Sidebar() {
           isCollapsed && "justify-center"
         )}>
           <Avatar className="w-10 h-10">
-            <AvatarFallback className="bg-primary/10 text-primary">
-              <User className="w-5 h-5" />
+            <AvatarFallback className="bg-primary/10 text-primary font-medium">
+              {getUserInitials()}
             </AvatarFallback>
           </Avatar>
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">Admin User</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">admin@volina.org</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                {user?.full_name || "User"}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {user?.email || ""}
+              </p>
             </div>
           )}
           {!isCollapsed && (
@@ -164,8 +189,13 @@ export function Sidebar() {
               className="text-gray-400 hover:text-red-500 dark:hover:text-red-400"
               title="Sign out"
               onClick={handleLogout}
+              disabled={isLoggingOut}
             >
-              <LogOut className="w-4 h-4" />
+              {isLoggingOut ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <LogOut className="w-4 h-4" />
+              )}
             </Button>
           )}
         </div>
@@ -176,8 +206,13 @@ export function Sidebar() {
             className="w-full mt-2 text-gray-400 hover:text-red-500 dark:hover:text-red-400"
             title="Sign out"
             onClick={handleLogout}
+            disabled={isLoggingOut}
           >
-            <LogOut className="w-5 h-5" />
+            {isLoggingOut ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <LogOut className="w-5 h-5" />
+            )}
           </Button>
         )}
       </div>

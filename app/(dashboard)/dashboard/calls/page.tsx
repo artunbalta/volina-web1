@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Search, Filter, Download, RefreshCw, X, Check } from "lucide-react";
 import { CallsTable } from "@/components/dashboard/CallsTable";
 import { Button } from "@/components/ui/button";
@@ -12,93 +13,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/providers/SupabaseProvider";
+import { getCalls, subscribeToCalls } from "@/lib/supabase";
 import type { Call } from "@/lib/types";
 
-// Mock data
-const mockCalls: Call[] = [
-  {
-    id: "1",
-    vapi_call_id: "vapi_call_001",
-    appointment_id: null,
-    recording_url: "https://api.vapi.ai/recordings/sample1.mp3",
-    transcript: "Agent: Hello, this is Volina AI. How can I help you today?\nCaller: Hi, I'd like to schedule an appointment.\nAgent: Of course! I have availability tomorrow at 9 AM or 2 PM. Which works better?\nCaller: 9 AM works great.\nAgent: Perfect! Your appointment is confirmed for tomorrow at 9 AM.",
-    summary: "Customer scheduled an appointment for 9 AM tomorrow.",
-    sentiment: "positive",
-    duration: 145,
-    type: "appointment",
-    caller_phone: "+1 (555) 111-0002",
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-  },
-  {
-    id: "2",
-    vapi_call_id: "vapi_call_002",
-    appointment_id: null,
-    recording_url: "https://api.vapi.ai/recordings/sample2.mp3",
-    transcript: "Agent: Hello, this is Volina AI. How can I help you today?\nCaller: I have a question about your services.\nAgent: Of course! What would you like to know?\nCaller: What are your operating hours?\nAgent: We're open Monday to Friday, 9 AM to 6 PM.",
-    summary: "Customer inquired about operating hours.",
-    sentiment: "neutral",
-    duration: 98,
-    type: "inquiry",
-    caller_phone: "+1 (555) 444-5555",
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-  },
-  {
-    id: "3",
-    vapi_call_id: "vapi_call_003",
-    appointment_id: null,
-    recording_url: "https://api.vapi.ai/recordings/sample3.mp3",
-    transcript: "Agent: Hello, this is Volina AI. How can I help you today?\nCaller: I need to see someone as soon as possible.\nAgent: I can help with that. We have an opening today at 1 PM. Would that work?\nCaller: Yes, that's perfect!\nAgent: Great! Your appointment is confirmed for 1 PM today.",
-    summary: "Urgent appointment scheduled for same day at 1 PM.",
-    sentiment: "positive",
-    duration: 112,
-    type: "appointment",
-    caller_phone: "+1 (555) 333-0002",
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-  },
-  {
-    id: "4",
-    vapi_call_id: "vapi_call_004",
-    appointment_id: null,
-    recording_url: "https://api.vapi.ai/recordings/sample4.mp3",
-    transcript: "Agent: Hello, this is Volina AI. How can I help you today?\nCaller: I need to cancel my appointment.\nAgent: I understand. Can you provide your name and appointment date?\nCaller: John Smith, tomorrow at 3 PM.\nAgent: I've cancelled your appointment. Would you like to reschedule?\nCaller: No, I'll call back later.",
-    summary: "John Smith cancelled their appointment scheduled for tomorrow.",
-    sentiment: "neutral",
-    duration: 87,
-    type: "cancellation",
-    caller_phone: "+1 (555) 111-0001",
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-  },
-  {
-    id: "5",
-    vapi_call_id: "vapi_call_005",
-    appointment_id: null,
-    recording_url: "https://api.vapi.ai/recordings/sample5.mp3",
-    transcript: "Agent: Hello, this is Volina AI. How can I help you today?\nCaller: I want to book a consultation.\nAgent: I have availability this Thursday at 11 AM.\nCaller: That works for me.\nAgent: Wonderful! Your consultation is confirmed for Thursday at 11 AM.",
-    summary: "Consultation booked for Thursday at 11 AM.",
-    sentiment: "positive",
-    duration: 134,
-    type: "appointment",
-    caller_phone: "+1 (555) 222-0001",
-    metadata: {},
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    updated_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-  },
-];
-
 const filterOptions = {
-  type: ["appointment", "inquiry", "cancellation", "follow-up"],
+  type: ["appointment", "inquiry", "cancellation", "follow_up"],
   sentiment: ["positive", "neutral", "negative"],
 };
 
 export default function CallsPage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  
   const [calls, setCalls] = useState<Call[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -110,18 +37,53 @@ export default function CallsPage() {
   }>({ type: [], sentiment: [] });
   const [exportSuccess, setExportSuccess] = useState(false);
 
+  // Redirect if not authenticated
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setCalls(mockCalls);
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  // Load calls
+  const loadCalls = useCallback(async () => {
+    try {
+      const data = await getCalls(100);
+      setCalls(data);
+    } catch (error) {
+      console.error("Error loading calls:", error);
+    }
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadCalls().then(() => setIsLoading(false));
+    }
+  }, [isAuthenticated, loadCalls]);
+
+  // Subscribe to realtime updates
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const subscription = subscribeToCalls((payload) => {
+      if (payload.eventType === "INSERT" && payload.new) {
+        setCalls(prev => [payload.new as Call, ...prev]);
+      } else if (payload.eventType === "UPDATE" && payload.new) {
+        setCalls(prev => prev.map(call => 
+          call.id === (payload.new as Call).id ? payload.new as Call : call
+        ));
+      } else if (payload.eventType === "DELETE" && payload.old) {
+        setCalls(prev => prev.filter(call => call.id !== (payload.old as Call).id));
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [isAuthenticated]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setCalls(mockCalls);
+    await loadCalls();
     setIsRefreshing(false);
   };
 
@@ -194,6 +156,15 @@ export default function CallsPage() {
 
   const activeFilterCount = activeFilters.type.length + activeFilters.sentiment.length;
 
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -232,6 +203,7 @@ export default function CallsPage() {
           <Button 
             variant="outline"
             onClick={handleExport}
+            disabled={filteredCalls.length === 0}
             className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300"
           >
             {exportSuccess ? (
@@ -296,7 +268,7 @@ export default function CallsPage() {
               onClick={() => toggleFilter("type", filter)}
               className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-full text-sm capitalize"
             >
-              {filter}
+              {filter.replace("_", " ")}
               <X className="w-3 h-3" />
             </button>
           ))}
@@ -348,8 +320,25 @@ export default function CallsPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <CallsTable calls={filteredCalls} />
+      {/* Table or Empty State */}
+      {filteredCalls.length > 0 ? (
+        <CallsTable calls={filteredCalls} />
+      ) : (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-12 text-center">
+          <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            {calls.length === 0 ? "No calls yet" : "No matching calls"}
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            {calls.length === 0 
+              ? "Your AI voice agent hasn't handled any calls yet. They'll appear here once calls are made."
+              : "Try adjusting your search or filters to find what you're looking for."
+            }
+          </p>
+        </div>
+      )}
 
       {/* Filter Dialog */}
       <Dialog open={showFilters} onOpenChange={setShowFilters}>
@@ -372,7 +361,7 @@ export default function CallsPage() {
                         : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
                     )}
                   >
-                    {type}
+                    {type.replace("_", " ")}
                   </button>
                 ))}
               </div>

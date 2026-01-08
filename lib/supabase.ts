@@ -1,255 +1,467 @@
 // ===========================================
-// VOLINA AI - Mock Supabase Client (No Backend)
+// VOLINA AI - Supabase Client Configuration
 // ===========================================
-// This file provides mock implementations for all database operations
-// All functions return mock data - no actual Supabase connection
 
+import { createClient } from '@supabase/supabase-js';
 import type { Doctor, Appointment, Call, Profile } from './types';
 
-// Mock mode flag - always true
-export const isDemoMode = true;
+// Type definitions for the database
+export interface Database {
+  public: {
+    Tables: {
+      profiles: {
+        Row: Profile;
+        Insert: Omit<Profile, 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Profile, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      doctors: {
+        Row: Doctor;
+        Insert: Omit<Doctor, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Doctor, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      appointments: {
+        Row: Appointment;
+        Insert: Omit<Appointment, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Appointment, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      calls: {
+        Row: Call;
+        Insert: Omit<Call, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Call, 'id' | 'created_at' | 'updated_at'>>;
+      };
+    };
+  };
+}
 
-// Mock Supabase client (not actually used, but kept for compatibility)
-export const supabase = {
-  from: () => ({
-    select: () => ({ data: [], error: null }),
-    insert: () => ({ data: null, error: null }),
-    update: () => ({ data: null, error: null }),
-    delete: () => ({ data: null, error: null }),
-    eq: () => ({ data: [], error: null }),
-    single: () => ({ data: null, error: null }),
-  }),
-  removeChannel: () => {},
-  channel: () => ({
-    on: () => ({
-      subscribe: () => ({ unsubscribe: () => {} }),
-    }),
-  }),
-} as any;
+// Environment variables
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// Mock admin client
+// Create Supabase client for browser/client-side usage
+export const supabase = createClient<Database>(
+  supabaseUrl,
+  supabaseAnonKey,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
+    },
+  }
+);
+
+// Create admin client for server-side operations
 export function createAdminClient() {
-  return supabase;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  return createClient<Database>(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
 }
 
 // ===========================================
-// Mock Data
+// Database Query Functions
 // ===========================================
 
-const mockDoctors: Doctor[] = [
-  {
-    id: "d1a2b3c4-5678-90ab-cdef-111111111111",
-    name: "Sarah Chen",
-    specialty: "Sales",
-    color_code: "#0055FF",
-    avatar_url: null,
-    email: "sarah.chen@volina.ai",
-    phone: "+1 (555) 123-4567",
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "d1a2b3c4-5678-90ab-cdef-222222222222",
-    name: "Michael Torres",
-    specialty: "Support",
-    color_code: "#10B981",
-    avatar_url: null,
-    email: "michael.torres@volina.ai",
-    phone: "+1 (555) 234-5678",
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "d1a2b3c4-5678-90ab-cdef-333333333333",
-    name: "Emily Watson",
-    specialty: "Consulting",
-    color_code: "#F59E0B",
-    avatar_url: null,
-    email: "emily.watson@volina.ai",
-    phone: "+1 (555) 345-6789",
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
-
-// ===========================================
-// Database Query Functions (Mock)
-// ===========================================
+// Get current user ID helper
+async function getCurrentUserId(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id || null;
+}
 
 // Doctors
 export async function getDoctors(): Promise<Doctor[]> {
-  return Promise.resolve(mockDoctors.filter(d => d.is_active));
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('doctors')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('name');
+
+  if (error) {
+    console.error('Error fetching doctors:', error);
+    return [];
+  }
+  return data || [];
 }
 
 export async function getDoctorById(id: string): Promise<Doctor | null> {
-  return Promise.resolve(mockDoctors.find(d => d.id === id) || null);
+  const { data, error } = await supabase
+    .from('doctors')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    console.error('Error fetching doctor:', error);
+    return null;
+  }
+  return data;
+}
+
+export async function createDoctor(doctor: Omit<Doctor, 'id' | 'created_at' | 'updated_at' | 'user_id'>): Promise<Doctor | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('doctors')
+    .insert({ ...doctor, user_id: userId } as any)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating doctor:', error);
+    return null;
+  }
+  return data;
 }
 
 // Appointments
 export async function getAppointments(date?: string): Promise<Appointment[]> {
-  const baseDate = date || new Date().toISOString().split('T')[0];
-  
-  const mockAppointments: Appointment[] = [
-    {
-      id: "apt-1",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-111111111111",
-      patient_name: "John Smith",
-      patient_phone: "+1 (555) 111-0001",
-      patient_email: "john.smith@email.com",
-      start_time: `${baseDate}T09:00:00`,
-      end_time: `${baseDate}T09:30:00`,
-      status: "scheduled",
-      notes: "Sales consultation",
-      created_via_ai: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      doctor: mockDoctors[0],
-    },
-    {
-      id: "apt-2",
-      doctor_id: "d1a2b3c4-5678-90ab-cdef-111111111111",
-      patient_name: "Maria Garcia",
-      patient_phone: "+1 (555) 111-0002",
-      patient_email: "maria.garcia@email.com",
-      start_time: `${baseDate}T10:00:00`,
-      end_time: `${baseDate}T10:30:00`,
-      status: "confirmed",
-      notes: "Follow-up call",
-      created_via_ai: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      doctor: mockDoctors[0],
-    },
-  ];
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
 
-  return Promise.resolve(mockAppointments);
+  let query = supabase
+    .from('appointments')
+    .select(`
+      *,
+      doctor:doctors(*)
+    `)
+    .eq('user_id', userId)
+    .order('start_time', { ascending: true });
+
+  if (date) {
+    const startOfDay = `${date}T00:00:00`;
+    const endOfDay = `${date}T23:59:59`;
+    query = query
+      .gte('start_time', startOfDay)
+      .lte('start_time', endOfDay);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching appointments:', error);
+    return [];
+  }
+  return data || [];
 }
 
 export async function getAppointmentsByDoctor(doctorId: string, date?: string): Promise<Appointment[]> {
-  const all = await getAppointments(date);
-  return Promise.resolve(all.filter(apt => apt.doctor_id === doctorId));
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  let query = supabase
+    .from('appointments')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('doctor_id', doctorId)
+    .order('start_time', { ascending: true });
+
+  if (date) {
+    const startOfDay = `${date}T00:00:00`;
+    const endOfDay = `${date}T23:59:59`;
+    query = query
+      .gte('start_time', startOfDay)
+      .lte('start_time', endOfDay);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching appointments:', error);
+    return [];
+  }
+  return data || [];
 }
 
-export async function createAppointment(appointment: any): Promise<Appointment> {
-  const newAppointment: Appointment = {
-    ...appointment,
-    id: `apt-${Date.now()}`,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-  return Promise.resolve(newAppointment);
+export async function createAppointment(appointment: Omit<Appointment, 'id' | 'created_at' | 'updated_at' | 'user_id'>): Promise<Appointment | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('appointments')
+    .insert({ ...appointment, user_id: userId } as any)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating appointment:', error);
+    return null;
+  }
+  return data;
 }
 
-export async function updateAppointmentStatus(id: string, status: Appointment['status']): Promise<Appointment> {
-  const existing = await getAppointments();
-  const appointment = existing.find(a => a.id === id) || {
-    id,
-    doctor_id: "",
-    patient_name: "",
-    patient_phone: null,
-    patient_email: null,
-    start_time: new Date().toISOString(),
-    end_time: new Date().toISOString(),
-    status: "scheduled",
-    notes: null,
-    created_via_ai: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-  
-  return Promise.resolve({
-    ...appointment,
-    status,
-    updated_at: new Date().toISOString(),
-  });
+export async function updateAppointmentStatus(id: string, status: Appointment['status']): Promise<Appointment | null> {
+  const { data, error } = await supabase
+    .from('appointments')
+    .update({ status } as any)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating appointment:', error);
+    return null;
+  }
+  return data;
+}
+
+export async function deleteAppointment(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('appointments')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error deleting appointment:', error);
+    return false;
+  }
+  return true;
 }
 
 // Calls
 export async function getCalls(limit = 50): Promise<Call[]> {
-  const mockCalls: Call[] = [
-    {
-      id: "1",
-      vapi_call_id: "vapi_call_001",
-      appointment_id: null,
-      recording_url: "https://api.vapi.ai/recordings/sample1.mp3",
-      transcript: "Agent: Hello, this is Volina AI. How can I help you today?\nCaller: Hi, I'd like to schedule an appointment.",
-      summary: "Customer scheduled an appointment for 9 AM tomorrow.",
-      sentiment: "positive",
-      duration: 145,
-      type: "appointment",
-      caller_phone: "+1 (555) 111-0002",
-      metadata: {},
-      created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      updated_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    },
-    {
-      id: "2",
-      vapi_call_id: "vapi_call_002",
-      appointment_id: null,
-      recording_url: "https://api.vapi.ai/recordings/sample2.mp3",
-      transcript: "Agent: Hello, this is Volina AI. How can I help you today?\nCaller: I have a question about your services.",
-      summary: "Customer inquired about operating hours.",
-      sentiment: "neutral",
-      duration: 98,
-      type: "inquiry",
-      caller_phone: "+1 (555) 444-5555",
-      metadata: {},
-      created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-      updated_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    },
-  ];
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
 
-  return Promise.resolve(mockCalls.slice(0, limit));
+  const { data, error } = await supabase
+    .from('calls')
+    .select(`
+      *,
+      appointment:appointments(*)
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Error fetching calls:', error);
+    return [];
+  }
+  return data || [];
 }
 
 export async function getCallById(id: string): Promise<Call | null> {
-  const calls = await getCalls();
-  return Promise.resolve(calls.find(c => c.id === id) || null);
+  const { data, error } = await supabase
+    .from('calls')
+    .select(`
+      *,
+      appointment:appointments(
+        *,
+        doctor:doctors(*)
+      )
+    `)
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    console.error('Error fetching call:', error);
+    return null;
+  }
+  return data;
 }
 
-export async function createCall(call: any): Promise<Call> {
-  const newCall: Call = {
-    ...call,
-    id: `call-${Date.now()}`,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-  return Promise.resolve(newCall);
+export async function createCall(call: Omit<Call, 'id' | 'created_at' | 'updated_at' | 'user_id'>): Promise<Call | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('calls')
+    .insert({ ...call, user_id: userId } as any)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating call:', error);
+    return null;
+  }
+  return data;
 }
 
 // Analytics
 export async function getCallStats() {
-  return Promise.resolve({
-    monthlyCalls: 1250,
-    dailyCalls: 45,
-    avgDuration: 120,
-    typeDistribution: {
-      appointment: 600,
-      inquiry: 400,
-      follow_up: 150,
-      cancellation: 100,
-    },
+  const userId = await getCurrentUserId();
+  if (!userId) {
+    return {
+      monthlyCalls: 0,
+      dailyCalls: 0,
+      avgDuration: 0,
+      typeDistribution: {},
+    };
+  }
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+
+  // Monthly calls
+  const { count: monthlyCalls } = await supabase
+    .from('calls')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gte('created_at', startOfMonth);
+
+  // Daily calls
+  const { count: dailyCalls } = await supabase
+    .from('calls')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gte('created_at', startOfDay);
+
+  // Average duration
+  const { data: durationData } = await supabase
+    .from('calls')
+    .select('duration')
+    .eq('user_id', userId)
+    .not('duration', 'is', null);
+
+  const avgDuration = durationData && durationData.length > 0
+    ? durationData.reduce((sum, c) => sum + (c.duration || 0), 0) / durationData.length
+    : 0;
+
+  // Call type distribution
+  const { data: typeData } = await supabase
+    .from('calls')
+    .select('type')
+    .eq('user_id', userId);
+
+  const typeDistribution = typeData?.reduce((acc, call) => {
+    acc[call.type] = (acc[call.type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>) || {};
+
+  return {
+    monthlyCalls: monthlyCalls || 0,
+    dailyCalls: dailyCalls || 0,
+    avgDuration: Math.round(avgDuration),
+    typeDistribution,
+  };
+}
+
+// Get daily activity for charts
+export async function getDailyActivity(days = 7) {
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  // Fetch calls
+  const { data: calls } = await supabase
+    .from('calls')
+    .select('created_at, type')
+    .eq('user_id', userId)
+    .gte('created_at', startDate.toISOString())
+    .order('created_at', { ascending: true });
+
+  // Fetch appointments
+  const { data: appointments } = await supabase
+    .from('appointments')
+    .select('created_at')
+    .eq('user_id', userId)
+    .gte('created_at', startDate.toISOString());
+
+  // Group by day
+  const dailyData: Record<string, { calls: number; appointments: number }> = {};
+  
+  for (let i = 0; i < days; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - (days - 1 - i));
+    const dateStr = date.toISOString().split('T')[0];
+    dailyData[dateStr] = { calls: 0, appointments: 0 };
+  }
+
+  calls?.forEach(call => {
+    const dateStr = call.created_at.split('T')[0];
+    if (dailyData[dateStr]) {
+      dailyData[dateStr].calls++;
+    }
   });
+
+  appointments?.forEach(apt => {
+    const dateStr = apt.created_at.split('T')[0];
+    if (dailyData[dateStr]) {
+      dailyData[dateStr].appointments++;
+    }
+  });
+
+  return Object.entries(dailyData).map(([date, data]) => ({
+    date: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+    ...data,
+  }));
+}
+
+// Get recent activity
+export async function getRecentActivity(limit = 10) {
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  // Fetch recent calls
+  const { data: calls } = await supabase
+    .from('calls')
+    .select('id, type, summary, sentiment, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  // Convert to activity format
+  return (calls || []).map(call => ({
+    id: call.id,
+    type: call.type as 'call' | 'appointment',
+    description: call.summary || `${call.type} call`,
+    timestamp: call.created_at,
+    sentiment: call.sentiment,
+  }));
 }
 
 // User Profile
 export async function getProfile(userId: string): Promise<Profile | null> {
-  return Promise.resolve({
-    id: userId,
-    email: "demo@volina.ai",
-    full_name: "Demo User",
-    avatar_url: null,
-    role: "admin",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  });
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching profile:', error);
+    return null;
+  }
+  return data;
+}
+
+export async function updateProfile(userId: string, updates: Partial<Profile>): Promise<Profile | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates as any)
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating profile:', error);
+    return null;
+  }
+  return data;
 }
 
 // ===========================================
-// Realtime Subscriptions (Mock - No-op)
+// Realtime Subscriptions
 // ===========================================
 
 export function subscribeToAppointments(
@@ -259,10 +471,24 @@ export function subscribeToAppointments(
     old: Appointment | null;
   }) => void
 ) {
-  // Return a mock channel that does nothing
-  return {
-    unsubscribe: () => {},
-  } as any;
+  return supabase
+    .channel('appointments-changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'appointments',
+      },
+      (payload) => {
+        callback({
+          eventType: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
+          new: payload.new as Appointment | null,
+          old: payload.old as Appointment | null,
+        });
+      }
+    )
+    .subscribe();
 }
 
 export function subscribeToCalls(
@@ -272,8 +498,22 @@ export function subscribeToCalls(
     old: Call | null;
   }) => void
 ) {
-  // Return a mock channel that does nothing
-  return {
-    unsubscribe: () => {},
-  } as any;
+  return supabase
+    .channel('calls-changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'calls',
+      },
+      (payload) => {
+        callback({
+          eventType: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
+          new: payload.new as Call | null,
+          old: payload.old as Call | null,
+        });
+      }
+    )
+    .subscribe();
 }
