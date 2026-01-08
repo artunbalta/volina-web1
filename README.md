@@ -48,8 +48,8 @@ Volina is a modern SaaS platform that enables businesses across all industries t
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/volina-web.git
-cd volina-web
+git clone https://github.com/artunbalta/volina-web1.git
+cd volina-web1
 
 # Install dependencies
 npm install
@@ -114,10 +114,11 @@ To receive call data from your Vapi assistant:
 
 ### 1. Set Webhook URL in Vapi
 
-Go to your Vapi assistant settings and set the webhook URL:
+Go to your Vapi Dashboard → Account → Webhook URL and set:
 ```
-https://your-domain.com/api/vapi
+https://www.volina.online/api/vapi
 ```
+(Or use: `https://volina-web1.vercel.app/api/vapi`)
 
 ### 2. Link User to Vapi Organization
 
@@ -128,15 +129,23 @@ SET vapi_org_id = 'your-vapi-org-id'
 WHERE email = 'artunbalta1@gmail.com';
 ```
 
+**To find your VAPI Org ID:**
+- Go to VAPI Dashboard → Account → Organization ID
+
 ### 3. Configure Vapi Tools
 
-Add these server URLs for your assistant tools:
+Add these server URLs for your assistant tools in VAPI Dashboard:
 
 | Tool | Server URL |
 |------|------------|
-| check-availability | `https://your-domain.com/api/vapi/tools/check-availability` |
-| book-appointment | `https://your-domain.com/api/vapi/tools/book-appointment` |
-| cancel-appointment | `https://your-domain.com/api/vapi/tools/cancel-appointment` |
+| check-availability | `https://www.volina.online/api/vapi/tools/check-availability` |
+| book-appointment | `https://www.volina.online/api/vapi/tools/book-appointment` |
+| cancel-appointment | `https://www.volina.online/api/vapi/tools/cancel-appointment` |
+
+**Alternative URLs (using Vercel domain):**
+- `https://volina-web1.vercel.app/api/vapi/tools/check-availability`
+- `https://volina-web1.vercel.app/api/vapi/tools/book-appointment`
+- `https://volina-web1.vercel.app/api/vapi/tools/cancel-appointment`
 
 ---
 
