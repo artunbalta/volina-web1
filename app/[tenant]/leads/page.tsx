@@ -249,6 +249,29 @@ export default function LeadsPage() {
       'not': 'notes',
     };
 
+    // Valid source values (from database constraint)
+    const validSources = ['web_form', 'instagram', 'referral', 'facebook', 'google_ads', 'other'];
+    const sourceMapping: Record<string, string> = {
+      'website': 'web_form',
+      'web': 'web_form',
+      'form': 'web_form',
+      'site': 'web_form',
+      'instagram': 'instagram',
+      'ig': 'instagram',
+      'insta': 'instagram',
+      'referral': 'referral',
+      'referans': 'referral',
+      'tavsiye': 'referral',
+      'facebook': 'facebook',
+      'fb': 'facebook',
+      'google': 'google_ads',
+      'google_ads': 'google_ads',
+      'ads': 'google_ads',
+      'other': 'other',
+      'diğer': 'other',
+      'diger': 'other',
+    };
+
     const leads: Partial<Lead>[] = [];
     
     for (let i = 1; i < lines.length; i++) {
@@ -262,7 +285,21 @@ export default function LeadsPage() {
           if (mappedKey === 'language') {
             const langValue = values[index]!.toLowerCase();
             (lead as Record<string, string>)[mappedKey] = (langValue === 'en' || langValue === 'english' || langValue === 'ingilizce') ? 'en' : 'tr';
-          } else {
+          } 
+          // Handle source field - map to valid values
+          else if (mappedKey === 'source') {
+            const sourceValue = values[index]!.toLowerCase().trim();
+            const mappedSource = sourceMapping[sourceValue];
+            if (mappedSource) {
+              (lead as Record<string, string>)[mappedKey] = mappedSource;
+            } else if (validSources.includes(sourceValue)) {
+              (lead as Record<string, string>)[mappedKey] = sourceValue;
+            } else {
+              // Default to 'other' for unrecognized sources
+              (lead as Record<string, string>)[mappedKey] = 'other';
+            }
+          }
+          else {
             (lead as Record<string, string>)[mappedKey] = values[index]!;
           }
         }
