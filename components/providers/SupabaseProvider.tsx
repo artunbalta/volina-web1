@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/lib/types";
 import type { User, Session, AuthError } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
 
 // Generate slug from email
 function generateSlugFromEmail(email: string): string {
@@ -37,9 +38,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function SupabaseProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const initRef = useRef(false);
 
   // Fetch user profile from profiles table
   const fetchProfile = useCallback(async (authUser: User) => {
@@ -93,6 +96,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state
   useEffect(() => {
+    // Prevent double initialization in strict mode
+    if (initRef.current) return;
+    initRef.current = true;
+
     let mounted = true;
     let timeoutId: NodeJS.Timeout;
 
@@ -100,11 +107,11 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       try {
         // Set a timeout to prevent infinite loading
         timeoutId = setTimeout(() => {
-          if (mounted) {
+          if (mounted && isLoading) {
             console.warn("Auth initialization timeout, setting isLoading to false");
             setIsLoading(false);
           }
-        }, 5000); // 5 second timeout
+        }, 3000); // 3 second timeout (reduced from 5)
 
         // Get initial session
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
@@ -112,6 +119,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         if (error) {
           console.error("Error getting session:", error);
           if (mounted) {
+            setSession(null);
+            setUser(null);
             setIsLoading(false);
           }
           return;
@@ -122,15 +131,18 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
           
           if (initialSession?.user) {
             await fetchProfile(initialSession.user);
+          } else {
+            setUser(null);
           }
+          setIsLoading(false);
         }
       } catch (error) {
         console.error("Error initializing auth:", error);
-      } finally {
         if (mounted) {
-          clearTimeout(timeoutId);
           setIsLoading(false);
         }
+      } finally {
+        clearTimeout(timeoutId);
       }
     };
 
@@ -141,14 +153,22 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       async (event, currentSession) => {
         if (!mounted) return;
         
+        console.log("Auth state change:", event);
+        
         setSession(currentSession);
         
         if (event === "SIGNED_IN" && currentSession?.user) {
           await fetchProfile(currentSession.user);
         } else if (event === "SIGNED_OUT") {
           setUser(null);
+          setSession(null);
         } else if (event === "USER_UPDATED" && currentSession?.user) {
           await fetchProfile(currentSession.user);
+        } else if (event === "TOKEN_REFRESHED" && currentSession?.user) {
+          // Session token was refreshed, profile should still be valid
+          if (!user) {
+            await fetchProfile(currentSession.user);
+          }
         }
         
         setIsLoading(false);
@@ -160,7 +180,29 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, isLoading, user]);
+
+  // Handle visibility change - refresh session when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && session) {
+        // Tab became visible, check if session is still valid
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error || !currentSession) {
+          // Session expired, clear state
+          setUser(null);
+          setSession(null);
+        } else if (currentSession.user && !user) {
+          // Session valid but user not loaded
+          await fetchProfile(currentSession.user);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [session, user, fetchProfile]);
 
   const signIn = async (email: string, password: string) => {
     setIsLoading(true);
@@ -179,11 +221,18 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    setIsLoading(true);
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setIsLoading(false);
+    try {
+      setIsLoading(true);
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+      // Force redirect to login
+      router.push('/login');
+    } catch (error) {
+      console.error("Error signing out:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const refreshProfile = async () => {

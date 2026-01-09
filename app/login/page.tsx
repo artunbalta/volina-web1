@@ -20,6 +20,7 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   // Check for OAuth errors in URL
   useEffect(() => {
@@ -34,6 +35,7 @@ function LoginContent() {
       };
       const errorMessage = errorMessages[errorParam] || "Bir hata oluştu. Lütfen tekrar deneyin.";
       setError(errorMessage);
+      setShowForm(true); // Show form if there's an error
     }
   }, [searchParams]);
 
@@ -50,8 +52,21 @@ function LoginContent() {
           : "/dashboard";
         router.push(redirectPath);
       }
+    } else if (!authLoading && !isAuthenticated) {
+      // Not authenticated and not loading, show the form
+      setShowForm(true);
     }
   }, [isAuthenticated, authLoading, user, router]);
+
+  // Timeout to show form after 2 seconds regardless
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (!showForm) {
+        setShowForm(true);
+      }
+    }, 2000);
+    return () => clearTimeout(timeout);
+  }, [showForm]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,20 +90,8 @@ function LoginContent() {
     }
   };
 
-  // Show loading spinner while checking auth state (with timeout)
-  useEffect(() => {
-    if (authLoading) {
-      const timeout = setTimeout(() => {
-        // If still loading after 5 seconds, show login form anyway
-        // This prevents infinite loading if there's a network issue
-        console.warn("Auth check taking too long, showing login form");
-      }, 5000);
-      return () => clearTimeout(timeout);
-    }
-  }, [authLoading]);
-
   // Show loading spinner while checking auth state (but not indefinitely)
-  if (authLoading) {
+  if (!showForm) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="flex flex-col items-center gap-4">
