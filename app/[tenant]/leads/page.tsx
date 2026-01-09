@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { getLeads, createLead, updateLead, deleteLead } from "@/lib/supabase-outbound";
+import { getLeads, createLead, updateLead, deleteLead, createLeadsBulk } from "@/lib/supabase-outbound";
 import type { Lead, LeadStatus, LeadLanguage, LeadPriority } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,11 @@ import {
   Instagram,
   Filter,
   X,
-  ChevronDown
+  ChevronDown,
+  Upload,
+  FileSpreadsheet,
+  AlertCircle,
+  CheckCircle2
 } from "lucide-react";
 import { format } from "date-fns";
 import { tr } from "date-fns/locale";
@@ -86,8 +90,17 @@ export default function LeadsPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showCsvDialog, setShowCsvDialog] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // CSV upload states
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [csvData, setCsvData] = useState<Partial<Lead>[]>([]);
+  const [csvFileName, setCsvFileName] = useState("");
+  const [csvError, setCsvError] = useState("");
+  const [uploadResult, setUploadResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<Partial<Lead>>({
@@ -201,6 +214,130 @@ export default function LeadsPage() {
     });
   };
 
+  // CSV Functions
+  const parseCSV = (text: string): Partial<Lead>[] => {
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+    if (lines.length < 2) return [];
+
+    // Parse header
+    const header = lines[0]!.split(/[,;]/).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+    
+    // Column mapping
+    const columnMap: Record<string, keyof Lead> = {
+      'ad soyad': 'full_name',
+      'full_name': 'full_name',
+      'isim': 'full_name',
+      'name': 'full_name',
+      'email': 'email',
+      'e-posta': 'email',
+      'telefon': 'phone',
+      'phone': 'phone',
+      'tel': 'phone',
+      'whatsapp': 'whatsapp',
+      'wa': 'whatsapp',
+      'instagram': 'instagram',
+      'ig': 'instagram',
+      'dil': 'language',
+      'language': 'language',
+      'kaynak': 'source',
+      'source': 'source',
+      'ilgi': 'interest',
+      'interest': 'interest',
+      'ilgi alanı': 'interest',
+      'notlar': 'notes',
+      'notes': 'notes',
+      'not': 'notes',
+    };
+
+    const leads: Partial<Lead>[] = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i]!.split(/[,;]/).map(v => v.trim().replace(/^["']|["']$/g, ''));
+      const lead: Partial<Lead> = {};
+      
+      header.forEach((col, index) => {
+        const mappedKey = columnMap[col];
+        if (mappedKey && values[index]) {
+          // Handle language field
+          if (mappedKey === 'language') {
+            const langValue = values[index]!.toLowerCase();
+            (lead as Record<string, string>)[mappedKey] = (langValue === 'en' || langValue === 'english' || langValue === 'ingilizce') ? 'en' : 'tr';
+          } else {
+            (lead as Record<string, string>)[mappedKey] = values[index]!;
+          }
+        }
+      });
+      
+      // Only add if has full_name
+      if (lead.full_name) {
+        leads.push(lead);
+      }
+    }
+    
+    return leads;
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCsvError("");
+    setUploadResult(null);
+    setCsvFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = parseCSV(text);
+        
+        if (parsed.length === 0) {
+          setCsvError("Geçerli lead bulunamadı. 'full_name' veya 'Ad Soyad' sütunu zorunludur.");
+          setCsvData([]);
+        } else {
+          setCsvData(parsed);
+          setShowCsvDialog(true);
+        }
+      } catch (err) {
+        setCsvError("CSV dosyası okunamadı. Lütfen dosya formatını kontrol edin.");
+        setCsvData([]);
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleCsvUpload = async () => {
+    if (csvData.length === 0) return;
+    
+    setIsUploading(true);
+    try {
+      const result = await createLeadsBulk(csvData);
+      setUploadResult(result);
+      
+      if (result.success > 0) {
+        await loadLeads();
+      }
+    } catch (error) {
+      console.error("Error uploading CSV:", error);
+      setUploadResult({ success: 0, failed: csvData.length, errors: ["Beklenmeyen bir hata oluştu"] });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const closeCsvDialog = () => {
+    setShowCsvDialog(false);
+    setCsvData([]);
+    setCsvFileName("");
+    setCsvError("");
+    setUploadResult(null);
+  };
+
   const openEditDialog = (lead: Lead) => {
     setSelectedLead(lead);
     setFormData(lead);
@@ -243,6 +380,17 @@ export default function LeadsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="w-4 h-4 mr-2" />
+            CSV Yükle
+          </Button>
           <Button onClick={() => { resetForm(); setShowAddDialog(true); }}>
             <Plus className="w-4 h-4 mr-2" />
             Yeni Lead
@@ -574,6 +722,120 @@ export default function LeadsPage() {
               {isSaving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}
               Sil
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV Upload Dialog */}
+      <Dialog open={showCsvDialog} onOpenChange={(open) => !open && closeCsvDialog()}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5" />
+              CSV Dosyasından Lead Yükle
+            </DialogTitle>
+            <DialogDescription>
+              {csvFileName && <span className="text-primary font-medium">{csvFileName}</span>} dosyasından {csvData.length} lead bulundu.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!uploadResult ? (
+            <>
+              {/* Preview Table */}
+              <div className="max-h-[400px] overflow-auto border rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">#</th>
+                      <th className="px-3 py-2 text-left font-medium">Ad Soyad</th>
+                      <th className="px-3 py-2 text-left font-medium">Email</th>
+                      <th className="px-3 py-2 text-left font-medium">Telefon</th>
+                      <th className="px-3 py-2 text-left font-medium">Dil</th>
+                      <th className="px-3 py-2 text-left font-medium">Kaynak</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {csvData.slice(0, 10).map((lead, index) => (
+                      <tr key={index} className="border-t dark:border-gray-700">
+                        <td className="px-3 py-2 text-gray-500">{index + 1}</td>
+                        <td className="px-3 py-2 font-medium">{lead.full_name}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{lead.email || "-"}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{lead.phone || "-"}</td>
+                        <td className="px-3 py-2">{lead.language === 'en' ? '🇬🇧' : '🇹🇷'}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{lead.source || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {csvData.length > 10 && (
+                  <div className="px-3 py-2 text-center text-sm text-gray-500 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                    ... ve {csvData.length - 10} lead daha
+                  </div>
+                )}
+              </div>
+
+              {/* Format Info */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
+                <p className="font-medium text-blue-700 dark:text-blue-400 mb-1">📝 Desteklenen Sütunlar:</p>
+                <p className="text-blue-600 dark:text-blue-300">
+                  Ad Soyad*, Email, Telefon, WhatsApp, Instagram, Dil (tr/en), Kaynak, İlgi Alanı, Notlar
+                </p>
+                <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">* Zorunlu alan</p>
+              </div>
+            </>
+          ) : (
+            /* Upload Result */
+            <div className="py-6">
+              {uploadResult.success > 0 ? (
+                <div className="text-center">
+                  <CheckCircle2 className="w-16 h-16 mx-auto text-green-500 mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Yükleme Tamamlandı!
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    <span className="font-bold text-green-600">{uploadResult.success}</span> lead başarıyla eklendi.
+                    {uploadResult.failed > 0 && (
+                      <span className="text-red-500"> ({uploadResult.failed} başarısız)</span>
+                    )}
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Yükleme Başarısız
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-3">
+                    Lead&apos;ler eklenirken bir hata oluştu.
+                  </p>
+                  {uploadResult.errors.length > 0 && (
+                    <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
+                      {uploadResult.errors.map((err, i) => (
+                        <p key={i}>{err}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {!uploadResult ? (
+              <>
+                <Button variant="outline" onClick={closeCsvDialog}>
+                  İptal
+                </Button>
+                <Button onClick={handleCsvUpload} disabled={isUploading || csvData.length === 0}>
+                  {isUploading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                  {csvData.length} Lead Yükle
+                </Button>
+              </>
+            ) : (
+              <Button onClick={closeCsvDialog}>
+                Kapat
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

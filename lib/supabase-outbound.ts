@@ -115,6 +115,44 @@ export async function deleteLead(id: string): Promise<boolean> {
   return true;
 }
 
+export async function createLeadsBulk(leads: Partial<Lead>[]): Promise<{ success: number; failed: number; errors: string[] }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: 0, failed: leads.length, errors: ['Kullanıcı oturumu bulunamadı'] };
+
+  const results = { success: 0, failed: 0, errors: [] as string[] };
+
+  // Add user_id to all leads
+  const leadsWithUser = leads.map(lead => ({
+    ...lead,
+    user_id: user.id,
+    status: lead.status || 'new',
+    priority: lead.priority || 'medium',
+    language: lead.language || 'tr',
+  }));
+
+  // Insert in batches of 100
+  const batchSize = 100;
+  for (let i = 0; i < leadsWithUser.length; i += batchSize) {
+    const batch = leadsWithUser.slice(i, i + batchSize);
+    
+    const { data, error } = await supabase
+      .from('leads')
+      .insert(batch as never[])
+      .select();
+
+    if (error) {
+      console.error('Error creating leads batch:', error);
+      results.failed += batch.length;
+      results.errors.push(`Batch ${Math.floor(i / batchSize) + 1}: ${error.message}`);
+    } else {
+      results.success += data?.length || 0;
+      results.failed += batch.length - (data?.length || 0);
+    }
+  }
+
+  return results;
+}
+
 export async function getTodaysLeads(): Promise<Lead[]> {
   const { data, error } = await supabase
     .from('leads')
