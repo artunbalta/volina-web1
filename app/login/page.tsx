@@ -13,7 +13,7 @@ import Link from "next/link";
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signIn, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { signIn, isAuthenticated, isLoading: authLoading, user } = useAuth();
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,9 +40,14 @@ function LoginContent() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
-      router.push("/dashboard");
+      // Redirect based on dashboard_type
+      if (user?.dashboard_type === 'outbound') {
+        router.push("/dashboard/outbound");
+      } else {
+        router.push("/dashboard");
+      }
     }
-  }, [isAuthenticated, authLoading, router]);
+  }, [isAuthenticated, authLoading, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,8 +63,7 @@ function LoginContent() {
         return;
       }
 
-      // Redirect to dashboard on success
-      router.push("/dashboard");
+      // Redirect will happen via useEffect when user data loads
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);

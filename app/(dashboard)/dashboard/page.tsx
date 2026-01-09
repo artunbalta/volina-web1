@@ -70,6 +70,13 @@ export default function DashboardPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
+  // Redirect outbound users to their dashboard
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && user?.dashboard_type === 'outbound') {
+      router.push("/dashboard/outbound");
+    }
+  }, [authLoading, isAuthenticated, user, router]);
+
   const loadData = useCallback(async () => {
     try {
       // Fetch call stats

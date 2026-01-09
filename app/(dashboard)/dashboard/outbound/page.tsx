@@ -72,6 +72,13 @@ export default function OutboundDashboard() {
     }
   }, [authLoading, isAuthenticated, router]);
 
+  // Redirect inbound users to their dashboard
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && user?.dashboard_type === 'inbound') {
+      router.push("/dashboard");
+    }
+  }, [authLoading, isAuthenticated, user, router]);
+
   const loadData = useCallback(async () => {
     try {
       const [statsData, leadsData, channelData] = await Promise.all([
