@@ -88,6 +88,7 @@ export default function CallsPage() {
   const [callResult, setCallResult] = useState<OutreachResult | "">("");
   const [callNotes, setCallNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [executingCallId, setExecutingCallId] = useState<string | null>(null);
 
   const loadCalls = useCallback(async () => {
     try {
@@ -142,6 +143,40 @@ export default function CallsPage() {
     }
   };
 
+  // Execute call via VAPI
+  const handleExecuteCall = async (call: Outreach) => {
+    if (!user) return;
+    setExecutingCallId(call.id);
+    
+    try {
+      const response = await fetch("/api/outreach/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outreach_id: call.id,
+          user_id: user.id,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Call initiated - refresh the list
+        await loadCalls();
+      } else {
+        // Show error - VAPI not configured
+        console.log("Call not executed:", data.message);
+        // Open result dialog for manual entry
+        openResultDialog(call);
+      }
+    } catch (error) {
+      console.error("Error executing call:", error);
+      openResultDialog(call);
+    } finally {
+      setExecutingCallId(null);
+    }
+  };
+
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -158,7 +193,8 @@ export default function CallsPage() {
 
   // Outbound Dashboard - Call Queue View
   if (dashboardType === 'outbound') {
-    const pendingCalls = outreachCalls.filter(c => c.status === 'pending');
+    // Include both 'pending' and 'scheduled' as pending calls
+    const pendingCalls = outreachCalls.filter(c => c.status === 'pending' || c.status === 'scheduled');
     const completedCalls = outreachCalls.filter(c => c.status === 'completed');
 
     return (
@@ -255,12 +291,31 @@ export default function CallsPage() {
                         <p className="text-sm text-gray-500">
                           {call.lead?.phone || call.lead?.whatsapp || "Numara yok"}
                         </p>
+                        {call.notes && (
+                          <p className="text-xs text-gray-400 mt-1">{call.notes}</p>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-gray-500">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500 mr-2">
                         {call.scheduled_for ? format(new Date(call.scheduled_for), "HH:mm", { locale: tr }) : "-"}
                       </span>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleExecuteCall(call)}
+                        disabled={executingCallId === call.id}
+                        className="text-green-600 border-green-200 hover:bg-green-50"
+                      >
+                        {executingCallId === call.id ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 mr-1" />
+                            Ara
+                          </>
+                        )}
+                      </Button>
                       <Button size="sm" onClick={() => openResultDialog(call)}>
                         <Phone className="w-4 h-4 mr-2" />
                         Sonuç Gir

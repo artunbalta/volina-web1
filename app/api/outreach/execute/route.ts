@@ -1,0 +1,375 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// VAPI Configuration (to be set in environment variables)
+const VAPI_API_KEY = process.env.VAPI_API_KEY;
+const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
+const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID;
+
+interface Lead {
+  id: string;
+  full_name: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  language: string;
+}
+
+interface Outreach {
+  id: string;
+  lead_id: string;
+  channel: string;
+  scheduled_for: string;
+  status: string;
+  lead?: Lead;
+}
+
+// Execute a single outreach (call, message, etc.)
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { outreach_id, user_id } = body;
+
+    if (!outreach_id) {
+      return NextResponse.json(
+        { error: "outreach_id is required" },
+        { status: 400 }
+      );
+    }
+
+    // Get outreach with lead data
+    const { data: outreach, error: outreachError } = await supabase
+      .from("outreach")
+      .select("*, lead:leads(*)")
+      .eq("id", outreach_id)
+      .single();
+
+    if (outreachError || !outreach) {
+      return NextResponse.json(
+        { error: "Outreach not found" },
+        { status: 404 }
+      );
+    }
+
+    const typedOutreach = outreach as Outreach;
+    const lead = typedOutreach.lead;
+
+    if (!lead) {
+      return NextResponse.json(
+        { error: "Lead not found for this outreach" },
+        { status: 404 }
+      );
+    }
+
+    // Mark as in progress
+    await supabase
+      .from("outreach")
+      .update({ status: "in_progress" } as never)
+      .eq("id", outreach_id);
+
+    let result: {
+      success: boolean;
+      message: string;
+      vapi_call_id?: string;
+      error?: string;
+    };
+
+    // Execute based on channel
+    switch (typedOutreach.channel) {
+      case "call":
+        result = await executeCall(lead, outreach_id);
+        break;
+      case "whatsapp":
+        result = await executeWhatsApp(lead, outreach_id);
+        break;
+      case "email":
+        result = await executeEmail(lead, outreach_id);
+        break;
+      case "sms":
+        result = await executeSMS(lead, outreach_id);
+        break;
+      case "instagram_dm":
+        result = await executeInstagramDM(lead, outreach_id);
+        break;
+      default:
+        result = { success: false, message: "Unknown channel", error: "Unknown channel type" };
+    }
+
+    // Update outreach status based on result
+    const updateData: Record<string, string | undefined> = {
+      status: result.success ? "completed" : "failed",
+      completed_at: result.success ? new Date().toISOString() : undefined,
+      notes: result.message,
+    };
+
+    if (result.vapi_call_id) {
+      updateData.vapi_call_id = result.vapi_call_id;
+    }
+
+    await supabase
+      .from("outreach")
+      .update(updateData as never)
+      .eq("id", outreach_id);
+
+    // If successful call, update lead status
+    if (result.success && typedOutreach.channel === "call") {
+      await supabase
+        .from("leads")
+        .update({ 
+          status: "contacted",
+          last_contact_date: new Date().toISOString(),
+          contact_attempts: (lead as Lead & { contact_attempts?: number }).contact_attempts 
+            ? ((lead as Lead & { contact_attempts?: number }).contact_attempts || 0) + 1 
+            : 1
+        } as never)
+        .eq("id", lead.id);
+    }
+
+    return NextResponse.json({
+      success: result.success,
+      message: result.message,
+      outreach_id,
+      channel: typedOutreach.channel,
+      vapi_call_id: result.vapi_call_id,
+    });
+
+  } catch (error) {
+    console.error("Error executing outreach:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// Execute a phone call via VAPI
+async function executeCall(lead: Lead, outreach_id: string): Promise<{
+  success: boolean;
+  message: string;
+  vapi_call_id?: string;
+  error?: string;
+}> {
+  // Check if VAPI is configured
+  if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID || !VAPI_PHONE_NUMBER_ID) {
+    console.log("VAPI not configured. Call would be made to:", lead.phone);
+    return {
+      success: false,
+      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen VAPI_API_KEY, VAPI_ASSISTANT_ID ve VAPI_PHONE_NUMBER_ID environment variable'larını ayarlayın.",
+      error: "VAPI not configured"
+    };
+  }
+
+  if (!lead.phone) {
+    return {
+      success: false,
+      message: "Lead'in telefon numarası yok",
+      error: "No phone number"
+    };
+  }
+
+  try {
+    // Make VAPI call
+    const response = await fetch("https://api.vapi.ai/call/phone", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${VAPI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assistantId: VAPI_ASSISTANT_ID,
+        phoneNumberId: VAPI_PHONE_NUMBER_ID,
+        customer: {
+          number: lead.phone,
+          name: lead.full_name,
+        },
+        metadata: {
+          lead_id: lead.id,
+          outreach_id: outreach_id,
+          language: lead.language || "tr",
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("VAPI call error:", errorData);
+      return {
+        success: false,
+        message: `VAPI arama başarısız: ${errorData.message || response.statusText}`,
+        error: errorData.message || response.statusText
+      };
+    }
+
+    const callData = await response.json();
+    
+    return {
+      success: true,
+      message: `Arama başlatıldı: ${lead.full_name} (${lead.phone})`,
+      vapi_call_id: callData.id
+    };
+
+  } catch (error) {
+    console.error("VAPI call exception:", error);
+    return {
+      success: false,
+      message: "VAPI bağlantı hatası",
+      error: String(error)
+    };
+  }
+}
+
+// Execute WhatsApp message (placeholder)
+async function executeWhatsApp(lead: Lead, outreach_id: string): Promise<{
+  success: boolean;
+  message: string;
+  error?: string;
+}> {
+  const whatsappNumber = lead.whatsapp || lead.phone;
+  
+  if (!whatsappNumber) {
+    return {
+      success: false,
+      message: "Lead'in WhatsApp numarası yok",
+      error: "No WhatsApp number"
+    };
+  }
+
+  // TODO: Implement WhatsApp Business API integration
+  console.log("WhatsApp message would be sent to:", whatsappNumber);
+  
+  return {
+    success: false,
+    message: "WhatsApp Business API entegrasyonu yapılandırılmamış",
+    error: "WhatsApp API not configured"
+  };
+}
+
+// Execute Email (placeholder)
+async function executeEmail(lead: Lead, outreach_id: string): Promise<{
+  success: boolean;
+  message: string;
+  error?: string;
+}> {
+  if (!lead.email) {
+    return {
+      success: false,
+      message: "Lead'in email adresi yok",
+      error: "No email address"
+    };
+  }
+
+  // TODO: Implement email service (SendGrid, Resend, etc.)
+  console.log("Email would be sent to:", lead.email);
+  
+  return {
+    success: false,
+    message: "Email servisi yapılandırılmamış",
+    error: "Email service not configured"
+  };
+}
+
+// Execute SMS (placeholder)
+async function executeSMS(lead: Lead, outreach_id: string): Promise<{
+  success: boolean;
+  message: string;
+  error?: string;
+}> {
+  if (!lead.phone) {
+    return {
+      success: false,
+      message: "Lead'in telefon numarası yok",
+      error: "No phone number"
+    };
+  }
+
+  // TODO: Implement SMS service (Twilio, etc.)
+  console.log("SMS would be sent to:", lead.phone);
+  
+  return {
+    success: false,
+    message: "SMS servisi yapılandırılmamış",
+    error: "SMS service not configured"
+  };
+}
+
+// Execute Instagram DM (placeholder)
+async function executeInstagramDM(lead: Lead, outreach_id: string): Promise<{
+  success: boolean;
+  message: string;
+  error?: string;
+}> {
+  const instagram = (lead as Lead & { instagram?: string }).instagram;
+  
+  if (!instagram) {
+    return {
+      success: false,
+      message: "Lead'in Instagram hesabı yok",
+      error: "No Instagram handle"
+    };
+  }
+
+  // TODO: Implement Instagram API integration
+  console.log("Instagram DM would be sent to:", instagram);
+  
+  return {
+    success: false,
+    message: "Instagram API entegrasyonu yapılandırılmamış",
+    error: "Instagram API not configured"
+  };
+}
+
+// Bulk execute today's scheduled outreach
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const user_id = searchParams.get("user_id");
+  const channel = searchParams.get("channel"); // optional filter
+
+  if (!user_id) {
+    return NextResponse.json(
+      { error: "user_id is required" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const now = new Date();
+    const today = now.toISOString().split("T")[0];
+
+    // Get today's scheduled outreach
+    let query = supabase
+      .from("outreach")
+      .select("id, channel, scheduled_for, status, lead:leads(full_name, phone)")
+      .eq("user_id", user_id)
+      .eq("status", "scheduled")
+      .gte("scheduled_for", `${today}T00:00:00`)
+      .lte("scheduled_for", `${today}T23:59:59`)
+      .order("scheduled_for", { ascending: true });
+
+    if (channel) {
+      query = query.eq("channel", channel);
+    }
+
+    const { data: outreachList, error } = await query;
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      today: today,
+      total: outreachList?.length || 0,
+      outreach: outreachList || [],
+    });
+  } catch (error) {
+    console.error("Error getting scheduled outreach:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
