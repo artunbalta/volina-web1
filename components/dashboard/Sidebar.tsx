@@ -14,16 +14,22 @@ import {
   User,
   Moon,
   Sun,
-  Loader2
+  Loader2,
+  Users,
+  PhoneOutgoing,
+  MessageSquare,
+  BarChart3,
+  Target
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 
-const navItems = [
+// Inbound dashboard navigation (existing)
+const inboundNavItems = [
   {
     label: "Dashboard",
     href: "/dashboard",
@@ -41,6 +47,35 @@ const navItems = [
   },
 ];
 
+// Outbound dashboard navigation (new - for Smile and Holiday)
+const outboundNavItems = [
+  {
+    label: "Dashboard",
+    href: "/dashboard/outbound",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Leads",
+    href: "/dashboard/outbound/leads",
+    icon: Users,
+  },
+  {
+    label: "Aramalar",
+    href: "/dashboard/outbound/calls",
+    icon: PhoneOutgoing,
+  },
+  {
+    label: "Mesajlar",
+    href: "/dashboard/outbound/messages",
+    icon: MessageSquare,
+  },
+  {
+    label: "Analytics",
+    href: "/dashboard/outbound/analytics",
+    icon: BarChart3,
+  },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -48,6 +83,13 @@ export function Sidebar() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { user, signOut } = useAuth();
+  
+  // Determine if we're in outbound dashboard based on path or user preference
+  const isOutbound = useMemo(() => {
+    return pathname.includes('/outbound');
+  }, [pathname]);
+  
+  const navItems = isOutbound ? outboundNavItems : inboundNavItems;
 
   const handleLogout = async () => {
     setIsLoggingOut(true);

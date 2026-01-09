@@ -72,11 +72,13 @@ export interface Profile {
   avatar_url: string | null;
   role: UserRole;
   vapi_org_id?: string | null;
+  dashboard_type?: DashboardType;
   created_at: string;
   updated_at: string;
 }
 
 export type UserRole = 'admin' | 'user' | 'viewer';
+export type DashboardType = 'inbound' | 'outbound';
 
 // API Types
 export interface VapiWebhookPayload {
