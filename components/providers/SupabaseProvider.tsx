@@ -5,6 +5,25 @@ import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/lib/types";
 import type { User, Session, AuthError } from "@supabase/supabase-js";
 
+// Generate slug from email
+function generateSlugFromEmail(email: string): string {
+  const atIndex = email.indexOf('@');
+  if (atIndex === -1) return email.toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  const domain = email.substring(atIndex + 1).split('.')[0];
+  const username = email.substring(0, atIndex);
+  
+  // For business emails, use domain (e.g., info@smileandholiday.com → smileandholiday)
+  // For personal emails (gmail, hotmail, etc.), use username
+  const personalDomains = ['gmail', 'hotmail', 'yahoo', 'outlook', 'icloud', 'mail', 'protonmail'];
+  
+  if (personalDomains.includes(domain?.toLowerCase() || '')) {
+    return username.toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+  
+  return (domain || username).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 interface AuthContextType {
   user: Profile | null;
   session: Session | null;
@@ -25,7 +44,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   // Fetch user profile from profiles table
   const fetchProfile = useCallback(async (authUser: User) => {
     try {
-      const { data: profile, error } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
@@ -34,16 +53,36 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (error) {
         console.error("Error fetching profile:", error);
         // If profile doesn't exist, create a basic one from auth user
+        const email = authUser.email || "";
+        const generatedSlug = generateSlugFromEmail(email);
         setUser({
           id: authUser.id,
-          email: authUser.email || "",
+          email: email,
           full_name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "User",
           avatar_url: authUser.user_metadata?.avatar_url || null,
           role: "user",
+          slug: generatedSlug,
           created_at: authUser.created_at,
           updated_at: authUser.updated_at || authUser.created_at,
         });
         return;
+      }
+
+      // Cast to Profile type
+      const profile = data as Profile;
+      
+      // If profile exists but has no slug, generate one
+      if (profile && !profile.slug && authUser.email) {
+        const generatedSlug = generateSlugFromEmail(authUser.email);
+        // Update the profile with the generated slug
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update({ slug: generatedSlug } as never)
+          .eq("id", authUser.id);
+        
+        if (!updateError) {
+          profile.slug = generatedSlug;
+        }
       }
 
       setUser(profile);

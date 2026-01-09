@@ -354,7 +354,7 @@ export default function LeadsPage() {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm">{sourceLabels[lead.source]}</span>
+                          <span className="text-sm">{lead.source ? sourceLabels[lead.source] || lead.source : "-"}</span>
                           <span className="text-lg">{lead.language === 'tr' ? '🇹🇷' : '🇬🇧'}</span>
                         </div>
                       </td>
@@ -488,8 +488,8 @@ export default function LeadsPage() {
               <div>
                 <Label>Kaynak</Label>
                 <select
-                  value={newLead.source}
-                  onChange={(e) => setNewLead({ ...newLead, source: e.target.value as Lead["source"] })}
+                  value={newLead.source || "other"}
+                  onChange={(e) => setNewLead({ ...newLead, source: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 dark:border-gray-700"
                 >
                   {Object.entries(sourceLabels).map(([key, label]) => (
@@ -601,7 +601,7 @@ export default function LeadsPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg text-center">
                   <p className="text-sm text-gray-500 mb-1">Kaynak</p>
-                  <p className="font-medium">{sourceLabels[selectedLead.source]}</p>
+                  <p className="font-medium">{selectedLead.source ? (sourceLabels[selectedLead.source] || selectedLead.source) : "-"}</p>
                 </div>
                 <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg text-center">
                   <p className="text-sm text-gray-500 mb-1">İletişim Denemesi</p>

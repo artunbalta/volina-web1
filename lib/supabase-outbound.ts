@@ -645,3 +645,233 @@ export function subscribeToOutreach(callback: (payload: { eventType: string; new
     })
     .subscribe();
 }
+
+// ===========================================
+// MESSAGES
+// ===========================================
+
+import type { Message, OutreachChannel, AnalyticsData } from './types-outbound';
+
+export async function getMessages(channel?: OutreachChannel): Promise<Message[]> {
+  let query = supabase
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (channel) {
+    query = query.eq('channel', channel);
+  }
+
+  const { data, error } = await query.limit(50);
+
+  if (error) {
+    console.error('Error fetching messages:', error);
+    return [];
+  }
+
+  return data as Message[];
+}
+
+export async function sendMessage(message: {
+  channel: OutreachChannel;
+  recipient: string;
+  subject?: string;
+  content: string;
+  lead_id?: string;
+}): Promise<Message | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      user_id: user.id,
+      channel: message.channel,
+      recipient: message.recipient,
+      subject: message.subject,
+      content: message.content,
+      lead_id: message.lead_id,
+      direction: 'outbound',
+      status: 'sent',
+    } as never)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error sending message:', error);
+    return null;
+  }
+
+  return data as Message;
+}
+
+// ===========================================
+// CALLS
+// ===========================================
+
+export async function getTodaysCalls(): Promise<Outreach[]> {
+  const today = new Date().toISOString().split('T')[0];
+  
+  const { data, error } = await supabase
+    .from('outreach')
+    .select('*, lead:leads(*)')
+    .eq('channel', 'call')
+    .gte('scheduled_for', `${today}T00:00:00`)
+    .lte('scheduled_for', `${today}T23:59:59`)
+    .order('scheduled_for', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching today\'s calls:', error);
+    return [];
+  }
+
+  return data as Outreach[];
+}
+
+export async function getOutreachHistory(leadId: string): Promise<Outreach[]> {
+  const { data, error } = await supabase
+    .from('outreach')
+    .select('*')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching outreach history:', error);
+    return [];
+  }
+
+  return data as Outreach[];
+}
+
+// ===========================================
+// ANALYTICS
+// ===========================================
+
+export async function getAnalytics(startDate: Date, endDate: Date): Promise<AnalyticsData> {
+  const defaultAnalytics: AnalyticsData = {
+    total_leads: 0,
+    contacted_leads: 0,
+    interested_leads: 0,
+    appointments_set: 0,
+    converted_leads: 0,
+    unreachable_leads: 0,
+    conversion_rate: 0,
+    conversion_change: 0,
+    avg_call_duration: 0,
+    reachability_rate: 0,
+    total_calls: 0,
+    total_messages: 0,
+    avg_response_time: 0,
+    channel_performance: [],
+    best_call_times: [],
+    language_performance: { tr: 0, en: 0 },
+  };
+
+  try {
+    // Get lead stats
+    const { data: leads } = await supabase
+      .from('leads')
+      .select('status, language, created_at')
+      .gte('created_at', startDate.toISOString())
+      .lte('created_at', endDate.toISOString());
+
+    if (leads) {
+      const leadsData = leads as { status: string; language: string; created_at: string }[];
+      defaultAnalytics.total_leads = leadsData.length;
+      
+      leadsData.forEach(lead => {
+        switch (lead.status) {
+          case 'contacted': defaultAnalytics.contacted_leads++; break;
+          case 'interested': defaultAnalytics.interested_leads++; break;
+          case 'appointment_set': defaultAnalytics.appointments_set++; break;
+          case 'converted': defaultAnalytics.converted_leads++; break;
+          case 'unreachable': defaultAnalytics.unreachable_leads++; break;
+        }
+      });
+
+      if (defaultAnalytics.total_leads > 0) {
+        defaultAnalytics.conversion_rate = Math.round((defaultAnalytics.converted_leads / defaultAnalytics.total_leads) * 100);
+      }
+    }
+
+    // Get outreach stats
+    const { data: outreach } = await supabase
+      .from('outreach')
+      .select('channel, result, duration, status, scheduled_for')
+      .gte('created_at', startDate.toISOString())
+      .lte('created_at', endDate.toISOString());
+
+    if (outreach) {
+      const outreachData = outreach as { channel: string; result: string | null; duration: number | null; status: string; scheduled_for: string }[];
+      const calls = outreachData.filter(o => o.channel === 'call');
+      defaultAnalytics.total_calls = calls.length;
+      defaultAnalytics.total_messages = outreachData.filter(o => o.channel !== 'call').length;
+
+      // Calculate avg call duration
+      const completedCalls = calls.filter(c => c.status === 'completed' && c.duration);
+      if (completedCalls.length > 0) {
+        defaultAnalytics.avg_call_duration = Math.round(
+          completedCalls.reduce((sum, c) => sum + (c.duration || 0), 0) / completedCalls.length
+        );
+      }
+
+      // Calculate reachability rate
+      const answeredCalls = calls.filter(c => c.result?.includes('answered'));
+      if (calls.length > 0) {
+        defaultAnalytics.reachability_rate = Math.round((answeredCalls.length / calls.length) * 100);
+      }
+
+      // Calculate channel performance
+      const channelMap: Record<string, { attempts: number; successes: number }> = {};
+      outreachData.forEach(o => {
+        if (!channelMap[o.channel]) {
+          channelMap[o.channel] = { attempts: 0, successes: 0 };
+        }
+        const stats = channelMap[o.channel];
+        if (stats) {
+          stats.attempts++;
+          if (o.result?.includes('interested') || o.result?.includes('appointment')) {
+            stats.successes++;
+          }
+        }
+      });
+
+      defaultAnalytics.channel_performance = Object.entries(channelMap).map(([channel, stats]) => ({
+        channel,
+        attempts: stats.attempts,
+        successes: stats.successes,
+        conversion_rate: stats.attempts > 0 ? Math.round((stats.successes / stats.attempts) * 100) : 0,
+        success_rate: stats.attempts > 0 ? Math.round((stats.successes / stats.attempts) * 100) : 0,
+      }));
+
+      // Calculate best call times
+      const hourMap: Record<number, { total: number; success: number }> = {};
+      calls.forEach(c => {
+        const hour = new Date(c.scheduled_for).getHours();
+        if (!hourMap[hour]) {
+          hourMap[hour] = { total: 0, success: 0 };
+        }
+        const stats = hourMap[hour];
+        if (stats) {
+          stats.total++;
+          if (c.result?.includes('answered') || c.result?.includes('interested')) {
+            stats.success++;
+          }
+        }
+      });
+
+      defaultAnalytics.best_call_times = Object.entries(hourMap)
+        .map(([hour, stats]) => ({
+          hour: parseInt(hour),
+          success_rate: stats.total > 0 ? Math.round((stats.success / stats.total) * 100) : 0,
+        }))
+        .sort((a, b) => b.success_rate - a.success_rate)
+        .slice(0, 8);
+    }
+
+    return defaultAnalytics;
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    return defaultAnalytics;
+  }
+}

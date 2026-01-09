@@ -15,7 +15,8 @@ export interface Lead {
   
   // Details
   language: 'tr' | 'en';
-  source: 'web_form' | 'instagram' | 'referral' | 'facebook' | 'google_ads' | 'other';
+  source: string | null;
+  interest: string | null;
   treatment_interest: string | null;
   notes: string | null;
   
@@ -144,19 +145,27 @@ export interface MessageTemplate {
 export interface AISettings {
   id: string;
   user_id: string;
-  company_name: string;
+  company_name?: string;
   agent_name: string;
-  opening_script_tr: string;
-  opening_script_en: string;
-  announce_ai: boolean;
-  persistence_level: 'low' | 'medium' | 'high';
-  curiosity_questions: string[];
-  primary_goal: string;
-  call_hours_start: string;
-  call_hours_end: string;
-  call_days: string[];
-  vapi_assistant_id: string | null;
-  vapi_phone_number: string | null;
+  opening_script_tr?: string;
+  opening_script_en?: string;
+  announce_ai?: boolean;
+  persistence_level?: 'low' | 'medium' | 'high';
+  curiosity_questions?: string[];
+  curiosity_questions_tr?: string[];
+  curiosity_questions_en?: string[];
+  primary_goal?: string;
+  goal_description_tr?: string;
+  goal_description_en?: string;
+  negative_response_handling_tr?: string;
+  negative_response_handling_en?: string;
+  max_unreachable_attempts?: number;
+  unreachable_timeout_days?: number;
+  call_hours_start?: string;
+  call_hours_end?: string;
+  call_days?: string[];
+  vapi_assistant_id?: string | null;
+  vapi_phone_number?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -208,4 +217,48 @@ export interface ChannelPerformance {
   attempts: number;
   successes: number;
   conversion_rate: number;
+  success_rate: number;
+}
+
+// Messages
+export interface Message {
+  id: string;
+  user_id: string;
+  lead_id: string | null;
+  channel: OutreachChannel;
+  direction: 'outbound' | 'inbound';
+  recipient: string;
+  subject: string | null;
+  content: string;
+  status: 'pending' | 'sent' | 'delivered' | 'failed';
+  read_at: string | null;
+  replied_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Types
+export type LeadStatus = 'new' | 'contacted' | 'interested' | 'appointment_set' | 'converted' | 'lost' | 'unreachable';
+export type LeadLanguage = 'tr' | 'en';
+export type LeadPriority = 'high' | 'medium' | 'low';
+export type OutreachChannel = 'call' | 'whatsapp' | 'email' | 'sms' | 'instagram_dm';
+
+// Analytics Data
+export interface AnalyticsData {
+  total_leads: number;
+  contacted_leads: number;
+  interested_leads: number;
+  appointments_set: number;
+  converted_leads: number;
+  unreachable_leads: number;
+  conversion_rate: number;
+  conversion_change: number;
+  avg_call_duration: number;
+  reachability_rate: number;
+  total_calls: number;
+  total_messages: number;
+  avg_response_time: number;
+  channel_performance: ChannelPerformance[];
+  best_call_times: { hour: number; success_rate: number }[];
+  language_performance: { tr: number; en: number };
 }

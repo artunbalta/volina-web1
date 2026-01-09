@@ -16,18 +16,46 @@ CREATE TABLE IF NOT EXISTS profiles (
     avatar_url TEXT,
     role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user', 'viewer')),
     vapi_org_id TEXT, -- Link to Vapi organization for webhook routing
+    slug TEXT UNIQUE, -- URL slug for multi-tenant routing (e.g., 'smileandholiday')
+    dashboard_type TEXT DEFAULT 'inbound' CHECK (dashboard_type IN ('inbound', 'outbound')),
+    company_name TEXT, -- Company/business name
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Add vapi_org_id column if it doesn't exist (for existing tables)
+-- Add columns if they don't exist (for existing tables)
 DO $$
 BEGIN
+    -- vapi_org_id
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'vapi_org_id'
     ) THEN
         ALTER TABLE profiles ADD COLUMN vapi_org_id TEXT;
+    END IF;
+    
+    -- slug (unique URL identifier)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'slug'
+    ) THEN
+        ALTER TABLE profiles ADD COLUMN slug TEXT UNIQUE;
+    END IF;
+    
+    -- dashboard_type
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'dashboard_type'
+    ) THEN
+        ALTER TABLE profiles ADD COLUMN dashboard_type TEXT DEFAULT 'inbound' CHECK (dashboard_type IN ('inbound', 'outbound'));
+    END IF;
+    
+    -- company_name
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'company_name'
+    ) THEN
+        ALTER TABLE profiles ADD COLUMN company_name TEXT;
     END IF;
 END $$;
 

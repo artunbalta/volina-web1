@@ -37,13 +37,19 @@ function LoginContent() {
     }
   }, [searchParams]);
 
-  // Redirect if already authenticated based on dashboard type
+  // Redirect if already authenticated - use tenant slug if available
   useEffect(() => {
     if (isAuthenticated && !authLoading && user) {
-      const redirectPath = user.dashboard_type === 'outbound' 
-        ? "/dashboard/outbound" 
-        : "/dashboard";
-      router.push(redirectPath);
+      // If user has a slug, redirect to their tenant dashboard
+      if (user.slug) {
+        router.push(`/${user.slug}`);
+      } else {
+        // Fallback to old routes if no slug
+        const redirectPath = user.dashboard_type === 'outbound' 
+          ? "/dashboard/outbound" 
+          : "/dashboard";
+        router.push(redirectPath);
+      }
     }
   }, [isAuthenticated, authLoading, user, router]);
 
