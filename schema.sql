@@ -73,7 +73,7 @@ EXCEPTION
     WHEN OTHERS THEN
         -- Log error but don't fail user creation
         RAISE WARNING 'Error creating profile for user %: %', NEW.id, SQLERRM;
-        RETURN NEW;
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -416,7 +416,7 @@ END $$;
 
 DO $$
 BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE calls;
+ALTER PUBLICATION supabase_realtime ADD TABLE calls;
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;

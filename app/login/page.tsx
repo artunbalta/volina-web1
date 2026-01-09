@@ -37,15 +37,13 @@ function LoginContent() {
     }
   }, [searchParams]);
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated based on dashboard type
   useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      // Redirect based on dashboard_type
-      if (user?.dashboard_type === 'outbound') {
-        router.push("/dashboard/outbound");
-      } else {
-        router.push("/dashboard");
-      }
+    if (isAuthenticated && !authLoading && user) {
+      const redirectPath = user.dashboard_type === 'outbound' 
+        ? "/dashboard/outbound" 
+        : "/dashboard";
+      router.push(redirectPath);
     }
   }, [isAuthenticated, authLoading, user, router]);
 
@@ -63,7 +61,8 @@ function LoginContent() {
         return;
       }
 
-      // Redirect will happen via useEffect when user data loads
+      // Redirect will be handled by useEffect based on user's dashboard_type
+      // Don't set isLoading to false - let the redirect happen
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
