@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { getCalls } from "@/lib/supabase";
-import { getTodaysCalls, updateOutreach, getOutreachHistory } from "@/lib/supabase-outbound";
+import { getTodaysOutreach, updateOutreach, getOutreachHistory } from "@/lib/supabase-outbound";
 import type { Call } from "@/lib/types";
 import type { Outreach, OutreachResult } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
@@ -49,8 +49,19 @@ import {
   Calendar,
   User,
   Play,
-  Filter
+  Filter,
+  MessageSquare,
+  Mail,
+  Instagram
 } from "lucide-react";
+
+const channelConfig: Record<string, { label: string; icon: typeof Phone; color: string }> = {
+  call: { label: "Arama", icon: Phone, color: "bg-blue-100 text-blue-600" },
+  whatsapp: { label: "WhatsApp", icon: MessageSquare, color: "bg-green-100 text-green-600" },
+  email: { label: "Email", icon: Mail, color: "bg-purple-100 text-purple-600" },
+  instagram_dm: { label: "Instagram", icon: Instagram, color: "bg-pink-100 text-pink-600" },
+  sms: { label: "SMS", icon: Phone, color: "bg-orange-100 text-orange-600" },
+};
 import { format, formatDistanceToNow } from "date-fns";
 import { tr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -93,7 +104,7 @@ export default function CallsPage() {
   const loadCalls = useCallback(async () => {
     try {
       if (dashboardType === 'outbound') {
-        const data = await getTodaysCalls();
+        const data = await getTodaysOutreach();
         setOutreachCalls(data);
       } else {
         const data = await getCalls(50);
@@ -202,9 +213,9 @@ export default function CallsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Aramalar</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bugünkü İletişimler</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1">
-              Bugün {outreachCalls.length} arama planlandı
+              Bugün {outreachCalls.length} iletişim planlandı
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -263,66 +274,79 @@ export default function CallsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-orange-500" />
-              Bekleyen Aramalar
+              Bekleyen İletişimler
             </CardTitle>
-            <CardDescription>Bugün yapılması gereken aramalar</CardDescription>
+            <CardDescription>Bugün yapılması gereken arama ve mesajlar</CardDescription>
           </CardHeader>
           <CardContent>
             {pendingCalls.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <PhoneCall className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Bekleyen arama yok</p>
+                <p>Bekleyen iletişim yok</p>
+                <p className="text-sm mt-2">Kampanya başlatmak için Kampanyalar sayfasına gidin</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {pendingCalls.map((call) => (
-                  <div
-                    key={call.id}
-                    className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <User className="w-5 h-5 text-primary" />
+                {pendingCalls.map((call) => {
+                  const channelKey = call.channel || 'call';
+                  const defaultChannel = { label: "Arama", icon: Phone, color: "bg-blue-100 text-blue-600" };
+                  const channelInfo = channelConfig[channelKey] || defaultChannel;
+                  const ChannelIcon = channelInfo.icon;
+                  
+                  return (
+                    <div
+                      key={call.id}
+                      className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", channelInfo.color)}>
+                          <ChannelIcon className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {call.lead?.full_name || "İsimsiz"}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {channelKey === 'email' ? call.lead?.email : (call.lead?.phone || call.lead?.whatsapp || "Numara yok")}
+                          </p>
+                          {call.notes && (
+                            <p className="text-xs text-gray-400 mt-1">{call.notes}</p>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {call.lead?.full_name || "İsimsiz"}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {call.lead?.phone || call.lead?.whatsapp || "Numara yok"}
-                        </p>
-                        {call.notes && (
-                          <p className="text-xs text-gray-400 mt-1">{call.notes}</p>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("px-2 py-1 text-xs rounded-full font-medium", channelInfo.color)}>
+                          {channelInfo.label}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {call.scheduled_for ? format(new Date(call.scheduled_for), "HH:mm", { locale: tr }) : "-"}
+                        </span>
+                        {channelKey === 'call' && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleExecuteCall(call)}
+                            disabled={executingCallId === call.id}
+                            className="text-green-600 border-green-200 hover:bg-green-50"
+                          >
+                            {executingCallId === call.id ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Play className="w-4 h-4 mr-1" />
+                                Ara
+                              </>
+                            )}
+                          </Button>
                         )}
+                        <Button size="sm" onClick={() => openResultDialog(call)}>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Sonuç Gir
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500 mr-2">
-                        {call.scheduled_for ? format(new Date(call.scheduled_for), "HH:mm", { locale: tr }) : "-"}
-                      </span>
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => handleExecuteCall(call)}
-                        disabled={executingCallId === call.id}
-                        className="text-green-600 border-green-200 hover:bg-green-50"
-                      >
-                        {executingCallId === call.id ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Play className="w-4 h-4 mr-1" />
-                            Ara
-                          </>
-                        )}
-                      </Button>
-                      <Button size="sm" onClick={() => openResultDialog(call)}>
-                        <Phone className="w-4 h-4 mr-2" />
-                        Sonuç Gir
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>

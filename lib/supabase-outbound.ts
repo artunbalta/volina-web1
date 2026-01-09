@@ -766,6 +766,7 @@ export async function getTodaysCalls(): Promise<Outreach[]> {
   return data as Outreach[];
 }
 
+
 export async function getOutreachHistory(leadId: string): Promise<Outreach[]> {
   const { data, error } = await supabase
     .from('outreach')
