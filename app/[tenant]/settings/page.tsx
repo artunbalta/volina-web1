@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { updateProfile, getProfile } from "@/lib/supabase";
 import type { Profile } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +22,8 @@ import {
   Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const PAGE_VERSION = "1.0.0";
 
 export default function SettingsPage() {
   const params = useParams();
@@ -46,24 +47,22 @@ export default function SettingsPage() {
   const loadProfile = useCallback(async () => {
     try {
       if (user?.id) {
-        // Add timeout to prevent hanging
-        const timeout = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 5000)
-        );
-        const data = await Promise.race([getProfile(user.id), timeout]) as any;
-        if (data) {
-          setProfile(data);
-          setFormData({
-            full_name: data.full_name || "",
-            company_name: data.company_name || "",
-            slug: data.slug || "",
-            vapi_org_id: data.vapi_org_id || "",
-          });
+        const response = await fetch(`/api/dashboard/profile?userId=${user.id}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            setProfile(result.data);
+            setFormData({
+              full_name: result.data.full_name || "",
+              company_name: result.data.company_name || "",
+              slug: result.data.slug || "",
+              vapi_org_id: result.data.vapi_org_id || "",
+            });
+          }
         }
       }
     } catch (error) {
       console.error("Error loading profile:", error);
-      // Use default/empty values on timeout
     }
   }, [user?.id]);
 
@@ -75,12 +74,22 @@ export default function SettingsPage() {
     if (!user?.id) return;
     setIsSaving(true);
     try {
-      await updateProfile(user.id, {
-        full_name: formData.full_name,
-        company_name: formData.company_name,
-        slug: formData.slug,
-        vapi_org_id: formData.vapi_org_id,
+      const response = await fetch("/api/dashboard/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          full_name: formData.full_name,
+          company_name: formData.company_name,
+          slug: formData.slug,
+          vapi_org_id: formData.vapi_org_id,
+        }),
       });
+      
+      if (!response.ok) {
+        throw new Error("Failed to save profile");
+      }
+      
       setHasChanges(false);
       await loadProfile();
     } catch (error) {

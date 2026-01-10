@@ -3,8 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
-import { getAISettings, updateAISettings } from "@/lib/supabase-outbound";
+import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { AISettings } from "@/lib/types-outbound";
+
+const PAGE_VERSION = "1.0.0";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,7 +37,8 @@ import { cn } from "@/lib/utils";
 export default function AISettingsPage() {
   const params = useParams();
   const tenant = params?.tenant as string;
-  useTenant(); // Ensure tenant context is available
+  useTenant();
+  const { user } = useAuth();
 
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,33 +65,32 @@ export default function AISettingsPage() {
 
   const loadSettings = useCallback(async () => {
     try {
-      // Add timeout to prevent hanging
-      const timeout = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 5000)
-      );
-      const data = await Promise.race([getAISettings(), timeout]) as any;
-      if (data) {
-        setSettings(data);
-        setFormData({
-          agent_name: data.agent_name || "Volina AI",
-          opening_script_tr: data.opening_script_tr || "",
-          opening_script_en: data.opening_script_en || "",
-          curiosity_questions_tr: data.curiosity_questions_tr || [],
-          curiosity_questions_en: data.curiosity_questions_en || [],
-          negative_response_handling_tr: data.negative_response_handling_tr || "",
-          negative_response_handling_en: data.negative_response_handling_en || "",
-          goal_description_tr: data.goal_description_tr || "",
-          goal_description_en: data.goal_description_en || "",
-          max_unreachable_attempts: data.max_unreachable_attempts || 5,
-          unreachable_timeout_days: data.unreachable_timeout_days || 30,
-          call_hours_start: data.call_hours_start || "09:00",
-          call_hours_end: data.call_hours_end || "18:00",
-          announce_ai: true,
-        });
+      const response = await fetch("/api/dashboard/ai-settings");
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          const data = result.data;
+          setSettings(data);
+          setFormData({
+            agent_name: data.agent_name || "Volina AI",
+            opening_script_tr: data.opening_script_tr || "",
+            opening_script_en: data.opening_script_en || "",
+            curiosity_questions_tr: data.curiosity_questions_tr || [],
+            curiosity_questions_en: data.curiosity_questions_en || [],
+            negative_response_handling_tr: data.negative_response_handling_tr || "",
+            negative_response_handling_en: data.negative_response_handling_en || "",
+            goal_description_tr: data.goal_description_tr || "",
+            goal_description_en: data.goal_description_en || "",
+            max_unreachable_attempts: data.max_unreachable_attempts || 5,
+            unreachable_timeout_days: data.unreachable_timeout_days || 30,
+            call_hours_start: data.call_hours_start || "09:00",
+            call_hours_end: data.call_hours_end || "18:00",
+            announce_ai: true,
+          });
+        }
       }
     } catch (error) {
       console.error("Error loading AI settings:", error);
-      // Use default values on timeout
     }
   }, []);
 
@@ -99,23 +101,17 @@ export default function AISettingsPage() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await updateAISettings({
-        agent_name: formData.agent_name,
-        opening_script_tr: formData.opening_script_tr,
-        opening_script_en: formData.opening_script_en,
-        curiosity_questions_tr: formData.curiosity_questions_tr,
-        curiosity_questions_en: formData.curiosity_questions_en,
-        negative_response_handling_tr: formData.negative_response_handling_tr,
-        negative_response_handling_en: formData.negative_response_handling_en,
-        goal_description_tr: formData.goal_description_tr,
-        goal_description_en: formData.goal_description_en,
-        max_unreachable_attempts: formData.max_unreachable_attempts,
-        unreachable_timeout_days: formData.unreachable_timeout_days,
-        call_hours_start: formData.call_hours_start,
-        call_hours_end: formData.call_hours_end,
+      const response = await fetch("/api/dashboard/ai-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id, ...formData }),
       });
+      
+      if (!response.ok) {
+        throw new Error("Failed to save settings");
+      }
+      
       setHasChanges(false);
-      await loadSettings();
     } catch (error) {
       console.error("Error saving AI settings:", error);
     } finally {
