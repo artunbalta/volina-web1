@@ -119,6 +119,23 @@ export default function LeadsPage() {
 
   const loadLeads = useCallback(async () => {
     try {
+      // Use API endpoint (admin access, bypasses RLS)
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (priorityFilter !== "all") params.set("priority", priorityFilter);
+      if (searchQuery) params.set("search", searchQuery);
+      params.set("limit", "100");
+
+      const response = await fetch(`/api/dashboard/leads?${params.toString()}`);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          setLeads(result.data);
+          return;
+        }
+      }
+      
+      // Fallback to direct query
       const data = await getLeads({
         status: statusFilter !== "all" ? statusFilter : undefined,
         priority: priorityFilter !== "all" ? priorityFilter : undefined,
@@ -131,8 +148,16 @@ export default function LeadsPage() {
   }, [statusFilter, priorityFilter, searchQuery]);
 
   useEffect(() => {
+    // Load leads immediately (fast)
     loadLeads().then(() => setIsLoading(false));
-  }, [loadLeads]);
+    
+    // Background sync (non-blocking, once per session)
+    if (user?.id && !sessionStorage.getItem('leads_synced')) {
+      sessionStorage.setItem('leads_synced', 'true');
+      fetch(`/api/vapi/sync?days=14&userId=${user.id}`, { method: "POST" }).catch(() => {});
+      fetch(`/api/vapi/sync-leads?userId=${user.id}`, { method: "POST" }).catch(() => {});
+    }
+  }, [loadLeads, user?.id]);
 
   // Check for lead ID in URL params
   useEffect(() => {
@@ -149,8 +174,15 @@ export default function LeadsPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    // Load leads first (fast), then sync in background
     await loadLeads();
     setIsRefreshing(false);
+    
+    // Background sync (non-blocking)
+    if (user?.id) {
+      fetch(`/api/vapi/sync?days=14&userId=${user.id}`, { method: "POST" }).catch(() => {});
+      fetch(`/api/vapi/sync-leads?userId=${user.id}`, { method: "POST" }).catch(() => {});
+    }
   };
 
   const handleAddLead = async () => {

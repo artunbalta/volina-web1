@@ -691,23 +691,33 @@ export function subscribeToOutreach(callback: (payload: { eventType: string; new
 import type { Message, OutreachChannel, AnalyticsData } from './types-outbound';
 
 export async function getMessages(channel?: OutreachChannel): Promise<Message[]> {
-  let query = supabase
-    .from('messages')
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    let query = supabase
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  if (channel) {
-    query = query.eq('channel', channel);
-  }
+    if (channel) {
+      query = query.eq('channel', channel);
+    }
 
-  const { data, error } = await query.limit(50);
+    const { data, error } = await query.limit(50);
 
-  if (error) {
-    console.error('Error fetching messages:', error);
+    if (error) {
+      // Check if table doesn't exist (code 42P01) - return empty array instead of crashing
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        console.warn('Messages table does not exist. Run add-messages-table.sql in Supabase SQL Editor.');
+        return [];
+      }
+      console.error('Error fetching messages:', error);
+      return [];
+    }
+
+    return data as Message[];
+  } catch (err) {
+    console.error('Error fetching messages:', err);
     return [];
   }
-
-  return data as Message[];
 }
 
 export async function sendMessage(message: {

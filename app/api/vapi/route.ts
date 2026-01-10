@@ -148,14 +148,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("Successfully processed Vapi webhook:", {
-      callId: callData.id,
-      vapiCallId: call.id,
-      userId,
-      type: callType,
-      sentiment,
-    });
-
     return NextResponse.json({
       success: true,
       callId: callData.id,

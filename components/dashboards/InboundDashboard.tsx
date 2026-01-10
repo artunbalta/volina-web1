@@ -5,7 +5,7 @@ import { KPICards } from "@/components/dashboard/KPICards";
 import { Charts } from "@/components/dashboard/Charts";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Cloud, Database } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { getCallStats, getDailyActivity, getRecentActivity } from "@/lib/supabase";
@@ -47,6 +47,7 @@ export default function InboundDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [dataSource, setDataSource] = useState<"vapi" | "supabase" | null>(null);
   const [kpiData, setKpiData] = useState<KPIData>({
     monthlyCalls: 0,
     monthlyChange: 0,
@@ -62,7 +63,87 @@ export default function InboundDashboard() {
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
 
   const loadData = useCallback(async () => {
+    const typeColors: Record<string, string> = {
+      appointment: "#0055FF",
+      inquiry: "#8B5CF6",
+      follow_up: "#F59E0B",
+      cancellation: "#EF4444",
+    };
+    
+    const typeNames: Record<string, string> = {
+      appointment: "Randevu",
+      inquiry: "Bilgi",
+      follow_up: "Takip",
+      cancellation: "İptal",
+    };
+
     try {
+      // Try to fetch from VAPI API first
+      const vapiResponse = await fetch("/api/vapi/analytics?days=30");
+      
+      if (vapiResponse.ok) {
+        const vapiData = await vapiResponse.json();
+        
+        if (vapiData.success) {
+          setDataSource("vapi");
+          
+          setKpiData({
+            monthlyCalls: vapiData.kpi.monthlyCalls,
+            monthlyChange: 12,
+            dailyCalls: vapiData.kpi.dailyCalls,
+            dailyChange: 5,
+            avgDuration: vapiData.kpi.avgDuration,
+            durationChange: -3,
+            appointmentRate: vapiData.kpi.appointmentRate,
+            appointmentRateChange: 2,
+          });
+
+          // Convert type distribution to chart format
+          setCallTypeData(
+            Object.entries(vapiData.typeDistribution as Record<string, number>).map(([type, value]) => ({
+              name: typeNames[type] || type,
+              value: value as number,
+              color: typeColors[type] || "#6B7280",
+            }))
+          );
+
+          // Set daily activity
+          setDailyActivityData(vapiData.dailyActivity);
+
+          // Fetch recent calls from VAPI for activity feed
+          const callsResponse = await fetch("/api/vapi/calls?limit=10");
+          if (callsResponse.ok) {
+            const callsData = await callsResponse.json();
+            if (callsData.success && callsData.data) {
+              const activities = callsData.data.map((call: {
+                id: string;
+                type: string;
+                summary: string | null;
+                sentiment: string | null;
+                created_at: string;
+              }) => ({
+                id: call.id,
+                type: call.type as 'call' | 'appointment',
+                description: call.summary || `${call.type} arama`,
+                timestamp: call.created_at,
+                sentiment: call.sentiment,
+              }));
+              setRecentActivity(activities);
+            }
+          }
+
+          setLastUpdated(new Date());
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching from VAPI, falling back to Supabase:", error);
+    }
+
+    // Fallback to Supabase data
+    try {
+      setDataSource("supabase");
+      
       // Fetch call stats
       const stats = await getCallStats();
       
@@ -81,21 +162,6 @@ export default function InboundDashboard() {
         appointmentRate,
         appointmentRateChange: 2,
       });
-
-      // Convert type distribution to chart format
-      const typeColors: Record<string, string> = {
-        appointment: "#0055FF",
-        inquiry: "#8B5CF6",
-        follow_up: "#F59E0B",
-        cancellation: "#EF4444",
-      };
-      
-      const typeNames: Record<string, string> = {
-        appointment: "Appointments",
-        inquiry: "Inquiries",
-        follow_up: "Follow-ups",
-        cancellation: "Cancellations",
-      };
 
       setCallTypeData(
         Object.entries(stats.typeDistribution).map(([type, value]) => ({
@@ -160,6 +226,25 @@ export default function InboundDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {dataSource && (
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+              dataSource === "vapi" 
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
+                : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+            }`}>
+              {dataSource === "vapi" ? (
+                <>
+                  <Cloud className="w-3 h-3" />
+                  VAPI Live
+                </>
+              ) : (
+                <>
+                  <Database className="w-3 h-3" />
+                  Database
+                </>
+              )}
+            </span>
+          )}
           <span className="text-sm text-gray-500 dark:text-gray-400">
             {format(lastUpdated, "HH:mm")}
           </span>

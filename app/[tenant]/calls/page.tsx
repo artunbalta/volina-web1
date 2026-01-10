@@ -103,17 +103,69 @@ export default function CallsPage() {
 
   const loadCalls = useCallback(async () => {
     try {
+      // Load calls from Supabase immediately (fast)
+      const callsResponse = await fetch("/api/dashboard/calls?days=30&limit=100");
+      if (callsResponse.ok) {
+        const callsData = await callsResponse.json();
+        if (callsData.success && callsData.data) {
+          const transformedCalls: Call[] = callsData.data.map((call: {
+            id: string;
+            vapi_call_id: string;
+            recording_url: string | null;
+            transcript: string | null;
+            summary: string | null;
+            sentiment: string | null;
+            duration: number | null;
+            type: string;
+            caller_phone: string | null;
+            created_at: string;
+            updated_at: string;
+          }) => ({
+            id: call.id,
+            user_id: "",
+            vapi_call_id: call.vapi_call_id,
+            appointment_id: null,
+            recording_url: call.recording_url,
+            transcript: call.transcript,
+            summary: call.summary,
+            sentiment: call.sentiment as Call["sentiment"],
+            duration: call.duration,
+            type: call.type as Call["type"],
+            caller_phone: call.caller_phone,
+            metadata: {},
+            created_at: call.created_at,
+            updated_at: call.updated_at,
+          }));
+          setCalls(transformedCalls);
+          
+          if (dashboardType === 'outbound') {
+            const data = await getTodaysCalls();
+            setOutreachCalls(data);
+          }
+          return;
+        }
+      }
+      
+      // Fallback to direct Supabase
+      const data = await getCalls(50);
+      setCalls(data);
+      
       if (dashboardType === 'outbound') {
-        const data = await getTodaysOutreach();
-        setOutreachCalls(data);
-      } else {
-        const data = await getCalls(50);
-        setCalls(data);
+        const outreachData = await getTodaysCalls();
+        setOutreachCalls(outreachData);
       }
     } catch (error) {
       console.error("Error loading calls:", error);
     }
   }, [dashboardType]);
+
+  // Background sync (non-blocking, once per session)
+  useEffect(() => {
+    if (user?.id && !sessionStorage.getItem('calls_synced')) {
+      sessionStorage.setItem('calls_synced', 'true');
+      fetch(`/api/vapi/sync?days=14&userId=${user.id}`, { method: "POST" }).catch(() => {});
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     loadCalls().then(() => setIsLoading(false));
