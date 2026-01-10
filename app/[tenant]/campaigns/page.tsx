@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { getCampaigns, createCampaign, updateCampaign } from "@/lib/supabase-outbound";
+// Campaigns now loaded via API route
 import type { Campaign, OutreachChannel } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,7 +80,7 @@ interface RunResult {
 export default function CampaignsPage() {
   const params = useParams();
   const tenant = params?.tenant as string;
-  const { isLoading: tenantLoading } = useTenant();
+  useTenant(); // Ensure tenant context is available
   const { user } = useAuth();
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -113,10 +113,19 @@ export default function CampaignsPage() {
 
   const loadCampaigns = useCallback(async () => {
     try {
-      const data = await getCampaigns();
-      setCampaigns(data);
+      // Use server-side API route
+      const response = await fetch("/api/dashboard/campaigns");
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setCampaigns(result.data || []);
+          return;
+        }
+      }
+      setCampaigns([]);
     } catch (error) {
       console.error("Error loading campaigns:", error);
+      setCampaigns([]);
     }
   }, []);
 
@@ -133,13 +142,22 @@ export default function CampaignsPage() {
   const handleCreate = async () => {
     setIsSaving(true);
     try {
-      await createCampaign({
-        name: formData.name,
-        description: formData.description,
-        duration_days: formData.duration_days,
-        is_active: formData.is_active,
-        schedule: formData.steps,
+      const response = await fetch("/api/dashboard/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          duration_days: formData.duration_days,
+          is_active: formData.is_active,
+          steps: formData.steps,
+        }),
       });
+      
+      if (!response.ok) {
+        throw new Error("Failed to create campaign");
+      }
+      
       setShowCreateDialog(false);
       resetForm();
       await loadCampaigns();
@@ -152,7 +170,19 @@ export default function CampaignsPage() {
 
   const handleToggleActive = async (campaign: Campaign) => {
     try {
-      await updateCampaign(campaign.id, { is_active: !campaign.is_active });
+      const response = await fetch("/api/dashboard/campaigns", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: campaign.id,
+          is_active: !campaign.is_active,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to update campaign");
+      }
+      
       await loadCampaigns();
     } catch (error) {
       console.error("Error updating campaign:", error);
@@ -254,13 +284,7 @@ export default function CampaignsPage() {
     }
   };
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Don't block on loading - show UI immediately
 
   return (
     <div className="space-y-6">

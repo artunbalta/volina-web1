@@ -20,7 +20,7 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   // Check for OAuth errors in URL
   useEffect(() => {
@@ -35,38 +35,17 @@ function LoginContent() {
       };
       const errorMessage = errorMessages[errorParam] || "Bir hata oluştu. Lütfen tekrar deneyin.";
       setError(errorMessage);
-      setShowForm(true); // Show form if there's an error
     }
   }, [searchParams]);
 
-  // Redirect if already authenticated - use tenant slug if available
+  // Redirect if already authenticated (e.g., returning to login page while logged in)
   useEffect(() => {
-    if (isAuthenticated && !authLoading && user) {
-      // If user has a slug, redirect to their tenant dashboard
-      if (user.slug) {
-        router.push(`/${user.slug}`);
-      } else {
-        // Fallback to old routes if no slug
-        const redirectPath = user.dashboard_type === 'outbound' 
-          ? "/dashboard/outbound" 
-          : "/dashboard";
-        router.push(redirectPath);
-      }
-    } else if (!authLoading && !isAuthenticated) {
-      // Not authenticated and not loading, show the form
-      setShowForm(true);
+    if (isAuthenticated && user && !isRedirecting) {
+      setIsRedirecting(true);
+      const targetUrl = user.slug ? `/${user.slug}` : "/dashboard";
+      window.location.href = targetUrl;
     }
-  }, [isAuthenticated, authLoading, user, router]);
-
-  // Timeout to show form after 2 seconds regardless
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (!showForm) {
-        setShowForm(true);
-      }
-    }, 2000);
-    return () => clearTimeout(timeout);
-  }, [showForm]);
+  }, [isAuthenticated, user, isRedirecting]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,34 +53,64 @@ function LoginContent() {
     setIsLoading(true);
 
     try {
-      const { error: signInError } = await signIn(email, password);
+      // Use server-side auth API
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
       
-      if (signInError) {
-        setError(signInError.message || "Invalid email or password");
+      const result = await response.json();
+      
+      if (!response.ok || result.error) {
+        setError(result.error || "Invalid email or password");
         setIsLoading(false);
         return;
       }
 
-      // Redirect will be handled by useEffect based on user's dashboard_type
-      // Don't set isLoading to false - let the redirect happen
+      // Store session in localStorage
+      if (result.session) {
+        const storageKey = `sb-${process.env.NEXT_PUBLIC_SUPABASE_URL?.split('//')[1]?.split('.')[0]}-auth-token`;
+        localStorage.setItem(storageKey, JSON.stringify({
+          access_token: result.session.access_token,
+          refresh_token: result.session.refresh_token,
+          expires_at: result.session.expires_at,
+          expires_in: result.session.expires_in,
+          token_type: 'bearer',
+          user: result.user,
+        }));
+      }
+      
+      // Sign-in successful - redirect to dashboard
+      const atIndex = email.indexOf('@');
+      const domain = email.substring(atIndex + 1).split('.')[0];
+      const username = email.substring(0, atIndex);
+      const personalDomains = ['gmail', 'hotmail', 'yahoo', 'outlook', 'icloud', 'mail', 'protonmail'];
+      const slug = personalDomains.includes(domain?.toLowerCase() || '') 
+        ? username.toLowerCase().replace(/[^a-z0-9]/g, '')
+        : (domain || username).toLowerCase().replace(/[^a-z0-9]/g, '');
+      
+      window.location.href = `/${slug}`;
+      
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
     }
   };
 
-  // Show loading spinner while checking auth state (but not indefinitely)
-  if (!showForm) {
+  // Show redirecting state if authenticated
+  if (isRedirecting) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Redirecting to dashboard...</p>
         </div>
       </div>
     );
   }
 
+  // Always show the form immediately - no waiting
   return (
     <div className="min-h-screen flex">
       {/* Left side - Login form */}

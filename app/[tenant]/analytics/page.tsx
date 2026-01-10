@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
-import { getAnalytics } from "@/lib/supabase-outbound";
+// Analytics now loaded via API route
 import type { AnalyticsData } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -86,7 +86,7 @@ function FunnelChart({ data }: { data: { label: string; value: number; percentag
 export default function AnalyticsPage() {
   const params = useParams();
   const tenant = params?.tenant as string;
-  const { isLoading: tenantLoading } = useTenant();
+  useTenant(); // Ensure tenant context is available
 
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,10 +118,40 @@ export default function AnalyticsPage() {
           startDate = subDays(endDate, 7);
       }
       
-      const data = await getAnalytics(startDate, endDate);
-      setAnalytics(data);
+      // Use server-side API route
+      const response = await fetch(
+        `/api/dashboard/analytics?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
+      );
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          setAnalytics(result.data);
+          return;
+        }
+      }
+      
+      // Set default empty analytics on error
+      setAnalytics({
+        totalLeads: 0, newLeads: 0, contactedLeads: 0, interestedLeads: 0,
+        appointmentsSet: 0, convertedLeads: 0, lostLeads: 0,
+        totalCalls: 0, answeredCalls: 0, missedCalls: 0,
+        totalMessages: 0, deliveredMessages: 0, readMessages: 0,
+        conversionRate: 0, responseRate: 0, averageResponseTime: 0,
+        leadsBySource: [], leadsByStatus: [], callsByResult: [],
+        dailyActivity: [], channelPerformance: [],
+      });
     } catch (error) {
       console.error("Error loading analytics:", error);
+      setAnalytics({
+        totalLeads: 0, newLeads: 0, contactedLeads: 0, interestedLeads: 0,
+        appointmentsSet: 0, convertedLeads: 0, lostLeads: 0,
+        totalCalls: 0, answeredCalls: 0, missedCalls: 0,
+        totalMessages: 0, deliveredMessages: 0, readMessages: 0,
+        conversionRate: 0, responseRate: 0, averageResponseTime: 0,
+        leadsBySource: [], leadsByStatus: [], callsByResult: [],
+        dailyActivity: [], channelPerformance: [],
+      });
     }
   }, [dateRange]);
 
@@ -135,13 +165,7 @@ export default function AnalyticsPage() {
     setIsRefreshing(false);
   };
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Don't block on loading - show UI with loading indicators in sections
 
   const funnelData = analytics ? [
     { label: "Toplam Lead", value: analytics.total_leads, percentage: 100, color: "#6366F1" },

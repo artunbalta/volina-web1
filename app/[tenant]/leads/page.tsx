@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { getLeads, createLead, updateLead, deleteLead, createLeadsBulk } from "@/lib/supabase-outbound";
+import { createLead, updateLead, deleteLead, createLeadsBulk } from "@/lib/supabase-outbound";
 import type { Lead, LeadStatus, LeadLanguage, LeadPriority } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +76,7 @@ export default function LeadsPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const tenant = params?.tenant as string;
-  const { isLoading: tenantLoading } = useTenant();
+  useTenant(); // Ensure tenant context is available
   const { user } = useAuth();
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -130,18 +130,25 @@ export default function LeadsPage() {
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
-          setLeads(result.data);
-          return;
+          // Apply client-side filters
+          let filteredData = result.data;
+          if (statusFilter !== "all") {
+            filteredData = filteredData.filter((l: any) => l.status === statusFilter);
+          }
+          if (priorityFilter !== "all") {
+            filteredData = filteredData.filter((l: any) => l.priority === priorityFilter);
+          }
+          if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            filteredData = filteredData.filter((l: any) => 
+              l.full_name?.toLowerCase().includes(query) ||
+              l.phone?.toLowerCase().includes(query) ||
+              l.email?.toLowerCase().includes(query)
+            );
+          }
+          setLeads(filteredData);
         }
       }
-      
-      // Fallback to direct query
-      const data = await getLeads({
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        priority: priorityFilter !== "all" ? priorityFilter : undefined,
-        search: searchQuery || undefined,
-      });
-      setLeads(data);
     } catch (error) {
       console.error("Error loading leads:", error);
     }
@@ -430,13 +437,7 @@ export default function LeadsPage() {
     return true;
   });
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Don't block on loading - show UI immediately
 
   return (
     <div className="space-y-6">

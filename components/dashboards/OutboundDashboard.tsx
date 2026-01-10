@@ -41,7 +41,6 @@ import {
 } from "@/components/ui/select";
 import { createLead } from "@/lib/supabase-outbound";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { getOutboundStats, getTodaysLeads, getChannelPerformance } from "@/lib/supabase-outbound";
 import type { OutboundStats, Lead } from "@/lib/types-outbound";
 import { format, formatDistanceToNow } from "date-fns";
 import { tr } from "date-fns/locale";
@@ -111,7 +110,7 @@ export default function OutboundDashboard() {
   const [vapiCalls, setVapiCalls] = useState<VapiCall[]>([]);
   const [vapiKPI, setVapiKPI] = useState<VapiKPI | null>(null);
   const [vapiConnected, setVapiConnected] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // Start with false - show UI immediately
   
   // Add lead dialog state
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -253,77 +252,63 @@ export default function OutboundDashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      // Load outbound data
-      const [statsData, leadsData, channelData] = await Promise.all([
-        getOutboundStats(),
-        getTodaysLeads(),
-        getChannelPerformance(),
+      // Load ALL data from server-side API routes (bypasses browser Supabase issues)
+      const [callsResponse, leadsResponse] = await Promise.all([
+        fetch("/api/dashboard/calls?days=30&limit=50"),
+        fetch("/api/dashboard/leads?limit=200"),
       ]);
-      
-      setStats(statsData);
-      setTodaysLeads(leadsData);
-      setChannelPerformance(channelData);
 
-      // Load data from Supabase immediately (fast)
-      try {
-        // Parallel data fetching - no waiting for sync
-        const [callsResponse, leadsResponse] = await Promise.all([
-          fetch("/api/dashboard/calls?days=30&limit=50"),
-          fetch("/api/dashboard/leads?limit=200"),
-        ]);
-
-        if (callsResponse.ok) {
-          const callsData = await callsResponse.json();
-          if (callsData.success) {
-            setVapiKPI({
-              totalCalls: callsData.kpi.totalCalls,
-              monthlyCalls: callsData.kpi.monthlyCalls,
-              dailyCalls: callsData.kpi.dailyCalls,
-              avgDuration: callsData.kpi.avgDuration,
-              appointmentRate: callsData.kpi.appointmentRate,
-            });
-            setVapiConnected(true);
-            if (callsData.data?.length > 0) {
-              setVapiCalls(callsData.data);
-            }
+      if (callsResponse.ok) {
+        const callsData = await callsResponse.json();
+        if (callsData.success) {
+          setVapiKPI({
+            totalCalls: callsData.kpi.totalCalls,
+            monthlyCalls: callsData.kpi.monthlyCalls,
+            dailyCalls: callsData.kpi.dailyCalls,
+            avgDuration: callsData.kpi.avgDuration,
+            appointmentRate: callsData.kpi.appointmentRate,
+          });
+          setVapiConnected(true);
+          if (callsData.data?.length > 0) {
+            setVapiCalls(callsData.data);
           }
         }
+      }
 
-        if (leadsResponse.ok) {
-          const leadsData = await leadsResponse.json();
-          if (leadsData.success && leadsData.stats) {
-            setStats(prev => ({
-              ...prev,
-              total_leads: leadsData.stats.total,
-              new_leads: leadsData.stats.newLeads,
-              contacted_leads: leadsData.stats.contacted,
-              interested_leads: leadsData.stats.interested,
-              appointments_set: leadsData.stats.appointmentSet,
-              converted_leads: leadsData.stats.converted,
-              unreachable_leads: leadsData.stats.unreachable,
-              conversion_rate: leadsData.stats.conversionRate,
-            }));
-            
+      if (leadsResponse.ok) {
+        const leadsData = await leadsResponse.json();
+        if (leadsData.success) {
+          // Update stats from API
+          if (leadsData.stats) {
+            setStats({
+              total_leads: leadsData.stats.total || 0,
+              new_leads: leadsData.stats.newLeads || 0,
+              contacted_leads: leadsData.stats.contacted || 0,
+              interested_leads: leadsData.stats.interested || 0,
+              appointments_set: leadsData.stats.appointmentSet || 0,
+              converted_leads: leadsData.stats.converted || 0,
+              unreachable_leads: leadsData.stats.unreachable || 0,
+              conversion_rate: leadsData.stats.conversionRate || 0,
+              today_calls: 0,
+              successful_calls: 0,
+              pending_calls: 0,
+              messages_sent: 0,
+            });
+          }
+          
+          // Set today's leads from API
+          if (leadsData.data) {
             const priorityLeads = leadsData.data
               .filter((l: { status: string }) => ['new', 'contacted', 'interested'].includes(l.status))
               .slice(0, 10);
             setTodaysLeads(priorityLeads);
           }
         }
-
-        // Background sync (non-blocking) - only once per session
-        if (user?.id && !sessionStorage.getItem('vapi_synced')) {
-          sessionStorage.setItem('vapi_synced', 'true');
-          fetch(`/api/vapi/sync?days=14&userId=${user.id}`, { method: "POST" }).catch(() => {});
-          fetch(`/api/vapi/sync-leads?userId=${user.id}`, { method: "POST" }).catch(() => {});
-        }
-      } catch (vapiError) {
-        console.error("Error loading call data:", vapiError);
       }
     } catch (error) {
       console.error("Error loading data:", error);
     }
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     loadData().then(() => setIsLoading(false));

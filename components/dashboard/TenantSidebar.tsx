@@ -27,7 +27,7 @@ import { useTheme } from "@/components/providers/ThemeProvider";
 
 export function TenantSidebar() {
   const pathname = usePathname();
-  const { tenant, tenantProfile, isLoading } = useTenant();
+  const { tenant, tenantProfile } = useTenant();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
@@ -38,34 +38,29 @@ export function TenantSidebar() {
     setMobileOpen(false);
   }, [pathname]);
 
-  if (isLoading || !tenant) {
-    return (
-      <div className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
+  // Don't block - show sidebar even if still loading, just use fallback values
+  const effectiveTenant = tenant || "dashboard";
 
-  const dashboardType = tenantProfile?.dashboard_type || user?.dashboard_type || 'inbound';
-  const companyName = tenantProfile?.company_name || tenantProfile?.full_name || tenant;
+  const dashboardType = tenantProfile?.dashboard_type || user?.dashboard_type || 'outbound';
+  const companyName = tenantProfile?.company_name || tenantProfile?.full_name || effectiveTenant;
 
   // Navigation items based on dashboard type
   const inboundNavItems = [
-    { href: `/${tenant}`, icon: LayoutDashboard, label: "Dashboard" },
-    { href: `/${tenant}/calls`, icon: Phone, label: "Arama Kayıtları" },
-    { href: `/${tenant}/calendar`, icon: Calendar, label: "Takvim" },
-    { href: `/${tenant}/settings`, icon: Settings, label: "Ayarlar" },
+    { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
+    { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Arama Kayıtları" },
+    { href: `/${effectiveTenant}/calendar`, icon: Calendar, label: "Takvim" },
+    { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Ayarlar" },
   ];
 
   const outboundNavItems = [
-    { href: `/${tenant}`, icon: LayoutDashboard, label: "Dashboard" },
-    { href: `/${tenant}/leads`, icon: Users, label: "Müşteri Adayları" },
-    { href: `/${tenant}/calls`, icon: Phone, label: "Aramalar" },
-    { href: `/${tenant}/messages`, icon: MessageSquare, label: "Mesajlar" },
-    { href: `/${tenant}/campaigns`, icon: Target, label: "Kampanyalar" },
-    { href: `/${tenant}/analytics`, icon: BarChart3, label: "Analitik" },
-    { href: `/${tenant}/ai-settings`, icon: Bot, label: "AI Ayarları" },
-    { href: `/${tenant}/settings`, icon: Settings, label: "Ayarlar" },
+    { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
+    { href: `/${effectiveTenant}/leads`, icon: Users, label: "Müşteri Adayları" },
+    { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Aramalar" },
+    { href: `/${effectiveTenant}/messages`, icon: MessageSquare, label: "Mesajlar" },
+    { href: `/${effectiveTenant}/campaigns`, icon: Target, label: "Kampanyalar" },
+    { href: `/${effectiveTenant}/analytics`, icon: BarChart3, label: "Analitik" },
+    { href: `/${effectiveTenant}/ai-settings`, icon: Bot, label: "AI Ayarları" },
+    { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Ayarlar" },
   ];
 
   const navItems = dashboardType === 'outbound' ? outboundNavItems : inboundNavItems;
@@ -75,8 +70,8 @@ export function TenantSidebar() {
   };
 
   const isActive = (href: string) => {
-    if (href === `/${tenant}`) {
-      return pathname === `/${tenant}`;
+    if (href === `/${effectiveTenant}`) {
+      return pathname === `/${effectiveTenant}`;
     }
     return pathname?.startsWith(href);
   };
@@ -110,7 +105,7 @@ export function TenantSidebar() {
         {/* Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700">
           {!collapsed && (
-            <Link href={`/${tenant}`} className="flex items-center gap-2">
+            <Link href={`/${effectiveTenant}`} className="flex items-center gap-2">
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">
                   {companyName.charAt(0).toUpperCase()}
