@@ -108,8 +108,15 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Version Badge */}
+      <div className="flex justify-end">
+        <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+          v{PAGE_VERSION}
+        </span>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 -mt-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ayarlar</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
