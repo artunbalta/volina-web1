@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 
+interface CallRecord {
+  id: string;
+  created_at: string;
+  duration?: number;
+  type?: string;
+  sentiment?: string;
+  metadata?: Record<string, unknown>;
+  caller_name?: string;
+  evaluation_summary?: string;
+  evaluation_score?: number;
+  [key: string]: unknown;
+}
+
 // GET - Fetch calls from Supabase (synced from VAPI)
 export async function GET(request: NextRequest) {
   try {
@@ -19,7 +32,7 @@ export async function GET(request: NextRequest) {
       .from("calls")
       .select("*")
       .gte("created_at", startDate.toISOString())
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }) as { data: CallRecord[] | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching calls:", error);

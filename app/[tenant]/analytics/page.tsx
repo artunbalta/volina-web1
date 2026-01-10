@@ -133,24 +133,22 @@ export default function AnalyticsPage() {
       
       // Set default empty analytics on error
       setAnalytics({
-        totalLeads: 0, newLeads: 0, contactedLeads: 0, interestedLeads: 0,
-        appointmentsSet: 0, convertedLeads: 0, lostLeads: 0,
-        totalCalls: 0, answeredCalls: 0, missedCalls: 0,
-        totalMessages: 0, deliveredMessages: 0, readMessages: 0,
-        conversionRate: 0, responseRate: 0, averageResponseTime: 0,
-        leadsBySource: [], leadsByStatus: [], callsByResult: [],
-        dailyActivity: [], channelPerformance: [],
+        total_leads: 0, contacted_leads: 0, interested_leads: 0,
+        appointments_set: 0, converted_leads: 0, unreachable_leads: 0,
+        conversion_rate: 0, conversion_change: 0, avg_call_duration: 0,
+        reachability_rate: 0, total_calls: 0, total_messages: 0,
+        avg_response_time: 0, channel_performance: [],
+        best_call_times: [], language_performance: { tr: 0, en: 0 },
       });
     } catch (error) {
       console.error("Error loading analytics:", error);
       setAnalytics({
-        totalLeads: 0, newLeads: 0, contactedLeads: 0, interestedLeads: 0,
-        appointmentsSet: 0, convertedLeads: 0, lostLeads: 0,
-        totalCalls: 0, answeredCalls: 0, missedCalls: 0,
-        totalMessages: 0, deliveredMessages: 0, readMessages: 0,
-        conversionRate: 0, responseRate: 0, averageResponseTime: 0,
-        leadsBySource: [], leadsByStatus: [], callsByResult: [],
-        dailyActivity: [], channelPerformance: [],
+        total_leads: 0, contacted_leads: 0, interested_leads: 0,
+        appointments_set: 0, converted_leads: 0, unreachable_leads: 0,
+        conversion_rate: 0, conversion_change: 0, avg_call_duration: 0,
+        reachability_rate: 0, total_calls: 0, total_messages: 0,
+        avg_response_time: 0, channel_performance: [],
+        best_call_times: [], language_performance: { tr: 0, en: 0 },
       });
     }
   }, [dateRange]);
