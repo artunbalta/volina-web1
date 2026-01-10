@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { getCalls } from "@/lib/supabase";
-import { getTodaysOutreach, updateOutreach, getOutreachHistory } from "@/lib/supabase-outbound";
+import { getTodaysCalls, updateOutreach, getOutreachHistory } from "@/lib/supabase-outbound";
 import type { Call } from "@/lib/types";
 import type { Outreach, OutreachResult } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
