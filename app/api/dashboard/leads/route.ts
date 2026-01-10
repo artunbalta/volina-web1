@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 
+interface LeadRecord {
+  id: string;
+  status: string;
+  priority?: string;
+  full_name?: string;
+  email?: string;
+  phone?: string;
+  created_at: string;
+  [key: string]: unknown;
+}
+
 // GET - Fetch leads from Supabase (admin access)
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +39,7 @@ export async function GET(request: NextRequest) {
       query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
-    const { data: leads, error } = await query.limit(limit);
+    const { data: leads, error } = await query.limit(limit) as { data: LeadRecord[] | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching leads:", error);

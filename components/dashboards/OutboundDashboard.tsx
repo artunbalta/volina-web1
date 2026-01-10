@@ -196,7 +196,9 @@ export default function OutboundDashboard() {
       let failed = 0;
 
       for (let i = startIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
+        const currentLine = lines[i];
+        if (!currentLine) continue;
+        const line = currentLine.trim();
         if (!line) continue;
 
         // Parse CSV line (handle quoted values)
@@ -291,10 +293,8 @@ export default function OutboundDashboard() {
               converted_leads: leadsData.stats.converted || 0,
               unreachable_leads: leadsData.stats.unreachable || 0,
               conversion_rate: leadsData.stats.conversionRate || 0,
-              today_calls: 0,
-              successful_calls: 0,
-              pending_calls: 0,
-              messages_sent: 0,
+              todays_calls: 0,
+              completed_calls_today: 0,
             });
           }
           

@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     const avgDurationSeconds = Math.round(dashboardData.analytics.avgDuration * 60);
 
     // Build call type distribution
-    const typeDistribution: Record<string, number> = {
+    const typeDistribution = {
       appointment: 0,
       inquiry: 0,
       follow_up: 0,

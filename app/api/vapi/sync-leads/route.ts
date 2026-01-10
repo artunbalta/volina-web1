@@ -6,6 +6,18 @@ import {
   determineLeadPriority 
 } from "@/lib/vapi-lead-extractor";
 
+interface CallRecord {
+  id: string;
+  user_id: string;
+  transcript?: string;
+  summary?: string;
+  sentiment?: string;
+  type?: string;
+  caller_phone?: string;
+  created_at: string;
+  [key: string]: unknown;
+}
+
 // POST - Sync calls to leads
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +39,7 @@ export async function POST(request: NextRequest) {
       .select("*")
       .eq("user_id", userId)
       .not("transcript", "is", null)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }) as { data: CallRecord[] | null; error: { message: string } | null };
 
     if (callsError) {
       console.error("Error fetching calls:", callsError);
@@ -67,7 +79,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Check if lead already exists (by phone or name)
-      let existingLead = null;
+      let existingLead: { id: string } | null = null;
       
       if (extracted.phone) {
         const { data } = await supabase
@@ -75,7 +87,7 @@ export async function POST(request: NextRequest) {
           .select("id")
           .eq("user_id", userId)
           .eq("phone", extracted.phone)
-          .single();
+          .single() as { data: { id: string } | null; error: unknown };
         existingLead = data;
       }
 
@@ -85,7 +97,7 @@ export async function POST(request: NextRequest) {
           .select("id")
           .eq("user_id", userId)
           .eq("full_name", extracted.full_name)
-          .single();
+          .single() as { data: { id: string } | null; error: unknown };
         existingLead = data;
       }
 
@@ -96,7 +108,8 @@ export async function POST(request: NextRequest) {
         // Update existing lead with new contact info
         const nextContactDate = new Date(); // Set to now
         
-        const { error: updateError } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: updateError } = await (supabase as any)
           .from("leads")
           .update({
             last_contact_date: call.created_at,
@@ -104,7 +117,7 @@ export async function POST(request: NextRequest) {
             status: status,
             notes: call.summary || extracted.treatment_interest,
             updated_at: new Date().toISOString(),
-          } as never)
+          })
           .eq("id", existingLead.id);
 
         if (!updateError) {

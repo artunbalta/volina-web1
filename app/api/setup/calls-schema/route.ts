@@ -315,7 +315,7 @@ $$;
     const { data: profiles, error: profileError } = await supabase
       .from('profiles')
       .select('id')
-      .limit(1);
+      .limit(1) as { data: { id: string }[] | null; error: { message: string } | null };
     
     if (profileError || !profiles || profiles.length === 0) {
       return NextResponse.json({
@@ -325,7 +325,7 @@ $$;
       }, { status: 400 });
     }
     
-    const userId = profiles[0].id;
+    const userId = profiles[0]!.id;
     
     // Step 4: Insert sample data
     const now = new Date();
@@ -346,7 +346,8 @@ $$;
       };
     });
     
-    const { error: insertError } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: insertError } = await (supabase as any)
       .from('calls')
       .insert(callsToInsert);
     
@@ -355,7 +356,7 @@ $$;
       return NextResponse.json({
         success: false,
         error: 'Failed to insert sample data',
-        details: insertError.message
+        details: (insertError as { message: string }).message
       }, { status: 500 });
     }
     

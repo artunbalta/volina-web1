@@ -80,7 +80,7 @@ export function extractLeadFromCall(call: {
 function extractName(transcript: string, summary: string): string | null {
   // First try to find name in summary (usually more accurate)
   const summaryMatch = summary.match(/(?:user|caller|customer)[,\s]+([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)?)/i);
-  if (summaryMatch) {
+  if (summaryMatch && summaryMatch[1]) {
     return cleanName(summaryMatch[1]);
   }
 
@@ -100,7 +100,7 @@ function extractName(transcript: string, summary: string): string | null {
   // Try to find names after specific phrases
   const afterPhrases = [
     /User:\s*(?:ben\s+)?([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)?)/gi,
-    /adınızı?\s*(?:ve\s*)?(?:soyadınızı?)?\s*(?:öğrenebilir|alabilir).*?User:\s*([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)?)/gis,
+    /adınızı?\s*(?:ve\s*)?(?:soyadınızı?)?\s*(?:öğrenebilir|alabilir)[\s\S]*?User:\s*([A-ZÇĞİÖŞÜ][a-zçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zçğıöşü]+)?)/gi,
   ];
 
   for (const pattern of afterPhrases) {
@@ -167,7 +167,7 @@ function extractPhone(transcript: string): string | null {
   }
 
   // Try to parse Turkish spoken numbers
-  const phoneSection = transcript.match(/(?:telefon|numara|numarası).*?(?:doğru|evet|tamam)/gis);
+  const phoneSection = transcript.match(/(?:telefon|numara|numarası)[\s\S]*?(?:doğru|evet|tamam)/gi);
   if (phoneSection) {
     const numbers = extractSpokenNumbers(phoneSection[0]);
     if (numbers && numbers.length >= 10) {
@@ -176,7 +176,7 @@ function extractPhone(transcript: string): string | null {
   }
 
   // Look for number sequences in "User:" lines
-  const userLines = transcript.match(/User:.*?(?=AI:|$)/gis) || [];
+  const userLines = transcript.match(/User:[\s\S]*?(?=AI:|$)/gi) || [];
   for (const line of userLines) {
     const numbers = extractSpokenNumbers(line);
     if (numbers && numbers.length >= 10 && numbers.length <= 11) {
@@ -200,7 +200,8 @@ function extractSpokenNumbers(text: string): string | null {
   for (const part of parts) {
     // Check compound numbers like "beş yüz" (500)
     if (part.includes('yüz')) {
-      const [multiplier] = part.split('yüz');
+      const splitParts = part.split('yüz');
+      const multiplier = splitParts[0] || '';
       const mult = TURKISH_NUMBERS[multiplier.trim()] || '1';
       result += mult.charAt(0);
       continue;
