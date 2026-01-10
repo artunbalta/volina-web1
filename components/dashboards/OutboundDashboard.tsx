@@ -45,6 +45,8 @@ import type { OutboundStats, Lead } from "@/lib/types-outbound";
 import { format, formatDistanceToNow } from "date-fns";
 import { tr } from "date-fns/locale";
 
+const PAGE_VERSION = "1.0.0";
+
 // Simple chart component for funnel
 function FunnelChart({ data }: { data: { name: string; value: number; color: string }[] }) {
   const maxValue = Math.max(...data.map(d => d.value), 1);
@@ -348,8 +350,15 @@ export default function OutboundDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Version Badge */}
+      <div className="flex justify-end">
+        <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+          v{PAGE_VERSION}
+        </span>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 -mt-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Outbound Dashboard
@@ -383,7 +392,7 @@ export default function OutboundDashboard() {
                 {vapiConnected && !stats?.total_leads ? (
                   <PhoneCall className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 ) : (
-                  <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 )}
               </div>
               <div>
@@ -405,7 +414,7 @@ export default function OutboundDashboard() {
                 {vapiConnected && !stats?.new_leads ? (
                   <Phone className="w-6 h-6 text-green-600 dark:text-green-400" />
                 ) : (
-                  <UserPlus className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <UserPlus className="w-6 h-6 text-green-600 dark:text-green-400" />
                 )}
               </div>
               <div>
@@ -507,20 +516,20 @@ export default function OutboundDashboard() {
               </div>
             ) : (
               // Outbound data view
-              <div className="flex items-center justify-between mb-6">
-                <div className="text-center">
-                  <p className="text-4xl font-bold text-primary">{stats?.completed_calls_today || 0}</p>
-                  <p className="text-sm text-gray-500">Tamamlanan</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-4xl font-bold text-orange-500">{(stats?.todays_calls || 0) - (stats?.completed_calls_today || 0)}</p>
-                  <p className="text-sm text-gray-500">Bekleyen</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-4xl font-bold text-gray-400">{stats?.todays_calls || 0}</p>
-                  <p className="text-sm text-gray-500">Toplam</p>
-                </div>
+            <div className="flex items-center justify-between mb-6">
+              <div className="text-center">
+                <p className="text-4xl font-bold text-primary">{stats?.completed_calls_today || 0}</p>
+                <p className="text-sm text-gray-500">Tamamlanan</p>
               </div>
+              <div className="text-center">
+                <p className="text-4xl font-bold text-orange-500">{(stats?.todays_calls || 0) - (stats?.completed_calls_today || 0)}</p>
+                <p className="text-sm text-gray-500">Bekleyen</p>
+              </div>
+              <div className="text-center">
+                <p className="text-4xl font-bold text-gray-400">{stats?.todays_calls || 0}</p>
+                <p className="text-sm text-gray-500">Toplam</p>
+              </div>
+            </div>
             )}
             
             {/* Progress bar - show success rate for VAPI, daily progress for outbound */}
@@ -568,7 +577,7 @@ export default function OutboundDashboard() {
                 { name: "Randevu", value: Math.round((vapiKPI?.totalCalls || 0) * (vapiKPI?.appointmentRate || 0) / 100), color: "#D946EF" },
               ]} />
             ) : (
-              <FunnelChart data={funnelData} />
+            <FunnelChart data={funnelData} />
             )}
           </CardContent>
         </Card>
@@ -645,43 +654,43 @@ export default function OutboundDashboard() {
       <div className="grid lg:grid-cols-2 gap-6">
           {/* Channel Performance - Only show if has data */}
           {channelPerformance.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5 text-primary" />
-                  Kanal Performansı
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {channelPerformance.map((channel) => (
-                    <div key={channel.channel} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {channel.channel === 'call' && <Phone className="w-5 h-5 text-blue-500" />}
-                        {channel.channel === 'whatsapp' && <MessageSquare className="w-5 h-5 text-green-500" />}
-                        {channel.channel === 'email' && <MessageSquare className="w-5 h-5 text-purple-500" />}
-                        {channel.channel === 'instagram_dm' && <MessageSquare className="w-5 h-5 text-pink-500" />}
-                        {channel.channel === 'sms' && <MessageSquare className="w-5 h-5 text-orange-500" />}
-                        <span className="font-medium">{channelNames[channel.channel] || channel.channel}</span>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-sm text-gray-500">{channel.attempts} deneme</span>
-                        <span className="font-medium text-green-600">%{channel.rate}</span>
-                      </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-primary" />
+              Kanal Performansı
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+              <div className="space-y-4">
+                {channelPerformance.map((channel) => (
+                  <div key={channel.channel} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {channel.channel === 'call' && <Phone className="w-5 h-5 text-blue-500" />}
+                      {channel.channel === 'whatsapp' && <MessageSquare className="w-5 h-5 text-green-500" />}
+                      {channel.channel === 'email' && <MessageSquare className="w-5 h-5 text-purple-500" />}
+                      {channel.channel === 'instagram_dm' && <MessageSquare className="w-5 h-5 text-pink-500" />}
+                      {channel.channel === 'sms' && <MessageSquare className="w-5 h-5 text-orange-500" />}
+                      <span className="font-medium">{channelNames[channel.channel] || channel.channel}</span>
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-gray-500">{channel.attempts} deneme</span>
+                      <span className="font-medium text-green-600">%{channel.rate}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+          </CardContent>
+        </Card>
           )}
 
           {/* Leads to Contact Today - Always show with add options */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className="w-5 h-5 text-primary" />
-                Bugün Aranacaklar
-              </CardTitle>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              Bugün Aranacaklar
+            </CardTitle>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
                   <Plus className="w-4 h-4 mr-1" />
@@ -692,13 +701,13 @@ export default function OutboundDashboard() {
                   CSV
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => router.push(`${basePath}/leads`)}>
-                  Tümünü Gör
-                </Button>
+              Tümünü Gör
+            </Button>
               </div>
-            </CardHeader>
-            <CardContent>
-              {todaysLeads.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+          </CardHeader>
+          <CardContent>
+            {todaysLeads.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
                   <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
                   <p className="mb-3">Henüz aranacak lead yok</p>
                   <div className="flex justify-center gap-2">
@@ -711,43 +720,43 @@ export default function OutboundDashboard() {
                       CSV Yükle
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {todaysLeads.slice(0, 5).map((lead) => (
-                    <div 
-                      key={lead.id} 
-                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
-                      onClick={() => router.push(`${basePath}/leads?id=${lead.id}`)}
-                    >
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{lead.full_name}</p>
-                        <p className="text-sm text-gray-500">{lead.phone || lead.whatsapp}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          lead.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                          lead.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                          'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400'
-                        }`}>
-                          {lead.priority === 'high' ? 'Yüksek' : lead.priority === 'medium' ? 'Orta' : 'Düşük'}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {lead.language === 'tr' ? '🇹🇷' : '🇬🇧'}
-                        </span>
-                      </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {todaysLeads.slice(0, 5).map((lead) => (
+                  <div 
+                    key={lead.id} 
+                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                    onClick={() => router.push(`${basePath}/leads?id=${lead.id}`)}
+                  >
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">{lead.full_name}</p>
+                      <p className="text-sm text-gray-500">{lead.phone || lead.whatsapp}</p>
                     </div>
-                  ))}
-                  {todaysLeads.length > 5 && (
-                    <p className="text-sm text-center text-gray-500">
-                      +{todaysLeads.length - 5} daha
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        lead.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                        lead.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                        'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400'
+                      }`}>
+                        {lead.priority === 'high' ? 'Yüksek' : lead.priority === 'medium' ? 'Orta' : 'Düşük'}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {lead.language === 'tr' ? '🇹🇷' : '🇬🇧'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {todaysLeads.length > 5 && (
+                  <p className="text-sm text-center text-gray-500">
+                    +{todaysLeads.length - 5} daha
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Add Lead Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
