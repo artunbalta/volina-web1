@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 export default function SettingsPage() {
   const params = useParams();
   const tenant = params?.tenant as string;
-  const { tenantProfile, isLoading: tenantLoading } = useTenant();
+  const { tenantProfile } = useTenant();
   const { user } = useAuth();
 
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -46,7 +46,11 @@ export default function SettingsPage() {
   const loadProfile = useCallback(async () => {
     try {
       if (user?.id) {
-        const data = await getProfile(user.id);
+        // Add timeout to prevent hanging
+        const timeout = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        );
+        const data = await Promise.race([getProfile(user.id), timeout]) as any;
         if (data) {
           setProfile(data);
           setFormData({
@@ -59,6 +63,7 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error("Error loading profile:", error);
+      // Use default/empty values on timeout
     }
   }, [user?.id]);
 
@@ -90,13 +95,7 @@ export default function SettingsPage() {
     setHasChanges(true);
   };
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Don't block on loading - show UI immediately
 
   return (
     <div className="space-y-6">

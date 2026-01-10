@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 export default function AISettingsPage() {
   const params = useParams();
   const tenant = params?.tenant as string;
-  const { isLoading: tenantLoading } = useTenant();
+  useTenant(); // Ensure tenant context is available
 
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,7 +62,11 @@ export default function AISettingsPage() {
 
   const loadSettings = useCallback(async () => {
     try {
-      const data = await getAISettings();
+      // Add timeout to prevent hanging
+      const timeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 5000)
+      );
+      const data = await Promise.race([getAISettings(), timeout]) as any;
       if (data) {
         setSettings(data);
         setFormData({
@@ -84,6 +88,7 @@ export default function AISettingsPage() {
       }
     } catch (error) {
       console.error("Error loading AI settings:", error);
+      // Use default values on timeout
     }
   }, []);
 
@@ -140,13 +145,7 @@ export default function AISettingsPage() {
     updateForm({ [key]: newQuestions });
   };
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Don't block on loading - show UI immediately
 
   return (
     <div className="space-y-6">
