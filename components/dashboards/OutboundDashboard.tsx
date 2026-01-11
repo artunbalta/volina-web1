@@ -13,9 +13,6 @@ import {
   Clock,
   Target,
   PhoneCall,
-  Cloud,
-  Bot,
-  PlayCircle,
   Plus,
   Upload
 } from "lucide-react";
@@ -582,73 +579,6 @@ export default function OutboundDashboard() {
           </CardContent>
         </Card>
       </div>
-
-      {/* VAPI AI Calls Section - Recent calls list */}
-      {vapiConnected && vapiCalls.length > 0 && (
-        <Card className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-200 dark:border-green-800">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Bot className="w-5 h-5 text-green-600" />
-                Son AI Aramaları
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400">
-                  <Cloud className="w-3 h-3" />
-                  VAPI Live
-                </span>
-              </CardTitle>
-              <Button variant="outline" size="sm" onClick={() => router.push(`${basePath}/calls`)}>
-                Tümünü Gör
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {vapiCalls.slice(0, 5).map((call) => (
-                <div 
-                  key={call.id} 
-                  className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      call.sentiment === 'positive' ? 'bg-green-100 text-green-600' :
-                      call.sentiment === 'negative' ? 'bg-red-100 text-red-600' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      <Phone className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {call.caller_phone || 'Bilinmeyen'}
-                      </p>
-                      <p className="text-xs text-gray-500 truncate max-w-[200px]">
-                        {call.summary || `${call.type} arama`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-500">
-                      {call.duration ? `${Math.floor(call.duration / 60)}:${(call.duration % 60).toString().padStart(2, '0')}` : '-'}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {formatDistanceToNow(new Date(call.created_at), { addSuffix: true, locale: tr })}
-                    </span>
-                    {call.recording_url && (
-                      <a 
-                        href={call.recording_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-primary hover:text-primary/80"
-                      >
-                        <PlayCircle className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Channel Performance & Leads to Contact */}
       <div className="grid lg:grid-cols-2 gap-6">
