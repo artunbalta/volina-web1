@@ -113,10 +113,22 @@ export default function SettingsPage() {
 
   // Seed mock data for demo purposes
   const handleSeedMockData = async () => {
+    if (!user?.id) {
+      setSeedResult({
+        success: false,
+        message: "Kullanıcı bilgisi bulunamadı. Lütfen tekrar giriş yapın."
+      });
+      return;
+    }
+    
     setIsSeeding(true);
     setSeedResult(null);
     try {
-      const response = await fetch("/api/seed-mock-data", { method: "POST" });
+      const response = await fetch("/api/seed-mock-data", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id })
+      });
       const result = await response.json();
       
       if (result.success) {

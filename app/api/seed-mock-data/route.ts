@@ -75,22 +75,47 @@ function randomDate(daysAgo: number): string {
   return date.toISOString();
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    // Get the first user
-    const { data: profiles, error: profileError } = await supabaseAdmin
+    // Get user ID from request body (logged-in user)
+    let userId: string | null = null;
+    
+    try {
+      const body = await request.json();
+      userId = body.userId;
+    } catch {
+      // If no body, try to get first user (backward compatibility)
+    }
+    
+    // If no userId provided, get the first user (fallback)
+    if (!userId) {
+      const { data: profiles, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .limit(1);
+
+      if (profileError || !profiles?.[0]) {
+        return NextResponse.json(
+          { success: false, error: "No user found. Please create a user first." },
+          { status: 400 }
+        );
+      }
+      userId = profiles[0].id;
+    }
+    
+    // Verify user exists
+    const { data: userCheck, error: userError } = await supabaseAdmin
       .from("profiles")
       .select("id")
-      .limit(1);
-
-    if (profileError || !profiles?.[0]) {
+      .eq("id", userId)
+      .single();
+      
+    if (userError || !userCheck) {
       return NextResponse.json(
-        { success: false, error: "No user found. Please create a user first." },
+        { success: false, error: "User not found. Please sign in again." },
         { status: 400 }
       );
     }
-
-    const userId = profiles[0].id;
 
     // Clean existing data
     await supabaseAdmin.from("online_appointments").delete().eq("user_id", userId);

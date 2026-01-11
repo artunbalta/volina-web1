@@ -154,38 +154,8 @@ export default function CallsPage() {
     }
   }, []);
 
-  // Auto-setup: Check schema and seed data if needed (once per session)
-  useEffect(() => {
-    const setupSchema = async () => {
-      if (sessionStorage.getItem('calls_schema_checked')) return;
-      sessionStorage.setItem('calls_schema_checked', 'true');
-      
-      try {
-        // Check if schema is ready
-        const checkRes = await fetch('/api/setup/calls-schema');
-        const checkData = await checkRes.json();
-        
-        // If no data exists, trigger setup to seed sample data
-        if (checkData.ready && !checkData.hasData) {
-          await fetch('/api/setup/calls-schema', { method: 'POST' });
-          // Reload calls after seeding
-          loadCalls();
-        }
-      } catch (error) {
-        console.error('Schema setup check failed:', error);
-      }
-    };
-    
-    setupSchema();
-  }, [loadCalls]);
-
-  // Background sync (non-blocking, once per session)
-  useEffect(() => {
-    if (user?.id && !sessionStorage.getItem('calls_synced')) {
-      sessionStorage.setItem('calls_synced', 'true');
-      fetch(`/api/vapi/sync?days=14&userId=${user.id}`, { method: "POST" }).catch(() => {});
-    }
-  }, [user?.id]);
+  // NOTE: Auto-setup removed to prevent data reset on sign out/sign in
+  // Users should use the Settings page to seed mock data manually
 
   useEffect(() => {
     loadCalls().then(() => setIsLoading(false));
