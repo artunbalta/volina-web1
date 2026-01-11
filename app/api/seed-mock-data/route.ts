@@ -182,24 +182,23 @@ export async function POST() {
       const outcomeRoll = randomInt(0, 9);
       let sentiment: string;
       let duration: number;
-      let score: number | null;
+      let score: number;
 
-      if (outcomeRoll <= 2) {
+      if (outcomeRoll <= 3) {
+        // High interest - positive outcome
         sentiment = 'positive';
-        duration = randomInt(120, 420);
-        score = randomInt(7, 10);
-      } else if (outcomeRoll <= 5) {
+        duration = randomInt(180, 480); // 3-8 minutes
+        score = randomInt(8, 10);
+      } else if (outcomeRoll <= 6) {
+        // Medium interest - neutral outcome
         sentiment = 'neutral';
-        duration = randomInt(60, 240);
-        score = randomInt(4, 7);
-      } else if (outcomeRoll <= 7) {
-        sentiment = 'negative';
-        duration = randomInt(30, 120);
-        score = randomInt(1, 4);
+        duration = randomInt(90, 240); // 1.5-4 minutes
+        score = randomInt(5, 7);
       } else {
-        sentiment = 'neutral';
-        duration = 0;
-        score = null;
+        // Low interest - negative/short call
+        sentiment = randomInt(0, 1) === 0 ? 'negative' : 'neutral';
+        duration = randomInt(30, 120); // 0.5-2 minutes
+        score = randomInt(2, 4);
       }
 
       // Distribute calls - more recent calls
@@ -211,19 +210,19 @@ export async function POST() {
       callsToInsert.push({
         user_id: userId,
         vapi_call_id: `mock_call_${i}_${Date.now()}`,
-        recording_url: duration > 0 ? `https://storage.vapi.ai/mock-recording-${i}.mp3` : null,
-        transcript: duration > 60 ? 'Merhaba, ben Volina AI asistanınızım. Size nasıl yardımcı olabilirim? [Transkript devamı...]' : null,
+        recording_url: `https://storage.vapi.ai/mock-recording-${i}.mp3`,
+        transcript: duration > 60 ? 'Merhaba, ben Volina AI asistanınızım. Size nasıl yardımcı olabilirim? [Transkript devamı...]' : 'Kısa görüşme yapıldı.',
         summary: randomItem(summariesTr),
         sentiment,
         duration,
-        type: score && score >= 7 ? 'appointment' : score && score >= 4 ? 'inquiry' : 'follow_up',
+        type: score >= 8 ? 'appointment' : score >= 5 ? 'inquiry' : 'follow_up',
         caller_phone: randomItem(callPhones),
         caller_name: randomItem(callNames),
-        evaluation_summary: score ? randomItem(evaluationsTr) : null,
+        evaluation_summary: randomItem(evaluationsTr),
         evaluation_score: score,
         metadata: {
-          appointmentBooked: score ? score >= 8 : false,
-          callbackRequested: score ? score >= 5 && score < 8 : false,
+          appointmentBooked: score >= 8,
+          callbackRequested: score >= 5 && score < 8,
           source: 'outbound_campaign'
         },
         created_at: callDate.toISOString()
