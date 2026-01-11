@@ -126,7 +126,26 @@ export default function AnalyticsPage() {
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
-          setAnalytics(result.data);
+          // Map API response to AnalyticsData format
+          const data = result.data;
+          setAnalytics({
+            total_leads: data.total_leads || 0,
+            contacted_leads: data.contacted_leads || 0,
+            interested_leads: data.interested_leads || 0,
+            appointments_set: data.appointments_set || 0,
+            converted_leads: data.converted_leads || 0,
+            unreachable_leads: data.unreachable_leads || 0,
+            conversion_rate: data.conversion_rate || 0,
+            conversion_change: data.conversion_change || 0,
+            avg_call_duration: data.avg_call_duration || 0,
+            reachability_rate: data.reachability_rate || 0,
+            total_calls: data.total_calls || 0,
+            total_messages: data.total_messages || 0,
+            avg_response_time: data.avg_response_time || 0,
+            channel_performance: data.channel_performance || [],
+            best_call_times: data.best_call_times || [],
+            language_performance: data.language_performance || { tr: 0, en: 0 },
+          });
           return;
         }
       }

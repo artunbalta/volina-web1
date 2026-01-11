@@ -19,7 +19,10 @@ import {
   Key,
   Globe,
   Bell,
-  Shield
+  Shield,
+  Database,
+  CheckCircle,
+  AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +38,10 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  
+  // Mock data seeding state
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{ success: boolean; message: string; stats?: Record<string, number> } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -102,6 +109,36 @@ export default function SettingsPage() {
   const updateForm = (updates: Partial<typeof formData>) => {
     setFormData({ ...formData, ...updates });
     setHasChanges(true);
+  };
+
+  // Seed mock data for demo purposes
+  const handleSeedMockData = async () => {
+    setIsSeeding(true);
+    setSeedResult(null);
+    try {
+      const response = await fetch("/api/seed-mock-data", { method: "POST" });
+      const result = await response.json();
+      
+      if (result.success) {
+        setSeedResult({
+          success: true,
+          message: "Demo veriler başarıyla oluşturuldu!",
+          stats: result.stats
+        });
+      } else {
+        setSeedResult({
+          success: false,
+          message: result.error || "Veriler oluşturulurken hata oluştu"
+        });
+      }
+    } catch (error) {
+      setSeedResult({
+        success: false,
+        message: "Sunucu hatası oluştu. Lütfen tekrar deneyin."
+      });
+    } finally {
+      setIsSeeding(false);
+    }
   };
 
   // Don't block on loading - show UI immediately
@@ -298,6 +335,82 @@ export default function SettingsPage() {
               <Shield className="w-4 h-4 mr-2" />
               Hesabı Sil
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Demo Data */}
+      <Card className="border-2 border-dashed border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-amber-600" />
+            Demo Veriler
+          </CardTitle>
+          <CardDescription>
+            Dashboard&apos;u test etmek için örnek veriler oluşturun
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>⚠️ Dikkat:</strong> Bu işlem mevcut tüm lead, arama, mesaj ve randevu verilerinizi silip yerine demo veriler oluşturacaktır.
+              </p>
+            </div>
+            
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="font-medium mb-2">Oluşturulacak veriler:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>30 örnek lead (farklı durumlarda)</li>
+                <li>50 tamamlanmış arama kaydı</li>
+                <li>40 outreach/erişim kaydı</li>
+                <li>60 mesaj (WhatsApp, Email, SMS, Instagram)</li>
+                <li>8 mesaj şablonu</li>
+                <li>8 online randevu</li>
+              </ul>
+            </div>
+
+            <Button 
+              onClick={handleSeedMockData} 
+              disabled={isSeeding}
+              variant="outline"
+              className="w-full border-amber-400 text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/30"
+            >
+              {isSeeding ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Veriler Oluşturuluyor...
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4 mr-2" />
+                  Demo Verileri Oluştur
+                </>
+              )}
+            </Button>
+
+            {seedResult && (
+              <div className={cn(
+                "p-4 rounded-lg flex items-start gap-3",
+                seedResult.success 
+                  ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200"
+                  : "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200"
+              )}>
+                {seedResult.success ? (
+                  <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="font-medium">{seedResult.message}</p>
+                  {seedResult.stats && (
+                    <p className="text-sm mt-1 opacity-80">
+                      {seedResult.stats.leads} lead, {seedResult.stats.calls} arama, {seedResult.stats.outreach} outreach, {seedResult.stats.messages} mesaj, {seedResult.stats.templates} şablon, {seedResult.stats.appointments} randevu oluşturuldu.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
