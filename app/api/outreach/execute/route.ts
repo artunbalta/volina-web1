@@ -33,11 +33,60 @@ interface Outreach {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { outreach_id, user_id } = body;
+    const { outreach_id, lead_id, channel, direct_call } = body;
 
+    // Direct call from leads page (without outreach record)
+    if (direct_call && lead_id) {
+      // Get lead data directly
+      const { data: leadData, error: leadError } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("id", lead_id)
+        .single();
+
+      if (leadError || !leadData) {
+        return NextResponse.json(
+          { error: "Lead not found" },
+          { status: 404 }
+        );
+      }
+
+      const lead = leadData as Lead;
+
+      if (!lead.phone) {
+        return NextResponse.json(
+          { success: false, message: "Lead'in telefon numarası yok" },
+          { status: 400 }
+        );
+      }
+
+      // Execute direct call
+      const result = await executeCall(lead, lead_id);
+
+      // Update lead status if successful
+      if (result.success) {
+        await supabase
+          .from("leads")
+          .update({ 
+            status: "contacted",
+            last_contact_date: new Date().toISOString(),
+          } as never)
+          .eq("id", lead_id);
+      }
+
+      return NextResponse.json({
+        success: result.success,
+        message: result.message,
+        lead_id,
+        channel: "call",
+        vapi_call_id: result.vapi_call_id,
+      });
+    }
+
+    // Original outreach-based call
     if (!outreach_id) {
       return NextResponse.json(
-        { error: "outreach_id is required" },
+        { error: "outreach_id or lead_id with direct_call is required" },
         { status: 400 }
       );
     }

@@ -101,6 +101,7 @@ export default function LeadsPage() {
   const [csvError, setCsvError] = useState("");
   const [uploadResult, setUploadResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [callingLeadId, setCallingLeadId] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState<Partial<Lead>>({
@@ -234,6 +235,43 @@ export default function LeadsPage() {
       console.error("Error deleting lead:", error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Direct VAPI call from leads
+  const handleCallLead = async (lead: Lead) => {
+    if (!lead.phone) {
+      alert("Bu lead'in telefon numarası yok");
+      return;
+    }
+    
+    setCallingLeadId(lead.id);
+    try {
+      const response = await fetch("/api/outreach/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: lead.id,
+          channel: "call",
+          direct_call: true, // Flag for direct call without outreach record
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Arama başlatıldı: ${lead.full_name}`);
+        // Update lead status
+        await updateLead(lead.id, { status: "contacted", last_contact_date: new Date().toISOString() });
+        await loadLeads();
+      } else {
+        alert(`Arama başarısız: ${data.message || data.error}`);
+      }
+    } catch (error) {
+      console.error("Error calling lead:", error);
+      alert("Arama hatası oluştu");
+    } finally {
+      setCallingLeadId(null);
     }
   };
 
@@ -583,6 +621,25 @@ export default function LeadsPage() {
                   {lead.language === 'tr' ? '🇹🇷' : '🇬🇧'}
                 </span>
               </div>
+
+              {/* Call Button */}
+              {lead.phone && (
+                <div className="mb-3">
+                  <Button
+                    size="sm"
+                    className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    onClick={(e) => { e.stopPropagation(); handleCallLead(lead); }}
+                    disabled={callingLeadId === lead.id}
+                  >
+                    {callingLeadId === lead.id ? (
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Phone className="w-4 h-4 mr-2" />
+                    )}
+                    {callingLeadId === lead.id ? "Aranıyor..." : "Ara"}
+                  </Button>
+                </div>
+              )}
 
               {/* Meta info */}
               <div className="text-xs text-gray-500 dark:text-gray-400 border-t dark:border-gray-700 pt-3">
