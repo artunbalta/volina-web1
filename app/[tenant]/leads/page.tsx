@@ -459,11 +459,35 @@ export default function LeadsPage() {
     if (csvData.length === 0) return;
     
     setIsUploading(true);
+    let successCount = 0;
+    let failedCount = 0;
+    const errors: string[] = [];
+
     try {
-      const result = await createLeadsBulk(csvData);
-      setUploadResult(result);
+      for (const lead of csvData) {
+        try {
+          const response = await fetch("/api/dashboard/leads", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(lead),
+          });
+          const result = await response.json();
+          
+          if (result.success) {
+            successCount++;
+          } else {
+            failedCount++;
+            errors.push(`${lead.full_name}: ${result.error || "Bilinmeyen hata"}`);
+          }
+        } catch {
+          failedCount++;
+          errors.push(`${lead.full_name}: Bağlantı hatası`);
+        }
+      }
       
-      if (result.success > 0) {
+      setUploadResult({ success: successCount, failed: failedCount, errors });
+      
+      if (successCount > 0) {
         await loadLeads();
       }
     } catch (error) {
