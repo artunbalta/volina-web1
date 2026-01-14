@@ -196,7 +196,7 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       .from("outreach")
       .select("user_id")
       .eq("id", outreachId)
-      .single();
+      .single() as { data: { user_id: string } | null };
     
     if (outreach) {
       userId = outreach.user_id;
