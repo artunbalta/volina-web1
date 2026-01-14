@@ -17,10 +17,10 @@ const TenantContext = createContext<TenantContextType | undefined>(undefined);
 export function TenantProvider({ children }: { children: ReactNode }) {
   const params = useParams();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, session, isAuthenticated, isLoading: authLoading } = useAuth();
   
   const [tenantProfile, setTenantProfile] = useState<Profile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   
   const tenant = params?.tenant as string | undefined;
   
@@ -28,36 +28,38 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const isOwner = user?.slug === tenant;
   
   useEffect(() => {
-    if (!authLoading) {
-      // If user is authenticated but accessing wrong tenant, redirect
-      if (isAuthenticated && user && tenant && user.slug !== tenant) {
-        // Redirect to their own tenant
-        router.push(`/${user.slug}`);
-        return;
-      }
+    // Wait for auth to fully load before making any redirect decisions
+    if (authLoading) return;
+    
+    // Give a small delay to ensure session is properly set
+    const timer = setTimeout(() => {
+      setHasCheckedAuth(true);
       
-      // If not authenticated, redirect to login
-      if (!isAuthenticated && !authLoading) {
+      // Check session directly - more reliable than isAuthenticated
+      if (session) {
+        // User is authenticated
+        if (user && tenant && user.slug !== tenant) {
+          // Wrong tenant, redirect to their own
+          router.push(`/${user.slug}`);
+        } else if (user) {
+          setTenantProfile(user);
+        }
+      } else {
+        // No session - redirect to login
         router.push("/login");
-        return;
       }
-      
-      // Set tenant profile as the current user (they can only access their own tenant)
-      if (user && isOwner) {
-        setTenantProfile(user);
-      }
-      
-      setIsLoading(false);
-    }
-  }, [authLoading, isAuthenticated, user, tenant, router, isOwner]);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [authLoading, session, user, tenant, router]);
 
   return (
     <TenantContext.Provider
       value={{
         tenant: tenant || null,
-        tenantProfile,
+        tenantProfile: tenantProfile || user,
         isOwner,
-        isLoading: isLoading || authLoading,
+        isLoading: authLoading || !hasCheckedAuth,
       }}
     >
       {children}

@@ -338,10 +338,22 @@ CREATE TABLE IF NOT EXISTS calls (
     duration INTEGER, -- Duration in seconds
     type TEXT DEFAULT 'inquiry' CHECK (type IN ('appointment', 'inquiry', 'follow_up', 'cancellation')),
     caller_phone TEXT,
+    caller_name TEXT, -- Caller's full name
+    evaluation_summary TEXT, -- AI evaluation of the call
+    evaluation_score INTEGER CHECK (evaluation_score >= 0 AND evaluation_score <= 10), -- Score out of 10
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add new columns if they don't exist (for existing tables)
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS caller_name TEXT;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS evaluation_summary TEXT;
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS evaluation_score INTEGER CHECK (evaluation_score >= 0 AND evaluation_score <= 10);
+
+-- Create indexes for new columns
+CREATE INDEX IF NOT EXISTS idx_calls_caller_name ON calls(caller_name);
+CREATE INDEX IF NOT EXISTS idx_calls_evaluation_score ON calls(evaluation_score);
 
 -- Add foreign key for appointment_id if it doesn't exist
 DO $$

@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { updateProfile, getProfile } from "@/lib/supabase";
 import type { Profile } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,20 +19,29 @@ import {
   Key,
   Globe,
   Bell,
-  Shield
+  Shield,
+  Database,
+  CheckCircle,
+  AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const PAGE_VERSION = "1.0.0";
 
 export default function SettingsPage() {
   const params = useParams();
   const tenant = params?.tenant as string;
-  const { tenantProfile, isLoading: tenantLoading } = useTenant();
+  const { tenantProfile } = useTenant();
   const { user } = useAuth();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  
+  // Mock data seeding state
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{ success: boolean; message: string; stats?: Record<string, number> } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -46,15 +54,18 @@ export default function SettingsPage() {
   const loadProfile = useCallback(async () => {
     try {
       if (user?.id) {
-        const data = await getProfile(user.id);
-        if (data) {
-          setProfile(data);
-          setFormData({
-            full_name: data.full_name || "",
-            company_name: data.company_name || "",
-            slug: data.slug || "",
-            vapi_org_id: data.vapi_org_id || "",
-          });
+        const response = await fetch(`/api/dashboard/profile?userId=${user.id}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            setProfile(result.data);
+            setFormData({
+              full_name: result.data.full_name || "",
+              company_name: result.data.company_name || "",
+              slug: result.data.slug || "",
+              vapi_org_id: result.data.vapi_org_id || "",
+            });
+          }
         }
       }
     } catch (error) {
@@ -70,12 +81,22 @@ export default function SettingsPage() {
     if (!user?.id) return;
     setIsSaving(true);
     try {
-      await updateProfile(user.id, {
-        full_name: formData.full_name,
-        company_name: formData.company_name,
-        slug: formData.slug,
-        vapi_org_id: formData.vapi_org_id,
+      const response = await fetch("/api/dashboard/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          full_name: formData.full_name,
+          company_name: formData.company_name,
+          slug: formData.slug,
+          vapi_org_id: formData.vapi_org_id,
+        }),
       });
+      
+      if (!response.ok) {
+        throw new Error("Failed to save profile");
+      }
+      
       setHasChanges(false);
       await loadProfile();
     } catch (error) {
@@ -90,18 +111,61 @@ export default function SettingsPage() {
     setHasChanges(true);
   };
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Seed mock data for demo purposes
+  const handleSeedMockData = async () => {
+    if (!user?.id) {
+      setSeedResult({
+        success: false,
+        message: "Kullanıcı bilgisi bulunamadı. Lütfen tekrar giriş yapın."
+      });
+      return;
+    }
+    
+    setIsSeeding(true);
+    setSeedResult(null);
+    try {
+      const response = await fetch("/api/seed-mock-data", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        setSeedResult({
+          success: true,
+          message: "Demo veriler başarıyla oluşturuldu!",
+          stats: result.stats
+        });
+      } else {
+        setSeedResult({
+          success: false,
+          message: result.error || "Veriler oluşturulurken hata oluştu"
+        });
+      }
+    } catch (error) {
+      setSeedResult({
+        success: false,
+        message: "Sunucu hatası oluştu. Lütfen tekrar deneyin."
+      });
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
+  // Don't block on loading - show UI immediately
 
   return (
     <div className="space-y-6">
+      {/* Version Badge */}
+      <div className="flex justify-end">
+        <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+          v{PAGE_VERSION}
+        </span>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 -mt-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ayarlar</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
@@ -283,6 +347,82 @@ export default function SettingsPage() {
               <Shield className="w-4 h-4 mr-2" />
               Hesabı Sil
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Demo Data */}
+      <Card className="border-2 border-dashed border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-amber-600" />
+            Demo Veriler
+          </CardTitle>
+          <CardDescription>
+            Dashboard&apos;u test etmek için örnek veriler oluşturun
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-100 dark:bg-amber-900/30 rounded-lg">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>⚠️ Dikkat:</strong> Bu işlem mevcut tüm lead, arama, mesaj ve randevu verilerinizi silip yerine demo veriler oluşturacaktır.
+              </p>
+            </div>
+            
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="font-medium mb-2">Oluşturulacak veriler:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>30 örnek lead (farklı durumlarda)</li>
+                <li>50 tamamlanmış arama kaydı</li>
+                <li>40 outreach/erişim kaydı</li>
+                <li>60 mesaj (WhatsApp, Email, SMS, Instagram)</li>
+                <li>8 mesaj şablonu</li>
+                <li>8 online randevu</li>
+              </ul>
+            </div>
+
+            <Button 
+              onClick={handleSeedMockData} 
+              disabled={isSeeding}
+              variant="outline"
+              className="w-full border-amber-400 text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/30"
+            >
+              {isSeeding ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Veriler Oluşturuluyor...
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4 mr-2" />
+                  Demo Verileri Oluştur
+                </>
+              )}
+            </Button>
+
+            {seedResult && (
+              <div className={cn(
+                "p-4 rounded-lg flex items-start gap-3",
+                seedResult.success 
+                  ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200"
+                  : "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200"
+              )}>
+                {seedResult.success ? (
+                  <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="font-medium">{seedResult.message}</p>
+                  {seedResult.stats && (
+                    <p className="text-sm mt-1 opacity-80">
+                      {seedResult.stats.leads} lead, {seedResult.stats.calls} arama, {seedResult.stats.outreach} outreach, {seedResult.stats.messages} mesaj, {seedResult.stats.templates} şablon, {seedResult.stats.appointments} randevu oluşturuldu.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

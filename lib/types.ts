@@ -54,6 +54,9 @@ export interface Call {
   duration: number | null;
   type: CallType;
   caller_phone: string | null;
+  caller_name: string | null;
+  evaluation_summary: string | null;
+  evaluation_score: number | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;

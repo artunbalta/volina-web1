@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
-import { getAnalytics } from "@/lib/supabase-outbound";
+// Analytics now loaded via API route
 import type { AnalyticsData } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -86,7 +86,7 @@ function FunnelChart({ data }: { data: { label: string; value: number; percentag
 export default function AnalyticsPage() {
   const params = useParams();
   const tenant = params?.tenant as string;
-  const { isLoading: tenantLoading } = useTenant();
+  useTenant(); // Ensure tenant context is available
 
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,10 +118,57 @@ export default function AnalyticsPage() {
           startDate = subDays(endDate, 7);
       }
       
-      const data = await getAnalytics(startDate, endDate);
-      setAnalytics(data);
+      // Use server-side API route
+      const response = await fetch(
+        `/api/dashboard/analytics?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
+      );
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          // Map API response to AnalyticsData format
+          const data = result.data;
+          setAnalytics({
+            total_leads: data.total_leads || 0,
+            contacted_leads: data.contacted_leads || 0,
+            interested_leads: data.interested_leads || 0,
+            appointments_set: data.appointments_set || 0,
+            converted_leads: data.converted_leads || 0,
+            unreachable_leads: data.unreachable_leads || 0,
+            conversion_rate: data.conversion_rate || 0,
+            conversion_change: data.conversion_change || 0,
+            avg_call_duration: data.avg_call_duration || 0,
+            reachability_rate: data.reachability_rate || 0,
+            total_calls: data.total_calls || 0,
+            total_messages: data.total_messages || 0,
+            avg_response_time: data.avg_response_time || 0,
+            channel_performance: data.channel_performance || [],
+            best_call_times: data.best_call_times || [],
+            language_performance: data.language_performance || { tr: 0, en: 0 },
+          });
+          return;
+        }
+      }
+      
+      // Set default empty analytics on error
+      setAnalytics({
+        total_leads: 0, contacted_leads: 0, interested_leads: 0,
+        appointments_set: 0, converted_leads: 0, unreachable_leads: 0,
+        conversion_rate: 0, conversion_change: 0, avg_call_duration: 0,
+        reachability_rate: 0, total_calls: 0, total_messages: 0,
+        avg_response_time: 0, channel_performance: [],
+        best_call_times: [], language_performance: { tr: 0, en: 0 },
+      });
     } catch (error) {
       console.error("Error loading analytics:", error);
+      setAnalytics({
+        total_leads: 0, contacted_leads: 0, interested_leads: 0,
+        appointments_set: 0, converted_leads: 0, unreachable_leads: 0,
+        conversion_rate: 0, conversion_change: 0, avg_call_duration: 0,
+        reachability_rate: 0, total_calls: 0, total_messages: 0,
+        avg_response_time: 0, channel_performance: [],
+        best_call_times: [], language_performance: { tr: 0, en: 0 },
+      });
     }
   }, [dateRange]);
 
@@ -135,13 +182,7 @@ export default function AnalyticsPage() {
     setIsRefreshing(false);
   };
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Don't block on loading - show UI with loading indicators in sections
 
   const funnelData = analytics ? [
     { label: "Toplam Lead", value: analytics.total_leads, percentage: 100, color: "#6366F1" },

@@ -315,7 +315,76 @@ CREATE POLICY "Users can update their own ai_settings" ON ai_settings
     FOR UPDATE USING (auth.uid() = user_id);
 
 -- ===========================================
--- 6. ONLINE_APPOINTMENTS TABLE (Goal conversions)
+-- 6. MESSAGES TABLE (Multi-channel messages)
+-- ===========================================
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+    outreach_id UUID REFERENCES outreach(id) ON DELETE SET NULL,
+    
+    -- Channel & Direction
+    channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'email', 'sms', 'instagram_dm', 'call')),
+    direction TEXT DEFAULT 'outbound' CHECK (direction IN ('outbound', 'inbound')),
+    
+    -- Content
+    recipient TEXT NOT NULL,
+    subject TEXT, -- For emails
+    content TEXT NOT NULL,
+    
+    -- Status
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'read')),
+    
+    -- Tracking
+    read_at TIMESTAMP WITH TIME ZONE,
+    replied_at TIMESTAMP WITH TIME ZONE,
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their own messages" ON messages;
+DROP POLICY IF EXISTS "Users can insert their own messages" ON messages;
+DROP POLICY IF EXISTS "Users can update their own messages" ON messages;
+DROP POLICY IF EXISTS "Service role can manage messages" ON messages;
+
+CREATE POLICY "Users can view their own messages" ON messages
+    FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert their own messages" ON messages
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update their own messages" ON messages
+    FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Service role can manage messages" ON messages
+    FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel);
+CREATE INDEX IF NOT EXISTS idx_messages_lead_id ON messages(lead_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
+
+-- Realtime
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Updated_at trigger
+DROP TRIGGER IF EXISTS update_messages_updated_at ON messages;
+CREATE TRIGGER update_messages_updated_at
+    BEFORE UPDATE ON messages
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ===========================================
+-- 8. ONLINE_APPOINTMENTS TABLE (Goal conversions)
 -- ===========================================
 CREATE TABLE IF NOT EXISTS online_appointments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -360,7 +429,7 @@ CREATE INDEX IF NOT EXISTS idx_online_appointments_lead_id ON online_appointment
 CREATE INDEX IF NOT EXISTS idx_online_appointments_date ON online_appointments(appointment_date);
 
 -- ===========================================
--- 7. ADD DASHBOARD_TYPE TO PROFILES
+-- 9. ADD DASHBOARD_TYPE TO PROFILES
 -- ===========================================
 DO $$
 BEGIN
@@ -374,7 +443,7 @@ BEGIN
 END $$;
 
 -- ===========================================
--- 8. REALTIME SETUP
+-- 10. REALTIME SETUP
 -- ===========================================
 DO $$
 BEGIN
@@ -398,7 +467,7 @@ EXCEPTION
 END $$;
 
 -- ===========================================
--- 9. UPDATED_AT TRIGGERS
+-- 11. UPDATED_AT TRIGGERS
 -- ===========================================
 DROP TRIGGER IF EXISTS update_leads_updated_at ON leads;
 CREATE TRIGGER update_leads_updated_at
@@ -431,7 +500,7 @@ CREATE TRIGGER update_online_appointments_updated_at
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ===========================================
--- 10. HELPER FUNCTIONS
+-- 12. HELPER FUNCTIONS
 -- ===========================================
 
 -- Get leads that need to be contacted today

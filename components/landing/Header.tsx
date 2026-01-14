@@ -6,6 +6,8 @@ import Link from "next/link";
 import { User, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+const APP_VERSION = "1.0.0";
+
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -20,19 +22,24 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <Image
-              src="/VolinaLogo.png"
-              alt="Volina AI Logo"
-              width={32}
-              height={32}
-              className="h-8 w-auto"
-              priority
-            />
-            <span className="font-semibold text-white text-lg tracking-tight">
-              Volina<span className="text-blue-400">AI</span>
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2">
+              <Image
+                src="/VolinaLogo.png"
+                alt="Volina AI Logo"
+                width={32}
+                height={32}
+                className="h-8 w-auto"
+                priority
+              />
+              <span className="font-semibold text-white text-lg tracking-tight">
+                Volina<span className="text-blue-400">AI</span>
+              </span>
+            </Link>
+            <span className="text-xs text-white/40 bg-white/10 px-2 py-0.5 rounded">
+              v{APP_VERSION}
             </span>
-          </Link>
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8">

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { getLeads, createLead, updateLead, deleteLead, createLeadsBulk } from "@/lib/supabase-outbound";
+import { createLead, updateLead, deleteLead, createLeadsBulk } from "@/lib/supabase-outbound";
 import type { Lead, LeadStatus, LeadLanguage, LeadPriority } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +76,7 @@ export default function LeadsPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const tenant = params?.tenant as string;
-  const { isLoading: tenantLoading } = useTenant();
+  useTenant(); // Ensure tenant context is available
   const { user } = useAuth();
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -119,20 +119,52 @@ export default function LeadsPage() {
 
   const loadLeads = useCallback(async () => {
     try {
-      const data = await getLeads({
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        priority: priorityFilter !== "all" ? priorityFilter : undefined,
-        search: searchQuery || undefined,
-      });
-      setLeads(data);
+      // Use API endpoint (admin access, bypasses RLS)
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (priorityFilter !== "all") params.set("priority", priorityFilter);
+      if (searchQuery) params.set("search", searchQuery);
+      params.set("limit", "100");
+
+      const response = await fetch(`/api/dashboard/leads?${params.toString()}`);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          // Apply client-side filters
+          let filteredData = result.data;
+          if (statusFilter !== "all") {
+            filteredData = filteredData.filter((l: any) => l.status === statusFilter);
+          }
+          if (priorityFilter !== "all") {
+            filteredData = filteredData.filter((l: any) => l.priority === priorityFilter);
+          }
+          if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            filteredData = filteredData.filter((l: any) => 
+              l.full_name?.toLowerCase().includes(query) ||
+              l.phone?.toLowerCase().includes(query) ||
+              l.email?.toLowerCase().includes(query)
+            );
+          }
+          setLeads(filteredData);
+        }
+      }
     } catch (error) {
       console.error("Error loading leads:", error);
     }
   }, [statusFilter, priorityFilter, searchQuery]);
 
   useEffect(() => {
+    // Load leads immediately (fast)
     loadLeads().then(() => setIsLoading(false));
-  }, [loadLeads]);
+    
+    // Background sync (non-blocking, once per session)
+    if (user?.id && !sessionStorage.getItem('leads_synced')) {
+      sessionStorage.setItem('leads_synced', 'true');
+      fetch(`/api/vapi/sync?days=14&userId=${user.id}`, { method: "POST" }).catch(() => {});
+      fetch(`/api/vapi/sync-leads?userId=${user.id}`, { method: "POST" }).catch(() => {});
+    }
+  }, [loadLeads, user?.id]);
 
   // Check for lead ID in URL params
   useEffect(() => {
@@ -149,8 +181,15 @@ export default function LeadsPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    // Load leads first (fast), then sync in background
     await loadLeads();
     setIsRefreshing(false);
+    
+    // Background sync (non-blocking)
+    if (user?.id) {
+      fetch(`/api/vapi/sync?days=14&userId=${user.id}`, { method: "POST" }).catch(() => {});
+      fetch(`/api/vapi/sync-leads?userId=${user.id}`, { method: "POST" }).catch(() => {});
+    }
   };
 
   const handleAddLead = async () => {
@@ -398,13 +437,7 @@ export default function LeadsPage() {
     return true;
   });
 
-  if (tenantLoading || isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Don't block on loading - show UI immediately
 
   return (
     <div className="space-y-6">

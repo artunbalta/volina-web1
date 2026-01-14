@@ -101,48 +101,38 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     initRef.current = true;
 
     let mounted = true;
-    let timeoutId: NodeJS.Timeout;
 
     const initializeAuth = async () => {
       try {
-        // Set a timeout to prevent infinite loading
-        timeoutId = setTimeout(() => {
-          if (mounted && isLoading) {
-            console.warn("Auth initialization timeout, setting isLoading to false");
-            setIsLoading(false);
-          }
-        }, 3000); // 3 second timeout (reduced from 5)
-
-        // Get initial session
+        // Get initial session - this is the critical auth check
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
         
+        if (!mounted) return;
+        
         if (error) {
-          console.error("Error getting session:", error);
-          if (mounted) {
-            setSession(null);
-            setUser(null);
-            setIsLoading(false);
-          }
+          setSession(null);
+          setUser(null);
+          setIsLoading(false);
           return;
         }
         
-        if (mounted) {
-          setSession(initialSession);
-          
-          if (initialSession?.user) {
-            await fetchProfile(initialSession.user);
-          } else {
-            setUser(null);
-          }
-          setIsLoading(false);
+        // Set session immediately
+        setSession(initialSession);
+        
+        if (initialSession?.user) {
+          // Fetch profile but don't block
+          fetchProfile(initialSession.user);
+        } else {
+          setUser(null);
         }
+        
+        setIsLoading(false);
       } catch (error) {
-        console.error("Error initializing auth:", error);
         if (mounted) {
+          setSession(null);
+          setUser(null);
           setIsLoading(false);
         }
-      } finally {
-        clearTimeout(timeoutId);
       }
     };
 
@@ -152,8 +142,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         if (!mounted) return;
-        
-        console.log("Auth state change:", event);
         
         setSession(currentSession);
         
@@ -177,7 +165,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
-      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, [fetchProfile, isLoading, user]);
@@ -207,29 +194,61 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     setIsLoading(true);
     
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Auth timeout - Supabase is not responding')), 15000);
+      });
+      
+      const authPromise = supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      const { data, error } = await Promise.race([authPromise, timeoutPromise]);
 
-    if (!error && data.user) {
-      await fetchProfile(data.user);
+      if (!error && data.user) {
+        setSession(data.session);
+        fetchProfile(data.user).then(() => setIsLoading(false));
+        return { error: null };
+      }
+      
+      setIsLoading(false);
+      return { error };
+    } catch (err: any) {
+      setIsLoading(false);
+      return { error: { message: err?.message || 'Network error - please check your connection' } as any };
     }
-    
-    setIsLoading(false);
-    return { error };
   };
 
   const signOut = async () => {
     try {
       setIsLoading(true);
-      await supabase.auth.signOut();
+      
+      // Clear session from state
       setUser(null);
       setSession(null);
+      
+      // Clear localStorage (Supabase stores session there)
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      if (supabaseUrl) {
+        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0];
+        const storageKey = `sb-${projectRef}-auth-token`;
+        localStorage.removeItem(storageKey);
+      }
+      
+      // Clear any other auth-related storage
+      sessionStorage.clear();
+      
+      // Try server-side signout (non-blocking)
+      fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+      
       // Force redirect to login
-      router.push('/login');
+      window.location.href = '/login';
     } catch (error) {
       console.error("Error signing out:", error);
+      // Force redirect even on error
+      window.location.href = '/login';
     } finally {
       setIsLoading(false);
     }
