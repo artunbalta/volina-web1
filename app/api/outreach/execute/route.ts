@@ -22,6 +22,7 @@ interface Lead {
 
 interface Outreach {
   id: string;
+  user_id: string;
   lead_id: string;
   channel: string;
   scheduled_for: string;
