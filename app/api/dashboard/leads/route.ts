@@ -99,17 +99,17 @@ export async function POST(request: NextRequest) {
         .from("profiles")
         .select("id")
         .eq("dashboard_type", "outbound")
-        .limit(1);
+        .limit(1) as { data: { id: string }[] | null };
       
-      if (profiles && profiles.length > 0) {
+      if (profiles && profiles.length > 0 && profiles[0]) {
         user_id = profiles[0].id;
       } else {
         const { data: anyProfiles } = await supabase
           .from("profiles")
           .select("id")
-          .limit(1);
+          .limit(1) as { data: { id: string }[] | null };
         
-        if (!anyProfiles || anyProfiles.length === 0) {
+        if (!anyProfiles || anyProfiles.length === 0 || !anyProfiles[0]) {
           return NextResponse.json(
             { success: false, error: "No user found" },
             { status: 400 }
