@@ -22,17 +22,25 @@ export async function GET(request: NextRequest) {
     
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const days = parseInt(searchParams.get("days") || "14");
+    const userId = searchParams.get("userId");
     
     // Calculate date range
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Fetch ALL calls for stats + limited calls for display (single query)
-    const { data: allCalls, error } = await supabase
+    // Build query
+    let query = supabase
       .from("calls")
       .select("*")
       .gte("created_at", startDate.toISOString())
-      .order("created_at", { ascending: false }) as { data: CallRecord[] | null; error: { message: string } | null };
+      .order("created_at", { ascending: false });
+    
+    // Filter by user_id if provided
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+    
+    const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching calls:", error);
