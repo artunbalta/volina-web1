@@ -104,7 +104,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as VapiWebhookPayload;
     const messageType = body.message?.type;
 
-    console.log("Received VAPI webhook:", messageType, body.message?.call?.id);
+    // Detailed logging for debugging
+    console.log("=== VAPI WEBHOOK RECEIVED ===");
+    console.log("Message Type:", messageType);
+    console.log("Call ID:", body.message?.call?.id);
+    console.log("Full Payload:", JSON.stringify(body, null, 2));
+    console.log("===========================");
 
     // Handle different message types
     if (messageType === "status-update") {
@@ -242,10 +247,19 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
   }
 
   if (!userId) {
-    console.error("Could not determine user for call:", call.id);
+    console.error("=== USER ID NOT FOUND ===");
+    console.error("Call ID:", call.id);
+    console.error("Metadata:", call.metadata);
+    console.error("Outreach ID:", outreachId);
+    console.error("Lead ID:", leadId);
+    console.error("VAPI Org ID:", vapiOrgId);
+    console.error("Direct Call User ID:", directCallUserId);
+    console.error("=========================");
+    // Don't return error - just log it, so webhook doesn't fail
+    // VAPI will retry if we return error
     return NextResponse.json(
-      { error: "User not found for this call" },
-      { status: 404 }
+      { success: false, error: "User not found for this call", call_id: call.id },
+      { status: 200 } // Return 200 so VAPI doesn't retry
     );
   }
 
@@ -360,9 +374,19 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       .single() as { data: { id: string } | null; error: unknown };
 
     if (callError) {
-      console.error("Error inserting call record:", callError);
+      console.error("=== ERROR INSERTING CALL ===");
+      console.error("Error:", callError);
+      console.error("Insert Data:", JSON.stringify(insertData, null, 2));
+      console.error("============================");
     } else {
-      console.log("Call record inserted:", callData?.id);
+      console.log("=== CALL RECORD INSERTED SUCCESSFULLY ===");
+      console.log("Call DB ID:", callData?.id);
+      console.log("VAPI Call ID:", call.id);
+      console.log("User ID:", userId);
+      console.log("Lead ID:", leadId);
+      console.log("Duration:", duration);
+      console.log("Sentiment:", sentiment);
+      console.log("==========================================");
     }
   }
 
