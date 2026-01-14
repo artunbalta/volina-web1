@@ -240,8 +240,8 @@ export default function CallsPage() {
 
   // Outbound Dashboard - Call Queue View
   if (dashboardType === 'outbound') {
-    // All calls with evaluation data
-    const allEvaluatedCalls = calls.filter(c => c.caller_name || c.evaluation_score);
+    // All calls (show all, not just evaluated ones)
+    const allEvaluatedCalls = calls;
     
     // Apply filters
     const filteredCalls = allEvaluatedCalls.filter(call => {
@@ -474,9 +474,23 @@ export default function CallsPage() {
                           <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <p className="text-sm text-gray-600 dark:text-gray-300">
                               <FileText className="w-4 h-4 inline mr-2 text-gray-400" />
-                              {call.summary}
+                              <span className="font-medium">Özet:</span> {call.summary}
                             </p>
                           </div>
+                        )}
+
+                        {/* Transcript */}
+                        {call.transcript && (
+                          <details className="mb-3">
+                            <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-primary">
+                              📝 Transkripti Görüntüle
+                            </summary>
+                            <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg max-h-60 overflow-y-auto">
+                              <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
+                                {call.transcript}
+                              </p>
+                            </div>
+                          </details>
                         )}
                         
                         {/* Evaluation */}
