@@ -23,7 +23,6 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get("priority");
     const search = searchParams.get("search");
 
-    // Build query
     let query = supabase
       .from("leads")
       .select("*")
@@ -49,7 +48,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Calculate stats
     const total = leads?.length || 0;
     const newLeads = leads?.filter(l => l.status === "new").length || 0;
     const contacted = leads?.filter(l => l.status === "contacted").length || 0;
@@ -71,7 +69,6 @@ export async function GET(request: NextRequest) {
         unreachable,
         conversionRate: total > 0 ? Math.round((converted / total) * 100) : 0,
       },
-      source: "supabase",
     });
   } catch (error) {
     console.error("Dashboard leads error:", error);
@@ -82,3 +79,176 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// POST - Create a new lead
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createAdminClient();
+    const body = await request.json();
+
+    if (!body.full_name) {
+      return NextResponse.json(
+        { success: false, error: "full_name is required" },
+        { status: 400 }
+      );
+    }
+
+    let user_id = body.user_id;
+    
+    if (!user_id) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("dashboard_type", "outbound")
+        .limit(1);
+      
+      if (profiles && profiles.length > 0) {
+        user_id = profiles[0].id;
+      } else {
+        const { data: anyProfiles } = await supabase
+          .from("profiles")
+          .select("id")
+          .limit(1);
+        
+        if (!anyProfiles || anyProfiles.length === 0) {
+          return NextResponse.json(
+            { success: false, error: "No user found" },
+            { status: 400 }
+          );
+        }
+        user_id = anyProfiles[0].id;
+      }
+    }
+
+    const validSources = ['web_form', 'instagram', 'referral', 'facebook', 'google_ads', 'other'];
+    let source = body.source?.toLowerCase() || 'other';
+    if (!validSources.includes(source)) {
+      if (source.includes('web') || source.includes('site') || source.includes('form')) {
+        source = 'web_form';
+      } else if (source.includes('insta') || source.includes('ig')) {
+        source = 'instagram';
+      } else if (source.includes('face') || source.includes('fb')) {
+        source = 'facebook';
+      } else if (source.includes('google') || source.includes('ads')) {
+        source = 'google_ads';
+      } else if (source.includes('refer')) {
+        source = 'referral';
+      } else {
+        source = 'other';
+      }
+    }
+
+    const leadData = {
+      user_id: user_id,
+      full_name: body.full_name,
+      email: body.email || null,
+      phone: body.phone || null,
+      whatsapp: body.whatsapp || null,
+      instagram: body.instagram || null,
+      language: body.language || 'tr',
+      source: source,
+      treatment_interest: body.interest || body.treatment_interest || null,
+      notes: body.notes || null,
+      status: body.status || 'new',
+      priority: body.priority || 'medium',
+    };
+
+    const { data, error } = await supabase
+      .from("leads")
+      .insert(leadData as never)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating lead:", error);
+      return NextResponse.json(
+        { success: false, error: "Failed to create lead", details: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data });
+  } catch (error) {
+    console.error("Create lead error:", error);
+    return NextResponse.json(
+      { success: false, error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT - Update a lead
+export async function PUT(request: NextRequest) {
+  try {
+    const supabase = createAdminClient();
+    const body = await request.json();
+
+    if (!body.id) {
+      return NextResponse.json(
+        { success: false, error: "id is required" },
+        { status: 400 }
+      );
+    }
+
+    const { id, ...updates } = body;
+
+    const { data, error } = await supabase
+      .from("leads")
+      .update(updates as never)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating lead:", error);
+      return NextResponse.json(
+        { success: false, error: "Failed to update lead", details: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data });
+  } catch (error) {
+    console.error("Update lead error:", error);
+    return NextResponse.json(
+      { success: false, error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Delete a lead
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = createAdminClient();
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "id is required" },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await supabase
+      .from("leads")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting lead:", error);
+      return NextResponse.json(
+        { success: false, error: "Failed to delete lead", details: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Delete lead error:", error);
+    return NextResponse.json(
+      { success: false, error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}

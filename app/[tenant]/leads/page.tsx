@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import { createLead, updateLead, deleteLead, createLeadsBulk } from "@/lib/supabase-outbound";
+import { updateLead } from "@/lib/supabase-outbound";
 import type { Lead, LeadStatus, LeadLanguage, LeadPriority } from "@/lib/types-outbound";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -196,12 +196,24 @@ export default function LeadsPage() {
   const handleAddLead = async () => {
     setIsSaving(true);
     try {
-      await createLead(formData as Omit<Lead, "id" | "user_id" | "created_at" | "updated_at">);
-      setShowAddDialog(false);
-      resetForm();
-      await loadLeads();
+      const response = await fetch("/api/dashboard/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        setShowAddDialog(false);
+        resetForm();
+        await loadLeads();
+      } else {
+        console.error("Error creating lead:", result.error);
+        alert("Lead eklenemedi: " + (result.error || "Bilinmeyen hata"));
+      }
     } catch (error) {
       console.error("Error creating lead:", error);
+      alert("Lead eklenemedi");
     } finally {
       setIsSaving(false);
     }
@@ -211,11 +223,21 @@ export default function LeadsPage() {
     if (!selectedLead) return;
     setIsSaving(true);
     try {
-      await updateLead(selectedLead.id, formData);
-      setShowEditDialog(false);
-      setSelectedLead(null);
-      resetForm();
-      await loadLeads();
+      const response = await fetch("/api/dashboard/leads", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedLead.id, ...formData }),
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        setShowEditDialog(false);
+        setSelectedLead(null);
+        resetForm();
+        await loadLeads();
+      } else {
+        console.error("Error updating lead:", result.error);
+      }
     } catch (error) {
       console.error("Error updating lead:", error);
     } finally {
@@ -227,10 +249,18 @@ export default function LeadsPage() {
     if (!selectedLead) return;
     setIsSaving(true);
     try {
-      await deleteLead(selectedLead.id);
-      setShowDeleteDialog(false);
-      setSelectedLead(null);
-      await loadLeads();
+      const response = await fetch(`/api/dashboard/leads?id=${selectedLead.id}`, {
+        method: "DELETE",
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        setShowDeleteDialog(false);
+        setSelectedLead(null);
+        await loadLeads();
+      } else {
+        console.error("Error deleting lead:", result.error);
+      }
     } catch (error) {
       console.error("Error deleting lead:", error);
     } finally {
