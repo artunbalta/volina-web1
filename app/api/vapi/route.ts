@@ -23,6 +23,7 @@ interface VapiWebhookPayload {
         lead_id?: string;
         outreach_id?: string;
         language?: string;
+        user_id?: string;
       };
     };
     recordingUrl?: string;
