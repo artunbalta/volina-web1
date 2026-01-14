@@ -311,6 +311,7 @@ async function executeCall(lead: Lead, outreach_id: string): Promise<{
         metadata: {
           lead_id: lead.id,
           outreach_id: outreach_id,
+          user_id: lead.user_id, // Include user_id for webhook to save call
           language: lead.language || "tr",
         },
       }),

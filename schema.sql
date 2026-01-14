@@ -336,7 +336,7 @@ CREATE TABLE IF NOT EXISTS calls (
     summary TEXT,
     sentiment TEXT CHECK (sentiment IN ('positive', 'neutral', 'negative')),
     duration INTEGER, -- Duration in seconds
-    type TEXT DEFAULT 'inquiry' CHECK (type IN ('appointment', 'inquiry', 'follow_up', 'cancellation')),
+    type TEXT DEFAULT 'inquiry' CHECK (type IN ('appointment', 'inquiry', 'follow_up', 'cancellation', 'outbound')),
     caller_phone TEXT,
     caller_name TEXT, -- Caller's full name
     evaluation_summary TEXT, -- AI evaluation of the call
