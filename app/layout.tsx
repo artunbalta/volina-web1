@@ -53,7 +53,7 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased`}>
         <NextAuthProvider>
           <SupabaseProvider>
-            {children}
+        {children}
           </SupabaseProvider>
         </NextAuthProvider>
       </body>

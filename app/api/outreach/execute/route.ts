@@ -6,9 +6,9 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// VAPI Configuration (to be set in environment variables)
-const VAPI_API_KEY = process.env.VAPI_API_KEY;
-const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
+// VAPI Configuration
+const VAPI_API_KEY = process.env.VAPI_PRIVATE_KEY;
+const VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
 const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID;
 
 interface Lead {

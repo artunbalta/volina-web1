@@ -1,21 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 
-// Vapi webhook types
-interface VapiEndOfCallReport {
+// Vapi webhook types - supporting multiple message types
+interface VapiWebhookPayload {
   message: {
-    type: "end-of-call-report";
-    call: {
+    type: string;
+    call?: {
       id: string;
       orgId: string;
       createdAt: string;
-      endedAt: string;
+      endedAt?: string;
+      startedAt?: string;
       type: string;
       status: string;
-      endedReason: string;
+      endedReason?: string;
       phoneNumberId?: string;
       customer?: {
         number: string;
+        name?: string;
+      };
+      metadata?: {
+        lead_id?: string;
+        outreach_id?: string;
+        language?: string;
       };
     };
     recordingUrl?: string;
@@ -27,86 +34,283 @@ interface VapiEndOfCallReport {
       structuredData?: Record<string, unknown>;
       successEvaluation?: string;
     };
+    // For status-update messages
+    status?: string;
+    endedReason?: string;
+    // For transcript messages
+    artifact?: {
+      transcript?: string;
+      messages?: Array<{
+        role: string;
+        message: string;
+        time: number;
+      }>;
+    };
   };
+}
+
+// Determine call result based on analysis
+function determineCallResult(
+  endedReason: string,
+  analysis?: { successEvaluation?: string; structuredData?: Record<string, unknown> }
+): string {
+  // Check ended reason first
+  if (endedReason === "customer-did-not-answer" || endedReason === "no-answer") {
+    return "no_answer";
+  }
+  if (endedReason === "customer-busy" || endedReason === "busy") {
+    return "busy";
+  }
+  if (endedReason === "voicemail") {
+    return "voicemail";
+  }
+  if (endedReason === "customer-ended-call") {
+    // Customer hung up - could be interested or not
+    if (analysis?.successEvaluation?.toLowerCase().includes("success")) {
+      return "answered_interested";
+    }
+    return "answered_not_interested";
+  }
+  
+  // Check analysis for more detailed results
+  if (analysis?.successEvaluation) {
+    const evaluation = analysis.successEvaluation.toLowerCase();
+    if (evaluation.includes("appointment") || evaluation.includes("randevu")) {
+      return "answered_appointment_set";
+    }
+    if (evaluation.includes("callback") || evaluation.includes("geri ara")) {
+      return "answered_callback_requested";
+    }
+    if (evaluation.includes("success") || evaluation.includes("interested") || evaluation.includes("ilgili")) {
+      return "answered_interested";
+    }
+    if (evaluation.includes("not interested") || evaluation.includes("ilgisiz") || evaluation.includes("fail")) {
+      return "answered_not_interested";
+    }
+  }
+  
+  // Default based on call completion
+  if (endedReason === "assistant-ended-call" || endedReason === "silence-timed-out") {
+    return "answered_interested";
+  }
+  
+  return "answered_not_interested";
 }
 
 // POST handler for Vapi webhooks
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as VapiEndOfCallReport;
+    const body = await request.json() as VapiWebhookPayload;
+    const messageType = body.message?.type;
 
-    // Validate the webhook payload
-    if (body.message?.type !== "end-of-call-report") {
-      return NextResponse.json(
-        { error: "Unsupported webhook type" },
-        { status: 400 }
-      );
+    console.log("Received VAPI webhook:", messageType, body.message?.call?.id);
+
+    // Handle different message types
+    if (messageType === "status-update") {
+      // Call status changed (ringing, in-progress, ended, etc.)
+      return await handleStatusUpdate(body);
     }
 
-    const { call, recordingUrl, transcript, summary, analysis } = body.message;
-    const vapiOrgId = call.orgId;
-
-    if (!vapiOrgId) {
-      console.error("No Vapi orgId in webhook");
-      return NextResponse.json(
-        { error: "Missing Vapi organization ID" },
-        { status: 400 }
-      );
+    if (messageType === "end-of-call-report") {
+      // Full call report with transcript and analysis
+      return await handleEndOfCallReport(body);
     }
 
-    // Create Supabase admin client for server-side operations
-    const supabase = createAdminClient();
+    if (messageType === "transcript") {
+      // Real-time transcript updates (optional handling)
+      console.log("Transcript update received");
+      return NextResponse.json({ success: true, message: "Transcript received" });
+    }
 
-    // Find user by vapi_org_id
-    const { data: profile, error: profileError } = await supabase
+    if (messageType === "hang") {
+      // Call ended signal
+      console.log("Call hang signal received");
+      return NextResponse.json({ success: true, message: "Hang signal received" });
+    }
+
+    // Unknown message type - log but don't error
+    console.log("Unknown webhook type:", messageType);
+    return NextResponse.json({ success: true, message: "Webhook received" });
+
+  } catch (error) {
+    console.error("Vapi webhook error:", error);
+    return NextResponse.json(
+      { error: "Internal server error", details: String(error) },
+      { status: 500 }
+    );
+  }
+}
+
+// Handle status updates (call started, ended, etc.)
+async function handleStatusUpdate(body: VapiWebhookPayload) {
+  const call = body.message.call;
+  if (!call) {
+    return NextResponse.json({ success: true, message: "No call data" });
+  }
+
+  const supabase = createAdminClient();
+  const outreachId = call.metadata?.outreach_id;
+
+  console.log("Status update:", body.message.status, "for outreach:", outreachId);
+
+  // Update outreach status if we have an outreach_id
+  if (outreachId && body.message.status === "in-progress") {
+    await supabase
+      .from("outreach")
+      .update({ 
+        status: "in_progress",
+        vapi_call_id: call.id 
+      } as never)
+      .eq("id", outreachId);
+  }
+
+  return NextResponse.json({ success: true, message: "Status update processed" });
+}
+
+// Handle end-of-call report with full details
+async function handleEndOfCallReport(body: VapiWebhookPayload) {
+  const { call, recordingUrl, transcript, summary, analysis } = body.message;
+  
+  if (!call) {
+    return NextResponse.json({ error: "No call data in report" }, { status: 400 });
+  }
+
+  const supabase = createAdminClient();
+  const vapiOrgId = call.orgId;
+  const outreachId = call.metadata?.outreach_id;
+  const leadId = call.metadata?.lead_id;
+
+  console.log("End of call report:", {
+    vapiCallId: call.id,
+    outreachId,
+    leadId,
+    endedReason: call.endedReason,
+  });
+
+  // Find user by vapi_org_id or by outreach record
+  let userId: string | null = null;
+
+  if (outreachId) {
+    // Get user from outreach record
+    const { data: outreach } = await supabase
+      .from("outreach")
+      .select("user_id")
+      .eq("id", outreachId)
+      .single();
+    
+    if (outreach) {
+      userId = outreach.user_id;
+    }
+  }
+
+  if (!userId && vapiOrgId) {
+    // Fallback: find user by vapi_org_id
+    const { data: profile } = await supabase
       .from("profiles")
       .select("id")
       .eq("vapi_org_id", vapiOrgId)
-      .single() as { data: { id: string } | null; error: unknown };
+      .single() as { data: { id: string } | null };
+    
+    if (profile) {
+      userId = profile.id;
+    }
+  }
 
-    if (profileError || !profile) {
-      console.error("No user found for Vapi orgId:", vapiOrgId);
+  if (!userId) {
+    console.error("Could not determine user for call:", call.id);
+    // Still try to update outreach if we have the ID
+    if (!outreachId) {
       return NextResponse.json(
-        { error: "User not found for this Vapi organization" },
+        { error: "User not found for this call" },
         { status: 404 }
       );
     }
+  }
 
-    const userId = profile.id;
+  // Determine sentiment
+  let sentiment: "positive" | "neutral" | "negative" = "neutral";
+  if (analysis?.successEvaluation) {
+    const evaluation = analysis.successEvaluation.toLowerCase();
+    if (evaluation.includes("positive") || evaluation.includes("success")) {
+      sentiment = "positive";
+    } else if (evaluation.includes("negative") || evaluation.includes("fail")) {
+      sentiment = "negative";
+    }
+  }
 
-    // Determine sentiment from analysis or default to neutral
-    let sentiment: "positive" | "neutral" | "negative" = "neutral";
-    if (analysis?.successEvaluation) {
-      const evaluation = analysis.successEvaluation.toLowerCase();
-      if (evaluation.includes("positive") || evaluation.includes("success")) {
-        sentiment = "positive";
-      } else if (evaluation.includes("negative") || evaluation.includes("fail")) {
-        sentiment = "negative";
+  // Determine call type
+  let callType: "appointment" | "inquiry" | "follow_up" | "cancellation" | "outbound" = "outbound";
+  const lowerSummary = (summary || transcript || "").toLowerCase();
+  
+  if (outreachId) {
+    callType = "outbound";
+  } else if (lowerSummary.includes("cancel")) {
+    callType = "cancellation";
+  } else if (lowerSummary.includes("follow") || lowerSummary.includes("follow-up")) {
+    callType = "follow_up";
+  } else if (
+    lowerSummary.includes("appointment") ||
+    lowerSummary.includes("schedule") ||
+    lowerSummary.includes("book") ||
+    lowerSummary.includes("randevu")
+  ) {
+    callType = "appointment";
+  }
+
+  // Calculate duration
+  const startTime = new Date(call.startedAt || call.createdAt).getTime();
+  const endTime = new Date(call.endedAt || new Date()).getTime();
+  const duration = Math.round((endTime - startTime) / 1000);
+
+  // Determine call result for outreach
+  const callResult = determineCallResult(call.endedReason || "", analysis);
+
+  // Update outreach record if exists
+  if (outreachId) {
+    const outreachUpdate = {
+      status: "completed",
+      result: callResult,
+      completed_at: new Date().toISOString(),
+      notes: summary || analysis?.summary || `Arama tamamlandı. Süre: ${duration}s`,
+      vapi_call_id: call.id,
+    };
+
+    const { error: outreachError } = await supabase
+      .from("outreach")
+      .update(outreachUpdate as never)
+      .eq("id", outreachId);
+
+    if (outreachError) {
+      console.error("Error updating outreach:", outreachError);
+    } else {
+      console.log("Outreach updated:", outreachId, callResult);
+    }
+
+    // Update lead status based on result
+    if (leadId) {
+      let newLeadStatus = "contacted";
+      if (callResult === "answered_appointment_set") {
+        newLeadStatus = "appointment_scheduled";
+      } else if (callResult === "answered_not_interested") {
+        newLeadStatus = "not_interested";
+      } else if (callResult === "no_answer" || callResult === "busy" || callResult === "voicemail") {
+        newLeadStatus = "unreachable";
       }
+
+      await supabase
+        .from("leads")
+        .update({
+          status: newLeadStatus,
+          last_contact_date: new Date().toISOString(),
+        } as never)
+        .eq("id", leadId);
+
+      console.log("Lead status updated:", leadId, newLeadStatus);
     }
+  }
 
-    // Determine call type from summary or transcript
-    let callType: "appointment" | "inquiry" | "follow_up" | "cancellation" = "inquiry";
-    const lowerSummary = (summary || transcript || "").toLowerCase();
-    
-    if (lowerSummary.includes("cancel")) {
-      callType = "cancellation";
-    } else if (lowerSummary.includes("follow") || lowerSummary.includes("follow-up")) {
-      callType = "follow_up";
-    } else if (
-      lowerSummary.includes("appointment") ||
-      lowerSummary.includes("schedule") ||
-      lowerSummary.includes("book")
-    ) {
-      callType = "appointment";
-    }
-
-    // Calculate duration in seconds
-    const startTime = new Date(call.createdAt).getTime();
-    const endTime = new Date(call.endedAt).getTime();
-    const duration = Math.round((endTime - startTime) / 1000);
-
-    // Insert call record into database
+  // Insert call record into calls table
+  if (userId) {
     const insertData = {
       user_id: userId,
       vapi_call_id: call.id,
@@ -122,6 +326,8 @@ export async function POST(request: NextRequest) {
         status: call.status,
         endedReason: call.endedReason,
         structuredData: analysis?.structuredData,
+        outreach_id: outreachId,
+        lead_id: leadId,
       },
     };
 
@@ -132,42 +338,18 @@ export async function POST(request: NextRequest) {
       .single() as { data: { id: string } | null; error: unknown };
 
     if (callError) {
-      console.error("Error inserting call:", callError);
-      const errorMessage = callError instanceof Error ? callError.message : String(callError);
-      return NextResponse.json(
-        { error: "Failed to save call record", details: errorMessage },
-        { status: 500 }
-      );
+      console.error("Error inserting call record:", callError);
+    } else {
+      console.log("Call record inserted:", callData?.id);
     }
-
-    if (!callData) {
-      console.error("Call data is null after insert");
-      return NextResponse.json(
-        { error: "Failed to save call record", details: "No data returned from insert" },
-        { status: 500 }
-      );
-    }
-
-    console.log("Successfully processed Vapi webhook:", {
-      callId: callData.id,
-      vapiCallId: call.id,
-      userId,
-      type: callType,
-      sentiment,
-    });
-
-    return NextResponse.json({
-      success: true,
-      callId: callData.id,
-      message: "Webhook processed successfully",
-    });
-  } catch (error) {
-    console.error("Vapi webhook error:", error);
-    return NextResponse.json(
-      { error: "Internal server error", details: String(error) },
-      { status: 500 }
-    );
   }
+
+  return NextResponse.json({
+    success: true,
+    message: "End of call report processed",
+    result: callResult,
+    outreach_id: outreachId,
+  });
 }
 
 // GET handler for webhook verification
@@ -176,5 +358,6 @@ export async function GET() {
     status: "ok",
     message: "Volina AI Vapi webhook endpoint is active",
     timestamp: new Date().toISOString(),
+    supported_events: ["status-update", "end-of-call-report", "transcript", "hang"],
   });
 }

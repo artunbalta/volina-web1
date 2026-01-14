@@ -240,20 +240,20 @@ export default function CalendarPage() {
       
       if (newApt) {
         setAppointments(prev => [...prev, newApt]);
-        setSaveSuccess(true);
-        
-        setTimeout(() => {
-          setSaveSuccess(false);
-          setShowNewAppointment(false);
-          setNewAppointment({
-            name: "",
-            email: "",
-            phone: "",
+    setSaveSuccess(true);
+    
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setShowNewAppointment(false);
+      setNewAppointment({
+        name: "",
+        email: "",
+        phone: "",
             assignee: doctors[0]?.id || "",
-            time: "09:00",
-            notes: "",
-          });
-        }, 1500);
+        time: "09:00",
+        notes: "",
+      });
+    }, 1500);
       } else {
         alert("Failed to create appointment. Please try again.");
       }
@@ -269,12 +269,12 @@ export default function CalendarPage() {
     if (selectedAppointment) {
       const updated = await updateAppointmentStatus(selectedAppointment.id, "confirmed");
       if (updated) {
-        setAppointments(appointments.map(apt => 
-          apt.id === selectedAppointment.id 
-            ? { ...apt, status: "confirmed" as const }
-            : apt
-        ));
-        setSelectedAppointment({ ...selectedAppointment, status: "confirmed" });
+      setAppointments(appointments.map(apt => 
+        apt.id === selectedAppointment.id 
+          ? { ...apt, status: "confirmed" as const }
+          : apt
+      ));
+      setSelectedAppointment({ ...selectedAppointment, status: "confirmed" });
       }
     }
   };
@@ -283,8 +283,8 @@ export default function CalendarPage() {
     if (selectedAppointment) {
       const success = await deleteAppointment(selectedAppointment.id);
       if (success) {
-        setAppointments(appointments.filter(apt => apt.id !== selectedAppointment.id));
-        setSelectedAppointment(null);
+      setAppointments(appointments.filter(apt => apt.id !== selectedAppointment.id));
+      setSelectedAppointment(null);
       }
     }
   };
