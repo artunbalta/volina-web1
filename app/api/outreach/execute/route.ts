@@ -37,12 +37,12 @@ export async function POST(req: NextRequest) {
 
     // Direct call from leads page (without outreach record)
     if (direct_call && lead_id) {
-      // Get lead data directly
+      // Get lead data directly (including user_id)
       const { data: leadData, error: leadError } = await supabase
         .from("leads")
-        .select("*")
+        .select("*, user_id")
         .eq("id", lead_id)
-        .single();
+        .single() as { data: (Lead & { user_id: string }) | null; error: unknown };
 
       if (leadError || !leadData) {
         return NextResponse.json(
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const lead = leadData as Lead;
+      const lead = leadData;
 
       if (!lead.phone) {
         return NextResponse.json(
@@ -60,8 +60,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Execute direct call
-      const result = await executeCall(lead, lead_id);
+      // Execute direct call with user_id in metadata
+      const result = await executeCallDirect(lead, lead.user_id);
 
       // Update lead status if successful
       if (result.success) {
@@ -196,7 +196,79 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Execute a phone call via VAPI
+// Execute a direct phone call via VAPI (from leads page, without outreach record)
+async function executeCallDirect(lead: Lead & { user_id: string }, user_id: string): Promise<{
+  success: boolean;
+  message: string;
+  vapi_call_id?: string;
+  error?: string;
+}> {
+  if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID || !VAPI_PHONE_NUMBER_ID) {
+    return {
+      success: false,
+      message: "VAPI entegrasyonu yapılandırılmamış.",
+      error: "VAPI not configured"
+    };
+  }
+
+  if (!lead.phone) {
+    return {
+      success: false,
+      message: "Lead'in telefon numarası yok",
+      error: "No phone number"
+    };
+  }
+
+  try {
+    const response = await fetch("https://api.vapi.ai/call/phone", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${VAPI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assistantId: VAPI_ASSISTANT_ID,
+        phoneNumberId: VAPI_PHONE_NUMBER_ID,
+        customer: {
+          number: lead.phone,
+          name: lead.full_name,
+        },
+        metadata: {
+          lead_id: lead.id,
+          user_id: user_id,  // Include user_id for webhook to save call
+          direct_call: true,
+          language: lead.language || "tr",
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("VAPI call error:", errorData);
+      return {
+        success: false,
+        message: `VAPI arama başarısız: ${errorData.message || response.statusText}`,
+        error: errorData.message || response.statusText
+      };
+    }
+
+    const callData = await response.json();
+    return {
+      success: true,
+      message: `Arama başlatıldı: ${lead.full_name} (${lead.phone})`,
+      vapi_call_id: callData.id
+    };
+  } catch (error) {
+    console.error("VAPI call exception:", error);
+    return {
+      success: false,
+      message: "VAPI bağlantı hatası",
+      error: String(error)
+    };
+  }
+}
+
+// Execute a phone call via VAPI (with outreach record)
 async function executeCall(lead: Lead, outreach_id: string): Promise<{
   success: boolean;
   message: string;

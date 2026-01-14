@@ -612,8 +612,8 @@ export default function LeadsPage() {
             <CardContent className="pt-6">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{lead.full_name}</h3>
-                  <p className="text-sm text-gray-500">{lead.interest || "Belirtilmemiş"}</p>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">{lead.full_name || "İsimsiz"}</h3>
+                  <p className="text-sm text-gray-500">{lead.treatment_interest || lead.interest || "İlgi alanı belirtilmemiş"}</p>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

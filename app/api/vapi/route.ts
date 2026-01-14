@@ -179,19 +179,27 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
   const vapiOrgId = call.orgId;
   const outreachId = call.metadata?.outreach_id;
   const leadId = call.metadata?.lead_id;
+  const directCallUserId = call.metadata?.user_id; // Direct call user_id from metadata
 
   console.log("End of call report:", {
     vapiCallId: call.id,
     outreachId,
     leadId,
+    directCallUserId,
     endedReason: call.endedReason,
   });
 
-  // Find user by vapi_org_id or by outreach record
+  // Find user - multiple sources
   let userId: string | null = null;
 
-  if (outreachId) {
-    // Get user from outreach record
+  // 1. First check if user_id is directly in metadata (direct calls)
+  if (directCallUserId) {
+    userId = directCallUserId;
+    console.log("Using user_id from metadata:", userId);
+  }
+
+  // 2. Try to get from outreach record
+  if (!userId && outreachId) {
     const { data: outreach } = await supabase
       .from("outreach")
       .select("user_id")
@@ -200,11 +208,26 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     
     if (outreach) {
       userId = outreach.user_id;
+      console.log("Using user_id from outreach:", userId);
     }
   }
 
+  // 3. Try to get from lead record
+  if (!userId && leadId) {
+    const { data: lead } = await supabase
+      .from("leads")
+      .select("user_id")
+      .eq("id", leadId)
+      .single() as { data: { user_id: string } | null };
+    
+    if (lead) {
+      userId = lead.user_id;
+      console.log("Using user_id from lead:", userId);
+    }
+  }
+
+  // 4. Fallback: find user by vapi_org_id
   if (!userId && vapiOrgId) {
-    // Fallback: find user by vapi_org_id
     const { data: profile } = await supabase
       .from("profiles")
       .select("id")
@@ -213,18 +236,16 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     
     if (profile) {
       userId = profile.id;
+      console.log("Using user_id from vapi_org_id:", userId);
     }
   }
 
   if (!userId) {
     console.error("Could not determine user for call:", call.id);
-    // Still try to update outreach if we have the ID
-    if (!outreachId) {
-      return NextResponse.json(
-        { error: "User not found for this call" },
-        { status: 404 }
-      );
-    }
+    return NextResponse.json(
+      { error: "User not found for this call" },
+      { status: 404 }
+    );
   }
 
   // Determine sentiment
