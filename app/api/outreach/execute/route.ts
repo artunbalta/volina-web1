@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     // Execute based on channel
     switch (typedOutreach.channel) {
       case "call":
-        result = await executeCall(lead, outreach_id);
+        result = await executeCall(lead, outreach_id, typedOutreach.user_id);
         break;
       case "whatsapp":
         result = await executeWhatsApp(lead, outreach_id);
@@ -269,7 +269,7 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
 }
 
 // Execute a phone call via VAPI (with outreach record)
-async function executeCall(lead: Lead, outreach_id: string): Promise<{
+async function executeCall(lead: Lead, outreach_id: string, user_id: string): Promise<{
   success: boolean;
   message: string;
   vapi_call_id?: string;
@@ -311,7 +311,7 @@ async function executeCall(lead: Lead, outreach_id: string): Promise<{
         metadata: {
           lead_id: lead.id,
           outreach_id: outreach_id,
-          user_id: lead.user_id, // Include user_id for webhook to save call
+          user_id: user_id, // Include user_id for webhook to save call
           language: lead.language || "tr",
         },
       }),
