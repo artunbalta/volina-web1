@@ -59,7 +59,7 @@ export function TenantSidebar() {
     // Hidden until we have usable data - pages still exist for later use
     // { href: `/${effectiveTenant}/messages`, icon: MessageSquare, label: "Mesajlar" },
     // { href: `/${effectiveTenant}/campaigns`, icon: Target, label: "Kampanyalar" },
-    { href: `/${effectiveTenant}/analytics`, icon: BarChart3, label: "Analitik" },
+    // { href: `/${effectiveTenant}/analytics`, icon: BarChart3, label: "Analitik" },
     { href: `/${effectiveTenant}/ai-settings`, icon: Bot, label: "AI Ayarları" },
     { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Ayarlar" },
   ];
