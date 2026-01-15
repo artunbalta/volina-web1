@@ -123,15 +123,15 @@ export function Footer() {
             <div className="space-y-3 text-sm text-gray-400">
               <div className="flex items-center gap-3">
                 <Mail className="w-4 h-4" />
-                hello@volina.ai
+                info@volina.online
               </div>
               <div className="flex items-center gap-3">
                 <Phone className="w-4 h-4" />
-                +1 (555) 123-4567
+                +90 (312) 911 40 94
               </div>
               <div className="flex items-center gap-3">
                 <MapPin className="w-4 h-4" />
-                San Francisco, CA
+                Ankara, Türkiye
               </div>
             </div>
           </div>
@@ -141,7 +141,7 @@ export function Footer() {
             <h4 className="font-semibold mb-4">Product</h4>
             <ul className="space-y-3 text-sm text-gray-400">
               <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Pricing</a></li>
+              <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
               <li><a href="#" className="hover:text-white transition-colors">Integrations</a></li>
               <li><a href="#" className="hover:text-white transition-colors">API Docs</a></li>
             </ul>
@@ -171,7 +171,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-gray-800 mt-12 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-sm text-gray-400">
-            © 2024 Volina AI. All rights reserved.
+            © 2025 Volina AI. All rights reserved.
           </p>
           <div className="flex gap-6">
             <a href="#" className="text-gray-400 hover:text-white transition-colors">

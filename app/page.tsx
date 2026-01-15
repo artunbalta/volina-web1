@@ -6,6 +6,7 @@ import { Spotlight } from '@/components/ui/spotlight';
 import { Header } from '@/components/landing/Header';
 import { FeaturesSection } from '@/components/landing/FeaturesSection';
 import { TeamSection } from '@/components/landing/TeamSection';
+import { PricingSection } from '@/components/landing/PricingSection';
 import { Footer } from '@/components/landing/Footer';
 import { startVoiceCall, stopVoiceCall, cleanupVapiListeners, isVapiDemoMode } from '@/lib/vapi';
 import { Phone, Mic } from 'lucide-react';
@@ -80,7 +81,7 @@ export default function Home() {
            <div className="absolute top-24 left-0 right-0 flex flex-col items-center px-4 pointer-events-auto">
              {/* Main headline */}
              <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight drop-shadow-2xl text-center mb-6">
-               Never Miss a Lead Again
+               Never Miss a Call Again
              </h2>
              
              {/* Click Robot to Try Volina Button */}
@@ -146,6 +147,7 @@ export default function Home() {
       {/* Other Sections */}
       <FeaturesSection />
       <TeamSection />
+      <PricingSection />
       <Footer />
     </main>
   );

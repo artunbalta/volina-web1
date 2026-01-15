@@ -20,7 +20,7 @@ export function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-black/20 backdrop-blur-xl border-b border-white/10 pointer-events-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center h-16 relative">
           {/* Logo */}
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2">
@@ -41,8 +41,8 @@ export function Header() {
             </span>
           </div>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-8">
+          {/* Desktop Navigation - Centered */}
+          <nav className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
             <button
               onClick={() => scrollToSection("features")}
               className="text-sm text-white/70 hover:text-white transition-colors"
@@ -56,6 +56,12 @@ export function Header() {
               Team
             </button>
             <button
+              onClick={() => scrollToSection("pricing")}
+              className="text-sm text-white/70 hover:text-white transition-colors"
+            >
+              Pricing
+            </button>
+            <button
               onClick={() => scrollToSection("demo")}
               className="text-sm text-white/70 hover:text-white transition-colors"
             >
@@ -64,7 +70,7 @@ export function Header() {
           </nav>
 
           {/* Right side */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 ml-auto">
             {/* Login Button - Links to /login page */}
             <Link href="/login">
               <Button variant="ghost" size="icon" className="rounded-full text-white/70 hover:text-white hover:bg-white/10">
@@ -103,6 +109,12 @@ export function Header() {
                 className="text-left px-4 py-2 text-white/70 hover:bg-white/10 rounded-lg"
               >
                 Team
+              </button>
+              <button
+                onClick={() => scrollToSection("pricing")}
+                className="text-left px-4 py-2 text-white/70 hover:bg-white/10 rounded-lg"
+              >
+                Pricing
               </button>
               <button
                 onClick={() => scrollToSection("demo")}
