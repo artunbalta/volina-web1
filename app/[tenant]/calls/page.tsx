@@ -108,8 +108,8 @@ export default function CallsPage() {
   const loadCalls = useCallback(async () => {
     try {
       // Load calls from server-side API (bypasses browser Supabase issues)
-      const userId = user?.id || "";
-      const callsResponse = await fetch(`/api/dashboard/calls?days=30&limit=100${userId ? `&userId=${userId}` : ""}`);
+      // For tenant dashboard, show all calls (don't filter by user_id)
+      const callsResponse = await fetch(`/api/dashboard/calls?days=30&limit=100`);
       if (callsResponse.ok) {
         const callsData = await callsResponse.json();
         if (callsData.success && callsData.data) {
@@ -153,16 +153,15 @@ export default function CallsPage() {
     } catch (error) {
       console.error("Error loading calls:", error);
     }
-  }, [user?.id]);
+  }, []);
 
   // NOTE: Auto-setup removed to prevent data reset on sign out/sign in
   // Users should use the Settings page to seed mock data manually
 
   useEffect(() => {
-    if (user?.id) {
-      loadCalls().then(() => setIsLoading(false));
-    }
-  }, [loadCalls, user?.id]);
+    // Load calls for the tenant dashboard (no user filter needed)
+    loadCalls().then(() => setIsLoading(false));
+  }, [loadCalls]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
