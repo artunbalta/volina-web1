@@ -56,8 +56,9 @@ export function TenantSidebar() {
     { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
     { href: `/${effectiveTenant}/leads`, icon: Users, label: "Müşteri Adayları" },
     { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Aramalar" },
-    { href: `/${effectiveTenant}/messages`, icon: MessageSquare, label: "Mesajlar" },
-    { href: `/${effectiveTenant}/campaigns`, icon: Target, label: "Kampanyalar" },
+    // Hidden until we have usable data - pages still exist for later use
+    // { href: `/${effectiveTenant}/messages`, icon: MessageSquare, label: "Mesajlar" },
+    // { href: `/${effectiveTenant}/campaigns`, icon: Target, label: "Kampanyalar" },
     { href: `/${effectiveTenant}/analytics`, icon: BarChart3, label: "Analitik" },
     { href: `/${effectiveTenant}/ai-settings`, icon: Bot, label: "AI Ayarları" },
     { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Ayarlar" },
