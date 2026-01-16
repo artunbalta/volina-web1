@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
@@ -9,20 +10,15 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Phone,
-  Calendar,
+  Users,
+  Bot,
   Settings,
   LogOut,
-  ChevronLeft,
-  Users,
-  MessageSquare,
-  BarChart3,
-  Bot,
-  Target,
   Menu,
+  X,
   Moon,
   Sun,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/providers/ThemeProvider";
 
 export function TenantSidebar() {
@@ -30,7 +26,6 @@ export function TenantSidebar() {
   const { tenant, tenantProfile } = useTenant();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Close mobile menu on route change
@@ -38,33 +33,17 @@ export function TenantSidebar() {
     setMobileOpen(false);
   }, [pathname]);
 
-  // Don't block - show sidebar even if still loading, just use fallback values
   const effectiveTenant = tenant || "dashboard";
-
   const dashboardType = tenantProfile?.dashboard_type || user?.dashboard_type || 'outbound';
-  const companyName = tenantProfile?.company_name || tenantProfile?.full_name || effectiveTenant;
 
-  // Navigation items based on dashboard type
-  const inboundNavItems = [
+  // Navigation items - clean and minimal
+  const navItems = [
     { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
-    { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Arama Kayıtları" },
-    { href: `/${effectiveTenant}/calendar`, icon: Calendar, label: "Takvim" },
-    { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Ayarlar" },
+    { href: `/${effectiveTenant}/leads`, icon: Users, label: "Leads" },
+    { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Calls" },
+    { href: `/${effectiveTenant}/ai-settings`, icon: Bot, label: "AI Settings" },
+    { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Settings" },
   ];
-
-  const outboundNavItems = [
-    { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
-    { href: `/${effectiveTenant}/leads`, icon: Users, label: "Müşteri Adayları" },
-    { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Aramalar" },
-    // Hidden until we have usable data - pages still exist for later use
-    // { href: `/${effectiveTenant}/messages`, icon: MessageSquare, label: "Mesajlar" },
-    // { href: `/${effectiveTenant}/campaigns`, icon: Target, label: "Kampanyalar" },
-    // { href: `/${effectiveTenant}/analytics`, icon: BarChart3, label: "Analitik" },
-    { href: `/${effectiveTenant}/ai-settings`, icon: Bot, label: "AI Ayarları" },
-    { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Ayarlar" },
-  ];
-
-  const navItems = dashboardType === 'outbound' ? outboundNavItems : inboundNavItems;
 
   const handleLogout = async () => {
     await signOut();
@@ -82,15 +61,19 @@ export function TenantSidebar() {
       {/* Mobile menu button */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-md"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
       >
-        <Menu className="w-6 h-6 text-gray-600 dark:text-gray-300" />
+        {mobileOpen ? (
+          <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+        ) : (
+          <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+        )}
       </button>
 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          className="lg:hidden fixed inset-0 bg-black/20 dark:bg-black/40 z-40"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -98,47 +81,28 @@ export function TenantSidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex flex-col bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300",
-          collapsed ? "w-20" : "w-64",
+          "fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transition-transform duration-200",
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        {/* Header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700">
-          {!collapsed && (
-            <Link href={`/${effectiveTenant}`} className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">
-                  {companyName.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <span className="font-bold text-gray-900 dark:text-white truncate max-w-[140px]">
-                {companyName}
-              </span>
-            </Link>
-          )}
-          {collapsed && (
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center mx-auto">
-              <span className="text-white font-bold text-sm">
-                {companyName.charAt(0).toUpperCase()}
-              </span>
-            </div>
-          )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="hidden lg:flex p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            <ChevronLeft
-              className={cn(
-                "w-5 h-5 text-gray-500 transition-transform",
-                collapsed && "rotate-180"
-              )}
+        {/* Logo */}
+        <div className="h-16 flex items-center px-6 border-b border-gray-100 dark:border-gray-800">
+          <Link href={`/${effectiveTenant}`} className="flex items-center gap-3">
+            <Image
+              src="/VolinaLogo.png"
+              alt="Volina"
+              width={32}
+              height={32}
+              className="w-8 h-8"
             />
-          </button>
+            <span className="text-xl font-semibold text-gray-900 dark:text-white">
+              Volina<span className="text-blue-600 dark:text-blue-400">AI</span>
+            </span>
+          </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-4 py-6 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -148,67 +112,57 @@ export function TenantSidebar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+                  "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
                   active
-                    ? "bg-primary text-white shadow-md"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
+                    ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white"
                 )}
               >
-                <Icon className={cn("w-5 h-5 shrink-0", collapsed && "mx-auto")} />
-                {!collapsed && (
-                  <span className="font-medium truncate">{item.label}</span>
-                )}
+                <Icon className="w-5 h-5" />
+                <span>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        {/* Footer */}
-        <div className="p-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
-          {/* Theme toggle */}
+        {/* User & Actions */}
+        <div className="px-4 py-4 border-t border-gray-100 dark:border-gray-800 space-y-2">
+          {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
-              collapsed && "justify-center"
-            )}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             {theme === "dark" ? (
-              <Sun className="w-5 h-5" />
+              <>
+                <Sun className="w-5 h-5" />
+                <span>Light Mode</span>
+              </>
             ) : (
-              <Moon className="w-5 h-5" />
-            )}
-            {!collapsed && (
-              <span className="font-medium">
-                {theme === "dark" ? "Açık Tema" : "Koyu Tema"}
-              </span>
+              <>
+                <Moon className="w-5 h-5" />
+                <span>Dark Mode</span>
+              </>
             )}
           </button>
 
-          {/* User info */}
-          {!collapsed && user && (
-            <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+          {user && (
+            <div className="px-4 py-3 mb-2">
               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                {user.full_name || user.email}
+                {user.full_name || "User"}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                 {user.email}
               </p>
             </div>
           )}
-
-          {/* Logout button */}
-          <Button
+          
+          <button
             onClick={handleLogout}
-            variant="ghost"
-            className={cn(
-              "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20",
-              collapsed && "justify-center px-0"
-            )}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <LogOut className="w-5 h-5" />
-            {!collapsed && <span className="ml-3">Çıkış Yap</span>}
-          </Button>
+            <span>Sign Out</span>
+          </button>
         </div>
       </aside>
     </>

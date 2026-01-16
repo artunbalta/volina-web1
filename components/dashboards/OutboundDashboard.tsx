@@ -9,22 +9,17 @@ import {
   TrendingUp, 
   RefreshCw,
   UserPlus,
-  Clock,
-  Plus,
-  Play,
-  FileText,
   ArrowRight,
-  Sparkles,
-  LayoutDashboard,
-  Loader2
+  Play,
+  Loader2,
+  ArrowUpRight,
+  ArrowDownRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { Lead } from "@/lib/types-outbound";
 import type { Call } from "@/lib/types";
 import { format } from "date-fns";
-import { tr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 
 interface Stats {
@@ -38,84 +33,83 @@ interface Stats {
   conversionRate: number;
 }
 
-// Stat Card Component
+// Clean Stat Card
 function StatCard({ 
-  icon: Icon, 
   label, 
   value, 
-  gradient,
-  iconColor 
+  change,
+  changeType = "neutral"
 }: { 
-  icon: typeof Phone; 
   label: string; 
   value: string | number;
-  gradient: string;
-  iconColor: string;
+  change?: string;
+  changeType?: "up" | "down" | "neutral";
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} p-[1px]`}>
-      <div className="relative h-full rounded-2xl bg-white dark:bg-gray-900 p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{label}</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+      <p className="text-sm text-gray-500 dark:text-gray-400 font-medium mb-2">{label}</p>
+      <div className="flex items-end justify-between">
+        <p className="text-3xl font-bold text-gray-900 dark:text-white">{value}</p>
+        {change && (
+          <div className={cn(
+            "flex items-center text-sm font-medium",
+            changeType === "up" && "text-green-600 dark:text-green-400",
+            changeType === "down" && "text-red-600 dark:text-red-400",
+            changeType === "neutral" && "text-gray-500 dark:text-gray-400"
+          )}>
+            {changeType === "up" && <ArrowUpRight className="w-4 h-4" />}
+            {changeType === "down" && <ArrowDownRight className="w-4 h-4" />}
+            {change}
           </div>
-          <div className={`p-3 rounded-xl ${iconColor}`}>
-            <Icon className="w-6 h-6" />
-          </div>
-        </div>
-        <div className={`absolute -right-4 -bottom-4 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 blur-2xl`} />
+        )}
       </div>
     </div>
   );
 }
 
-// Score Ring Component
-function ScoreRing({ score, size = 56 }: { score: number | null; size?: number }) {
-  const radius = (size - 6) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const progress = score !== null ? (score / 10) * circumference : 0;
+// Score Badge
+function ScoreBadge({ score }: { score: number | null }) {
+  if (score === null) return <span className="text-gray-400 dark:text-gray-500">—</span>;
   
-  const getScoreColor = (s: number | null) => {
-    if (s === null) return { stroke: "#9ca3af", text: "text-gray-400" };
-    if (s >= 8) return { stroke: "#10b981", text: "text-emerald-500" };
-    if (s >= 5) return { stroke: "#f59e0b", text: "text-amber-500" };
-    return { stroke: "#ef4444", text: "text-red-500" };
+  const getColor = (s: number) => {
+    if (s >= 8) return "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400";
+    if (s >= 5) return "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400";
+    return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400";
   };
   
-  const colors = getScoreColor(score);
+  return (
+    <span className={cn("px-2 py-1 rounded-md text-sm font-medium", getColor(score))}>
+      {score}/10
+    </span>
+  );
+}
+
+// Status Badge
+function StatusBadge({ status }: { status: string }) {
+  const getStyle = (s: string) => {
+    switch (s) {
+      case "new": return "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400";
+      case "contacted": return "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400";
+      case "interested": return "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400";
+      case "appointment_set": return "bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400";
+      default: return "bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300";
+    }
+  };
+  
+  const getLabel = (s: string) => {
+    switch (s) {
+      case "new": return "New";
+      case "contacted": return "Contacted";
+      case "interested": return "Interested";
+      case "appointment_set": return "Appointment";
+      default: return s;
+    }
+  };
   
   return (
-    <div className="relative flex items-center justify-center">
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          className="text-gray-200 dark:text-gray-700"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={colors.stroke}
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference - progress}
-          className="transition-all duration-700 ease-out"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`text-lg font-bold ${colors.text}`}>
-          {score ?? "—"}
-        </span>
-      </div>
-    </div>
+    <span className={cn("px-2 py-1 rounded-md text-xs font-medium", getStyle(status))}>
+      {getLabel(status)}
+    </span>
   );
 }
 
@@ -144,7 +138,7 @@ export default function OutboundDashboard() {
           setStats(data.stats);
           const activeLeads = (data.data || [])
             .filter((l: Lead) => ['new', 'contacted', 'interested'].includes(l.status))
-            .slice(0, 10);
+            .slice(0, 5);
           setLeads(activeLeads);
         }
       }
@@ -186,7 +180,7 @@ export default function OutboundDashboard() {
             created_at: call.created_at,
             updated_at: call.updated_at,
           }));
-          setCalls(transformedCalls);
+          setCalls(transformedCalls.slice(0, 5));
         }
       }
     } catch (error) {
@@ -211,253 +205,187 @@ export default function OutboundDashboard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-gray-500">Yükleniyor...</p>
-        </div>
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      {/* Header Section */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-purple-600 to-violet-700 p-8 text-white">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRoLTJ2LTRoMnYtMmgtNHY2aDR2LTJ6TTI2IDI0aC0ydjJoMnYtMnptMCAyaC0ydjJoMnYtMnptMTAgMTBoLTJ2Mmgydi0yem0wIDBoMnYtMmgtMnYyem0tMTAgMGgtMnYyaDJ2LTJ6bTAgMGgydi0yaC0ydjJ6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-20" />
-        <div className="relative z-10">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-                  <LayoutDashboard className="w-6 h-6" />
-                </div>
-                <h1 className="text-3xl font-bold">Dashboard</h1>
-              </div>
-              <p className="text-purple-100 text-lg">
-                Hoş geldin{user?.full_name ? `, ${user.full_name}` : ""}! İşte bugünün özeti.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-purple-200 bg-white/10 px-3 py-1.5 rounded-full">
-                {format(new Date(), "d MMMM yyyy, HH:mm", { locale: tr })}
-              </span>
-              <Button 
-                variant="outline" 
-                onClick={handleRefresh} 
-                disabled={isRefreshing}
-                className="border-white/30 text-white hover:bg-white/20 backdrop-blur-sm"
-              >
-                <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
-                Yenile
-              </Button>
-            </div>
-          </div>
+    <div className="max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            Welcome back{user?.full_name ? `, ${user.full_name}` : ""}
+          </p>
         </div>
-        <div className="absolute -right-20 -top-20 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
-        <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-violet-400/20 rounded-full blur-2xl" />
+        <Button 
+          variant="outline" 
+          onClick={handleRefresh} 
+          disabled={isRefreshing}
+          className="border-gray-200 dark:border-gray-700"
+        >
+          <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
+          Refresh
+        </Button>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard 
-          icon={Users} 
-          label="Toplam Lead" 
+          label="Total Leads" 
           value={stats?.total || 0}
-          gradient="from-blue-500 to-cyan-500"
-          iconColor="bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400"
         />
         <StatCard 
-          icon={UserPlus} 
-          label="Yeni Lead" 
+          label="New Leads" 
           value={stats?.newLeads || 0}
-          gradient="from-emerald-500 to-green-500"
-          iconColor="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400"
         />
         <StatCard 
-          icon={Phone} 
-          label="İletişime Geçildi" 
+          label="Contacted" 
           value={stats?.contacted || 0}
-          gradient="from-purple-500 to-pink-500"
-          iconColor="bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400"
         />
         <StatCard 
-          icon={CalendarCheck} 
-          label="Randevu" 
+          label="Appointments" 
           value={stats?.appointmentSet || 0}
-          gradient="from-orange-500 to-amber-500"
-          iconColor="bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-400"
         />
         <StatCard 
-          icon={TrendingUp} 
-          label="Dönüşüm Oranı" 
-          value={`%${stats?.conversionRate || 0}`}
-          gradient="from-teal-500 to-emerald-500"
-          iconColor="bg-teal-100 dark:bg-teal-900/50 text-teal-600 dark:text-teal-400"
+          label="Conversion Rate" 
+          value={`${stats?.conversionRate || 0}%`}
         />
       </div>
 
-      {/* Recent Calls Section */}
-      <Card className="border-0 shadow-lg shadow-gray-200/50 dark:shadow-none overflow-hidden">
-        <div className="p-6 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 border-b border-violet-100 dark:border-violet-800/50">
-          <div className="flex items-center justify-between">
+      {/* Two Column Layout */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Recent Calls */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-violet-100 dark:bg-violet-900/50 rounded-xl">
-                <Phone className="w-5 h-5 text-violet-600 dark:text-violet-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Son Aramalar</h2>
-                <p className="text-sm text-gray-500">{calls.length} arama gösteriliyor</p>
-              </div>
+              <Phone className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <h2 className="font-semibold text-gray-900 dark:text-white">Recent Calls</h2>
             </div>
             <Button 
-              variant="outline" 
-              size="sm" 
+              variant="ghost" 
+              size="sm"
               onClick={() => router.push(`${basePath}/calls`)}
-              className="border-violet-200 text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:text-violet-400"
+              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
             >
-              Tümünü Gör
-              <ArrowRight className="w-4 h-4 ml-2" />
+              View All
+              <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
-        </div>
-        <CardContent className="p-6">
+          
           {calls.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/30 dark:to-purple-900/30 flex items-center justify-center">
-                <Phone className="w-8 h-8 text-violet-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Henüz arama yok</h3>
-              <p className="text-gray-500 text-sm">Aramalar Vapi'den otomatik senkronize edilir</p>
+            <div className="px-6 py-12 text-center">
+              <Phone className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-500 dark:text-gray-400 text-sm">No calls yet</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
               {calls.map((call) => (
                 <div 
                   key={call.id} 
-                  className="group flex items-center gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all cursor-pointer"
+                  className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
                   onClick={() => router.push(`${basePath}/calls`)}
                 >
-                  <ScoreRing score={call.evaluation_score} />
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-semibold text-gray-900 dark:text-white truncate">
-                        {call.caller_name || call.caller_phone || "Bilinmeyen Arayan"}
-                      </h4>
-                      <span className={cn(
-                        "px-2 py-0.5 text-xs rounded-full font-medium",
-                        call.type === "appointment" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
-                        call.type === "inquiry" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
-                        "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400"
-                      )}>
-                        {call.type === "appointment" ? "Randevu" : call.type === "inquiry" ? "Bilgi" : "Takip"}
-                      </span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <p className="font-medium text-gray-900 dark:text-white truncate">
+                          {call.caller_name || call.caller_phone || "Unknown"}
+                        </p>
+                        <ScoreBadge score={call.evaluation_score} />
+                      </div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                        {call.summary || "No summary available"}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1">
-                      {call.summary || "Özet bekleniyor..."}
-                    </p>
+                    <div className="flex items-center gap-3 ml-4">
+                      <div className="text-right">
+                        <p className="text-sm text-gray-900 dark:text-white">
+                          {format(new Date(call.created_at), "MMM d")}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {call.duration ? `${Math.floor(call.duration / 60)}:${(call.duration % 60).toString().padStart(2, '0')}` : "—"}
+                        </p>
+                      </div>
+                      {call.recording_url && (
+                        <a 
+                          href={call.recording_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        >
+                          <Play className="w-4 h-4" />
+                        </a>
+                      )}
+                    </div>
                   </div>
-                  
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {format(new Date(call.created_at), "d MMM", { locale: tr })}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {call.duration ? `${Math.floor(call.duration / 60)}:${(call.duration % 60).toString().padStart(2, '0')}` : "—"}
-                    </p>
-                  </div>
-                  
-                  {call.recording_url && (
-                    <a 
-                      href={call.recording_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="p-2 rounded-xl bg-violet-100 text-violet-600 hover:bg-violet-200 dark:bg-violet-900/50 dark:text-violet-400 transition-colors"
-                    >
-                      <Play className="w-4 h-4" />
-                    </a>
-                  )}
                 </div>
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Leads Section */}
-      <Card className="border-0 shadow-lg shadow-gray-200/50 dark:shadow-none overflow-hidden">
-        <div className="p-6 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-b border-emerald-100 dark:border-emerald-800/50">
-          <div className="flex items-center justify-between">
+        {/* Active Leads */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-xl">
-                <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Aranacak Lead'ler</h2>
-                <p className="text-sm text-gray-500">{leads.length} aktif lead</p>
-              </div>
+              <Users className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <h2 className="font-semibold text-gray-900 dark:text-white">Active Leads</h2>
             </div>
             <Button 
-              variant="outline" 
-              size="sm" 
+              variant="ghost" 
+              size="sm"
               onClick={() => router.push(`${basePath}/leads`)}
-              className="border-emerald-200 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-400"
+              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
             >
-              Tümünü Gör
-              <ArrowRight className="w-4 h-4 ml-2" />
+              View All
+              <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
-        </div>
-        <CardContent className="p-6">
+          
           {leads.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 flex items-center justify-center">
-                <Users className="w-8 h-8 text-emerald-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Henüz lead yok</h3>
-              <p className="text-gray-500 text-sm mb-4">İlk lead'inizi ekleyerek başlayın</p>
-              <Button onClick={() => router.push(`${basePath}/leads`)} className="bg-emerald-600 hover:bg-emerald-700">
-                <Plus className="w-4 h-4 mr-2" />
-                Lead Ekle
+            <div className="px-6 py-12 text-center">
+              <Users className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">No leads yet</p>
+              <Button 
+                onClick={() => router.push(`${basePath}/leads`)} 
+                size="sm"
+              >
+                <UserPlus className="w-4 h-4 mr-2" />
+                Add Lead
               </Button>
             </div>
           ) : (
-            <div className="grid gap-3">
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
               {leads.map((lead) => (
                 <div 
                   key={lead.id} 
-                  className="group flex items-center justify-between p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all cursor-pointer"
+                  className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
                   onClick={() => router.push(`${basePath}/leads?id=${lead.id}`)}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 flex items-center justify-center">
-                      <span className="text-sm font-bold text-gray-600 dark:text-gray-300">
-                        {lead.full_name?.charAt(0).toUpperCase() || "?"}
-                      </span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                          {lead.full_name?.charAt(0).toUpperCase() || "?"}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">{lead.full_name}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{lead.phone || lead.email || "—"}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900 dark:text-white">{lead.full_name}</p>
-                      <p className="text-sm text-gray-500">{lead.phone || lead.email || "—"}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={cn(
-                      "px-3 py-1 text-xs rounded-full font-medium",
-                      lead.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                      lead.priority === 'medium' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                      'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400'
-                    )}>
-                      {lead.priority === 'high' ? '🔥 Yüksek' : lead.priority === 'medium' ? '⭐ Orta' : 'Düşük'}
-                    </span>
-                    <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors" />
+                    <StatusBadge status={lead.status} />
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
