@@ -41,6 +41,8 @@ import {
   Upload,
   Users,
   Loader2,
+  CheckCircle2,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -84,6 +86,7 @@ export default function LeadsPage() {
   const [csvData, setCsvData] = useState<Partial<Lead>[]>([]);
   const [csvFileName, setCsvFileName] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [callSuccess, setCallSuccess] = useState<{ show: boolean; leadName?: string }>({ show: false });
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -318,13 +321,24 @@ export default function LeadsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leadId: lead.id,
+          lead_id: lead.id,
           channel: "call",
+          direct_call: true,
         }),
       });
 
-      if (response.ok) {
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
         await loadLeads();
+        // Show success notification
+        setCallSuccess({ show: true, leadName: lead.full_name || lead.phone });
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+          setCallSuccess({ show: false });
+        }, 5000);
+      } else {
+        console.error("Call failed:", data.message || "Unknown error");
       }
     } catch (error) {
       console.error("Error calling lead:", error);
@@ -341,6 +355,29 @@ export default function LeadsPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* Success Notification */}
+      {callSuccess.show && (
+        <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-5 duration-300">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-green-200 dark:border-green-800 p-4 flex items-center gap-3 min-w-[320px]">
+            <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-gray-900 dark:text-white">Call Initiated</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Successfully started call to {callSuccess.leadName}
+              </p>
+            </div>
+            <button
+              onClick={() => setCallSuccess({ show: false })}
+              className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

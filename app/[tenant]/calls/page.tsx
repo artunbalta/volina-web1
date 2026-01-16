@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { Call } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -17,13 +17,22 @@ import {
   RefreshCw, 
   Search,
   Play,
+  Pause,
+  Rewind,
+  FastForward,
   Loader2,
   Filter,
   X,
   ChevronDown,
   ChevronUp,
-  FileText
+  FileText,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -44,8 +53,337 @@ function ScoreBadge({ score }: { score: number | null }) {
   );
 }
 
+// Audio Player Component
+function AudioPlayer({ 
+  call, 
+  isOpen, 
+  onClose 
+}: { 
+  call: Call | null; 
+  isOpen: boolean; 
+  onClose: () => void;
+}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const waveformRefs = useRef<number[]>([]);
+
+  // Format time helper with proper alignment
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Format duration for display (with seconds)
+  const formatDuration = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return "—";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    if (mins === 0) {
+      return `${secs} sec.`;
+    }
+    return `${mins} min. ${secs} sec.`;
+  };
+
+  // Initialize audio when call changes
+  useEffect(() => {
+    if (!call?.recording_url || !isOpen) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setDuration(0);
+      setCurrentTime(0);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    setCurrentTime(0);
+    setDuration(0);
+    
+    const audio = new Audio(call.recording_url);
+    audioRef.current = audio;
+    
+    // Generate waveform heights
+    waveformRefs.current = Array.from({ length: 60 }, () => Math.random() * 60 + 20);
+    
+    const handleLoadedMetadata = () => {
+      if (audio.duration && isFinite(audio.duration)) {
+        setDuration(audio.duration);
+        setIsLoading(false);
+      }
+    };
+    
+    const handleCanPlay = () => {
+      setIsLoading(false);
+    };
+    
+    const handleError = (e: Event) => {
+      console.error("Audio loading error:", e);
+      setError("Unable to load audio recording");
+      setIsLoading(false);
+      audioRef.current = null;
+    };
+    
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
+    
+    const handlePlay = () => {
+      setIsPlaying(true);
+    };
+    
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+    
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+    
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('canplay', handleCanPlay);
+    audio.addEventListener('error', handleError);
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('ended', handleEnded);
+    
+    // Preload audio
+    audio.load();
+    
+    return () => {
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('canplay', handleCanPlay);
+      audio.removeEventListener('error', handleError);
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('ended', handleEnded);
+      audio.pause();
+      audio.src = '';
+      audioRef.current = null;
+    };
+  }, [call?.recording_url, isOpen]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    
+    if (isPlaying) {
+      audio.pause();
+    } else {
+      audio.play();
+    }
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percent = Math.max(0, Math.min(1, x / rect.width));
+    const newTime = percent * duration;
+    
+    audio.currentTime = newTime;
+    setCurrentTime(newTime);
+  };
+
+  const skip = (seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    
+    audio.currentTime = Math.max(0, Math.min(duration, audio.currentTime + seconds));
+  };
+
+  if (!call || !call.recording_url) return null;
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const remainingTime = duration - currentTime;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-3xl bg-white dark:bg-gray-800 p-0 gap-0 [&>button]:hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-white">
+              {call.caller_name || "Unknown Caller"}
+            </DialogTitle>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            </button>
+          </div>
+        </DialogHeader>
+        
+        <div className="px-6 py-6 space-y-6">
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+            </div>
+          )}
+
+          {/* Call Info Bubble */}
+          <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 inline-block">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gray-800 dark:bg-gray-900 flex items-center justify-center">
+                <span className="text-white font-bold text-sm">
+                  {call.caller_name?.charAt(0).toUpperCase() || "U"}
+                </span>
+              </div>
+              <div>
+                <p className="font-medium text-gray-900 dark:text-white">Audiocall</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-mono tabular-nums">
+                  {duration > 0 ? formatDuration(duration) : (call.duration ? formatDuration(call.duration) : "—")}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Waveform Visualization */}
+          <div className="relative h-32 bg-gray-100 dark:bg-gray-700/50 rounded-lg overflow-hidden flex items-center justify-center">
+            <div className="flex items-center gap-0.5 h-full px-4">
+              {waveformRefs.current.map((height, i) => {
+                const isActive = (i / 60) * 100 <= progress;
+                const isPlayingNow = isPlaying && isActive;
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      "w-1.5 rounded-full transition-all duration-100",
+                      isActive
+                        ? "bg-orange-500"
+                        : "bg-gray-300 dark:bg-gray-600"
+                    )}
+                    style={{
+                      height: isActive ? `${height}%` : "20%",
+                      animation: isPlayingNow ? "pulse 0.5s ease-in-out infinite" : "none",
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="space-y-2">
+            <div 
+              className="relative h-2 bg-gray-900 dark:bg-gray-700 rounded-full cursor-pointer"
+              onClick={handleSeek}
+            >
+              {/* Progress fill */}
+              <div 
+                className="absolute left-0 top-0 h-full bg-orange-500 rounded-full transition-all"
+                style={{ width: `${progress}%` }}
+              />
+              
+              {/* Progress segments/markers */}
+              <div className="absolute inset-0 flex items-center">
+                {Array.from({ length: 20 }).map((_, i) => {
+                  const segmentPos = (i / 20) * 100;
+                  const isActive = segmentPos <= progress;
+                  return (
+                    <div
+                      key={i}
+                      className={cn(
+                        "absolute h-1 rounded-full",
+                        isActive ? "bg-orange-500" : "bg-gray-700 dark:bg-gray-600"
+                      )}
+                      style={{
+                        left: `${segmentPos}%`,
+                        width: "2px",
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              
+              {/* Scrubber */}
+              <div 
+                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-orange-500 rounded-full border-2 border-white dark:border-gray-900 transition-all"
+                style={{ left: `calc(${progress}% - 8px)` }}
+              />
+            </div>
+            
+            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 font-mono tabular-nums">
+              <span>{formatTime(currentTime)}</span>
+              <span>-{formatTime(remainingTime)}</span>
+            </div>
+          </div>
+
+          {/* Loading State */}
+          {isLoading && !error && (
+            <div className="text-center py-8">
+              <Loader2 className="w-8 h-8 animate-spin text-gray-400 dark:text-gray-500 mx-auto mb-2" />
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading audio...</p>
+            </div>
+          )}
+
+          {/* Playback Controls */}
+          {!isLoading && !error && (
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() => skip(-10)}
+                disabled={!duration}
+                className="w-12 h-12 rounded-lg bg-gray-900 dark:bg-gray-700 text-white flex items-center justify-center hover:bg-gray-800 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Rewind className="w-5 h-5" />
+              </button>
+              
+              <button
+                onClick={togglePlay}
+                disabled={!duration || isLoading}
+                className="w-16 h-16 rounded-lg bg-gray-900 dark:bg-gray-700 text-white flex items-center justify-center hover:bg-gray-800 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isPlaying ? (
+                  <Pause className="w-6 h-6" />
+                ) : (
+                  <Play className="w-6 h-6 ml-1" />
+                )}
+              </button>
+              
+              <button
+                onClick={() => skip(10)}
+                disabled={!duration}
+                className="w-12 h-12 rounded-lg bg-gray-900 dark:bg-gray-700 text-white flex items-center justify-center hover:bg-gray-800 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FastForward className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+
+          {/* Summary Bubble */}
+          {call.summary && (
+            <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 inline-block max-w-md">
+              <p className="text-sm text-gray-700 dark:text-gray-300">{call.summary}</p>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Call Row Component with Expandable Detail
-function CallRow({ call }: { call: Call }) {
+function CallRow({ 
+  call, 
+  onPlay 
+}: { 
+  call: Call;
+  onPlay: (call: Call) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   const formatDuration = (seconds: number | null) => {
@@ -83,7 +421,7 @@ function CallRow({ call }: { call: Call }) {
           </div>
           
           {/* Duration */}
-          <div className="w-16 text-sm text-gray-600 dark:text-gray-300 text-right">
+          <div className="w-20 text-sm text-gray-600 dark:text-gray-300 text-right font-mono tabular-nums">
             {formatDuration(call.duration)}
           </div>
           
@@ -95,15 +433,15 @@ function CallRow({ call }: { call: Call }) {
           {/* Actions */}
           <div className="flex items-center gap-2">
             {call.recording_url && (
-              <a 
-                href={call.recording_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPlay(call);
+                }}
                 className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
                 <Play className="w-4 h-4" />
-              </a>
+              </button>
             )}
             <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
               {expanded ? (
@@ -160,6 +498,8 @@ export default function CallsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [scoreFilter, setScoreFilter] = useState<string>("all");
+  const [selectedCall, setSelectedCall] = useState<Call | null>(null);
+  const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   const loadCalls = useCallback(async () => {
     try {
@@ -331,7 +671,7 @@ export default function CallsPage() {
             <div className="w-8 text-center">#</div>
             <div className="flex-1">Customer</div>
             <div className="w-20">Score</div>
-            <div className="w-16 text-right">Duration</div>
+            <div className="w-20 text-right">Duration</div>
             <div className="w-24 text-right">Date</div>
             <div className="w-24"></div>
           </div>
@@ -346,11 +686,28 @@ export default function CallsPage() {
         ) : (
           <div>
             {filteredCalls.map((call) => (
-              <CallRow key={call.id} call={call} />
+              <CallRow 
+                key={call.id} 
+                call={call} 
+                onPlay={(call) => {
+                  setSelectedCall(call);
+                  setIsPlayerOpen(true);
+                }}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* Audio Player Modal */}
+      <AudioPlayer
+        call={selectedCall}
+        isOpen={isPlayerOpen}
+        onClose={() => {
+          setIsPlayerOpen(false);
+          setSelectedCall(null);
+        }}
+      />
     </div>
   );
 }
