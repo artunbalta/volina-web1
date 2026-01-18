@@ -13,7 +13,11 @@ import {
   Play,
   Loader2,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Target
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/SupabaseProvider";
@@ -122,14 +126,29 @@ export default function OutboundDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [calls, setCalls] = useState<Call[]>([]);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Trend data
+  const [weeklyLeads, setWeeklyLeads] = useState<{ date: string; count: number }[]>([]);
+  const [weeklyCalls, setWeeklyCalls] = useState<{ date: string; count: number }[]>([]);
+  const [conversionTrend, setConversionTrend] = useState<{ date: string; rate: number }[]>([]);
+  
+  // AI Performance
+  const [avgCallDuration, setAvgCallDuration] = useState<number>(0);
+  const [successRate, setSuccessRate] = useState<number>(0);
+  const [sentimentDistribution, setSentimentDistribution] = useState<{ positive: number; neutral: number; negative: number }>({ positive: 0, neutral: 0, negative: 0 });
+  
+  // Goal Progress
+  const [monthlyGoal, setMonthlyGoal] = useState<number>(100); // Default 100 leads/calls
+  const [currentMonthProgress, setCurrentMonthProgress] = useState<{ leads: number; calls: number }>({ leads: 0, calls: 0 });
 
   const loadData = useCallback(async () => {
     try {
       const [leadsResponse, callsResponse] = await Promise.all([
-        fetch("/api/dashboard/leads?limit=100"),
-        fetch("/api/dashboard/calls?days=30&limit=10"),
+        fetch("/api/dashboard/leads?limit=500"),
+        fetch("/api/dashboard/calls?days=30&limit=500"),
       ]);
 
       if (leadsResponse.ok) {
@@ -140,6 +159,53 @@ export default function OutboundDashboard() {
             .filter((l: Lead) => ['new', 'contacted', 'interested'].includes(l.status))
             .slice(0, 5);
           setLeads(activeLeads);
+          
+          // Get upcoming appointments (appointment_set status)
+          const now = new Date();
+          const tomorrow = new Date(now);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(23, 59, 59, 999);
+          
+          const appointments = (data.data || [])
+            .filter((l: Lead) => l.status === 'appointment_set' && l.last_contact_date)
+            .filter((l: Lead) => {
+              if (!l.last_contact_date) return false;
+              const contactDate = new Date(l.last_contact_date);
+              return contactDate >= now && contactDate <= tomorrow;
+            })
+            .slice(0, 5);
+          setUpcomingAppointments(appointments);
+          
+          // Calculate weekly leads trend (last 7 days)
+          const weekAgo = new Date(now);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          const recentLeads = (data.data || []).filter((l: Lead) => 
+            new Date(l.created_at) >= weekAgo
+          );
+          
+          const weeklyLeadsMap: Record<string, number> = {};
+          for (let i = 0; i < 7; i++) {
+            const date = new Date(now);
+            date.setDate(date.getDate() - i);
+            const dateStr = format(date, 'MMM d');
+            weeklyLeadsMap[dateStr] = 0;
+          }
+          
+          recentLeads.forEach((lead: Lead) => {
+            const dateStr = format(new Date(lead.created_at), 'MMM d');
+            if (weeklyLeadsMap[dateStr] !== undefined) {
+              weeklyLeadsMap[dateStr]++;
+            }
+          });
+          
+          setWeeklyLeads(Object.entries(weeklyLeadsMap).reverse().map(([date, count]) => ({ date, count })));
+          
+          // Calculate monthly progress
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          const monthlyLeads = (data.data || []).filter((l: Lead) => 
+            new Date(l.created_at) >= startOfMonth
+          ).length;
+          setCurrentMonthProgress(prev => ({ ...prev, leads: monthlyLeads }));
         }
       }
 
@@ -181,6 +247,89 @@ export default function OutboundDashboard() {
             updated_at: call.updated_at,
           }));
           setCalls(transformedCalls.slice(0, 5));
+          
+          // Calculate AI Performance metrics
+          const callsWithDuration = transformedCalls.filter(c => c.duration && c.duration > 0);
+          const avgDuration = callsWithDuration.length > 0
+            ? Math.round(callsWithDuration.reduce((sum, c) => sum + (c.duration || 0), 0) / callsWithDuration.length)
+            : 0;
+          setAvgCallDuration(avgDuration);
+          
+          // Success rate (evaluation_score >= 7)
+          const successfulCalls = transformedCalls.filter(c => 
+            c.evaluation_score !== null && c.evaluation_score >= 7
+          ).length;
+          const successRate = transformedCalls.length > 0
+            ? Math.round((successfulCalls / transformedCalls.length) * 100)
+            : 0;
+          setSuccessRate(successRate);
+          
+          // Sentiment distribution
+          const sentimentCounts = transformedCalls.reduce((acc, c) => {
+            const sentiment = c.sentiment || 'neutral';
+            if (sentiment === 'positive') acc.positive++;
+            else if (sentiment === 'negative') acc.negative++;
+            else acc.neutral++;
+            return acc;
+          }, { positive: 0, neutral: 0, negative: 0 });
+          setSentimentDistribution(sentimentCounts);
+          
+          // Calculate weekly calls trend (last 7 days)
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          const recentCalls = transformedCalls.filter(c => 
+            new Date(c.created_at) >= weekAgo
+          );
+          
+          const weeklyCallsMap: Record<string, number> = {};
+          for (let i = 0; i < 7; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateStr = format(date, 'MMM d');
+            weeklyCallsMap[dateStr] = 0;
+          }
+          
+          recentCalls.forEach((call: Call) => {
+            const dateStr = format(new Date(call.created_at), 'MMM d');
+            if (weeklyCallsMap[dateStr] !== undefined) {
+              weeklyCallsMap[dateStr]++;
+            }
+          });
+          
+          setWeeklyCalls(Object.entries(weeklyCallsMap).reverse().map(([date, count]) => ({ date, count })));
+          
+          // Calculate monthly progress for calls
+          const startOfMonth = new Date();
+          startOfMonth.setDate(1);
+          const monthlyCalls = transformedCalls.filter(c => 
+            new Date(c.created_at) >= startOfMonth
+          ).length;
+          setCurrentMonthProgress(prev => ({ ...prev, calls: monthlyCalls }));
+          
+          // Calculate conversion trend (weekly conversion rates)
+          const conversionTrendData: { date: string; rate: number }[] = [];
+          for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateStr = format(date, 'MMM d');
+            const dayStart = new Date(date);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(date);
+            dayEnd.setHours(23, 59, 59, 999);
+            
+            const dayCalls = transformedCalls.filter(c => {
+              const callDate = new Date(c.created_at);
+              return callDate >= dayStart && callDate <= dayEnd;
+            });
+            
+            const successfulDayCalls = dayCalls.filter(c => 
+              c.evaluation_score !== null && c.evaluation_score >= 7
+            ).length;
+            
+            const rate = dayCalls.length > 0 ? Math.round((successfulDayCalls / dayCalls.length) * 100) : 0;
+            conversionTrendData.push({ date: dateStr, rate });
+          }
+          setConversionTrend(conversionTrendData);
         }
       }
     } catch (error) {
@@ -254,6 +403,209 @@ export default function OutboundDashboard() {
           value={`${stats?.conversionRate || 0}%`}
         />
       </div>
+
+      {/* Trend Charts */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Weekly Trends</h2>
+        <div className="grid md:grid-cols-3 gap-6">
+          {/* Leads Trend */}
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Leads</p>
+            <div className="flex items-end justify-between gap-1 h-32">
+              {weeklyLeads.map((item, idx) => {
+                const maxCount = Math.max(...weeklyLeads.map(w => w.count), 1);
+                const height = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
+                return (
+                  <div key={idx} className="flex-1 flex flex-col items-center">
+                    <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-t" style={{ height: `${height}%` }} />
+                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{item.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
+              {weeklyLeads.slice(0, 3).map((item, idx) => (
+                <span key={idx}>{item.date}</span>
+              ))}
+            </div>
+          </div>
+          
+          {/* Calls Trend */}
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Calls</p>
+            <div className="flex items-end justify-between gap-1 h-32">
+              {weeklyCalls.map((item, idx) => {
+                const maxCount = Math.max(...weeklyCalls.map(w => w.count), 1);
+                const height = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
+                return (
+                  <div key={idx} className="flex-1 flex flex-col items-center">
+                    <div className="w-full bg-purple-100 dark:bg-purple-900/30 rounded-t" style={{ height: `${height}%` }} />
+                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{item.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
+              {weeklyCalls.slice(0, 3).map((item, idx) => (
+                <span key={idx}>{item.date}</span>
+              ))}
+            </div>
+          </div>
+          
+          {/* Conversion Rate Trend */}
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Conversion Rate</p>
+            <div className="flex items-end justify-between gap-1 h-32">
+              {conversionTrend.map((item, idx) => {
+                const height = item.rate;
+                return (
+                  <div key={idx} className="flex-1 flex flex-col items-center">
+                    <div className="w-full bg-green-100 dark:bg-green-900/30 rounded-t" style={{ height: `${height}%` }} />
+                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{item.rate}%</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
+              {conversionTrend.slice(0, 3).map((item, idx) => (
+                <span key={idx}>{item.date}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Performance & Goal Progress Row */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* AI Agent Performance */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">AI Agent Performance</h2>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Average Call Duration</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {Math.floor(avgCallDuration / 60)}:{(avgCallDuration % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Success Rate</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">{successRate}%</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Sentiment Distribution</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Positive</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.positive}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Neutral</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.neutral}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Negative</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.negative}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Goal Progress */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Goal Progress</h2>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Leads Goal</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {currentMonthProgress.leads} / {monthlyGoal}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
+                  style={{ width: `${Math.min((currentMonthProgress.leads / monthlyGoal) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Calls Goal</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {currentMonthProgress.calls} / {monthlyGoal}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div 
+                  className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
+                  style={{ width: `${Math.min((currentMonthProgress.calls / monthlyGoal) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Upcoming Appointments */}
+      {upcomingAppointments.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <CalendarCheck className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              <h2 className="font-semibold text-gray-900 dark:text-white">Upcoming Appointments</h2>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => router.push(`${basePath}/leads?status=appointment_set`)}
+              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+            >
+              View All
+              <ArrowRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+          <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            {upcomingAppointments.map((lead) => (
+              <div 
+                key={lead.id} 
+                className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                onClick={() => router.push(`${basePath}/leads?id=${lead.id}`)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                      <CalendarCheck className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">{lead.full_name}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {lead.last_contact_date 
+                          ? format(new Date(lead.last_contact_date), "MMM d, yyyy 'at' HH:mm")
+                          : lead.phone || lead.email || "—"}
+                      </p>
+                    </div>
+                  </div>
+                  <StatusBadge status={lead.status} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Two Column Layout */}
       <div className="grid lg:grid-cols-2 gap-6">

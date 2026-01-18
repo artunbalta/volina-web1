@@ -79,7 +79,9 @@ export default function LeadsPage() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCsvDialog, setShowCsvDialog] = useState(false);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -218,6 +220,51 @@ export default function LeadsPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Handle bulk delete leads
+  const handleBulkDeleteLeads = async () => {
+    if (selectedLeadIds.size === 0) return;
+    setIsSaving(true);
+
+    try {
+      const ids = Array.from(selectedLeadIds);
+      const response = await fetch("/api/dashboard/leads", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+
+      if (response.ok) {
+        await loadLeads();
+        setShowBulkDeleteDialog(false);
+        setSelectedLeadIds(new Set());
+      }
+    } catch (error) {
+      console.error("Error deleting leads:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Toggle select all
+  const toggleSelectAll = () => {
+    if (selectedLeadIds.size === filteredLeads.length) {
+      setSelectedLeadIds(new Set());
+    } else {
+      setSelectedLeadIds(new Set(filteredLeads.map(lead => lead.id)));
+    }
+  };
+
+  // Toggle single lead selection
+  const toggleLeadSelection = (leadId: string) => {
+    const newSelected = new Set(selectedLeadIds);
+    if (newSelected.has(leadId)) {
+      newSelected.delete(leadId);
+    } else {
+      newSelected.add(leadId);
+    }
+    setSelectedLeadIds(newSelected);
   };
 
   // Open edit dialog
@@ -432,6 +479,18 @@ export default function LeadsPage() {
           </SelectContent>
         </Select>
         
+        {selectedLeadIds.size > 0 && (
+          <Button 
+            variant="destructive" 
+            onClick={() => setShowBulkDeleteDialog(true)}
+            disabled={isSaving}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete Selected ({selectedLeadIds.size})
+          </Button>
+        )}
+        
         <Button 
           variant="outline" 
           onClick={handleRefresh} 
@@ -479,8 +538,14 @@ export default function LeadsPage() {
                 className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-8 text-center text-sm text-gray-400 dark:text-gray-500">
-                    {index + 1}
+                  <div className="w-8 flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedLeadIds.has(lead.id)}
+                      onChange={() => toggleLeadSelection(lead.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                    />
                   </div>
                   
                   <div className="flex-1 min-w-0">
@@ -685,6 +750,27 @@ export default function LeadsPage() {
             <Button variant="destructive" onClick={handleDeleteLead} disabled={isSaving}>
               {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Selected Leads</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedLeadIds.size} lead(s)? This action cannot be undone and will permanently remove them from the database.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDeleteLeads} disabled={isSaving}>
+              {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete {selectedLeadIds.size} Lead(s)
             </Button>
           </DialogFooter>
         </DialogContent>

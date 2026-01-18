@@ -216,16 +216,26 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE - Delete a lead
+// DELETE - Delete a lead or multiple leads
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
+    
+    // Try to get ids from request body for bulk delete
+    let body: { ids?: string[] } | null = null;
+    try {
+      body = await request.json();
+    } catch {
+      // Body might not be JSON, that's okay
+    }
 
-    if (!id) {
+    const ids = body?.ids || (id ? [id] : []);
+
+    if (!ids || ids.length === 0) {
       return NextResponse.json(
-        { success: false, error: "id is required" },
+        { success: false, error: "id or ids array is required" },
         { status: 400 }
       );
     }
@@ -233,17 +243,17 @@ export async function DELETE(request: NextRequest) {
     const { error } = await supabase
       .from("leads")
       .delete()
-      .eq("id", id);
+      .in("id", ids);
 
     if (error) {
-      console.error("Error deleting lead:", error);
+      console.error("Error deleting lead(s):", error);
       return NextResponse.json(
-        { success: false, error: "Failed to delete lead", details: error.message },
+        { success: false, error: "Failed to delete lead(s)", details: error.message },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, deletedCount: ids.length });
   } catch (error) {
     console.error("Delete lead error:", error);
     return NextResponse.json(
