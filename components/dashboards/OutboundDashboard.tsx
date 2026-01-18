@@ -404,73 +404,80 @@ export default function OutboundDashboard() {
         />
       </div>
 
-      {/* Trend Charts */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Weekly Trends</h2>
-        <div className="grid md:grid-cols-3 gap-6">
-          {/* Leads Trend */}
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Leads</p>
-            <div className="flex items-end justify-between gap-1 h-32">
-              {weeklyLeads.map((item, idx) => {
-                const maxCount = Math.max(...weeklyLeads.map(w => w.count), 1);
-                const height = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center">
-                    <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-t" style={{ height: `${height}%` }} />
-                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{item.count}</span>
+      {/* Trend Charts - Separated into 3 clear cards */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Leads Trend */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Leads Trend</h3>
+          <div className="space-y-3">
+            {weeklyLeads.map((item, idx) => {
+              const maxCount = Math.max(...weeklyLeads.map(w => w.count), 1);
+              const width = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
+              return (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">{item.date}</span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{item.count}</span>
                   </div>
-                );
-              })}
-            </div>
-            <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
-              {weeklyLeads.slice(0, 3).map((item, idx) => (
-                <span key={idx}>{item.date}</span>
-              ))}
-            </div>
+                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all" 
+                      style={{ width: `${width}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          
-          {/* Calls Trend */}
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Calls</p>
-            <div className="flex items-end justify-between gap-1 h-32">
-              {weeklyCalls.map((item, idx) => {
-                const maxCount = Math.max(...weeklyCalls.map(w => w.count), 1);
-                const height = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center">
-                    <div className="w-full bg-purple-100 dark:bg-purple-900/30 rounded-t" style={{ height: `${height}%` }} />
-                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{item.count}</span>
+        </div>
+        
+        {/* Calls Trend */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Calls Trend</h3>
+          <div className="space-y-3">
+            {weeklyCalls.map((item, idx) => {
+              const maxCount = Math.max(...weeklyCalls.map(w => w.count), 1);
+              const width = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
+              return (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">{item.date}</span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{item.count}</span>
                   </div>
-                );
-              })}
-            </div>
-            <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
-              {weeklyCalls.slice(0, 3).map((item, idx) => (
-                <span key={idx}>{item.date}</span>
-              ))}
-            </div>
+                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
+                    <div 
+                      className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all" 
+                      style={{ width: `${width}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          
-          {/* Conversion Rate Trend */}
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Conversion Rate</p>
-            <div className="flex items-end justify-between gap-1 h-32">
-              {conversionTrend.map((item, idx) => {
-                const height = item.rate;
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center">
-                    <div className="w-full bg-green-100 dark:bg-green-900/30 rounded-t" style={{ height: `${height}%` }} />
-                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{item.rate}%</span>
+        </div>
+        
+        {/* Conversion Rate Trend */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Conversion Rate</h3>
+          <div className="space-y-3">
+            {conversionTrend.map((item, idx) => {
+              const maxRate = Math.max(...conversionTrend.map(c => c.rate), 100);
+              const width = maxRate > 0 ? (item.rate / maxRate) * 100 : 0;
+              return (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">{item.date}</span>
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{item.rate}%</span>
                   </div>
-                );
-              })}
-            </div>
-            <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
-              {conversionTrend.slice(0, 3).map((item, idx) => (
-                <span key={idx}>{item.date}</span>
-              ))}
-            </div>
+                  <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
+                    <div 
+                      className="bg-green-600 dark:bg-green-500 h-2 rounded-full transition-all" 
+                      style={{ width: `${width}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -527,34 +534,18 @@ export default function OutboundDashboard() {
         {/* Goal Progress */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Goal Progress</h2>
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Leads Goal</span>
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {currentMonthProgress.leads} / {monthlyGoal}
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
-                  style={{ width: `${Math.min((currentMonthProgress.leads / monthlyGoal) * 100, 100)}%` }}
-                />
-              </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Calls Goal</span>
+              <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                {currentMonthProgress.calls} / {monthlyGoal}
+              </span>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Calls Goal</span>
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {currentMonthProgress.calls} / {monthlyGoal}
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div 
-                  className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
-                  style={{ width: `${Math.min((currentMonthProgress.calls / monthlyGoal) * 100, 100)}%` }}
-                />
-              </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div 
+                className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
+                style={{ width: `${Math.min((currentMonthProgress.calls / monthlyGoal) * 100, 100)}%` }}
+              />
             </div>
           </div>
         </div>
