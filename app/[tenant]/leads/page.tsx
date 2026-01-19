@@ -158,7 +158,10 @@ export default function LeadsPage() {
 
   // Handle add lead
   const handleAddLead = async () => {
-    if (!formData.full_name || !user?.id) return;
+    if (!formData.full_name || !user?.id) {
+      console.error("Missing required fields: full_name or user.id");
+      return;
+    }
     setIsSaving(true);
 
     try {
@@ -171,13 +174,19 @@ export default function LeadsPage() {
         }),
       });
 
-      if (response.ok) {
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
         await loadLeads();
         setShowAddDialog(false);
         resetForm();
+      } else {
+        console.error("Error adding lead:", result.error || "Unknown error");
+        alert(result.error || "Failed to add lead");
       }
     } catch (error) {
       console.error("Error adding lead:", error);
+      alert("Failed to add lead. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -344,7 +353,10 @@ export default function LeadsPage() {
 
   // Confirm CSV upload
   const handleCsvUpload = async () => {
-    if (csvData.length === 0 || !user?.id) return;
+    if (csvData.length === 0 || !user?.id) {
+      console.error("No CSV data or user.id missing");
+      return;
+    }
     setIsUploading(true);
 
     try {
@@ -360,14 +372,21 @@ export default function LeadsPage() {
         body: JSON.stringify({ leads: leadsWithUserId }),
       });
 
-      if (response.ok) {
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
         await loadLeads();
         setShowCsvDialog(false);
         setCsvData([]);
         setCsvFileName("");
+        alert(`Successfully imported ${result.count || leadsWithUserId.length} leads`);
+      } else {
+        console.error("Error uploading CSV:", result.error || "Unknown error");
+        alert(result.error || "Failed to import leads");
       }
     } catch (error) {
       console.error("Error uploading CSV:", error);
+      alert("Failed to import leads. Please try again.");
     } finally {
       setIsUploading(false);
     }
