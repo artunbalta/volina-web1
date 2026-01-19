@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient();
     const body = await request.json();
 
-    // Handle bulk CSV upload
-    if (body.leads && Array.isArray(body.leads)) {
+    // Handle bulk CSV upload - check if leads array exists and is not empty
+    if (body.leads && Array.isArray(body.leads) && body.leads.length > 0) {
       if (body.leads.length === 0) {
         return NextResponse.json(
           { success: false, error: "No leads provided" },
