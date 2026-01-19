@@ -11,11 +11,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const channel = searchParams.get("channel");
     const limit = parseInt(searchParams.get("limit") || "50");
+    const userId = searchParams.get("userId");
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
 
     // Fetch messages
     let messagesQuery = supabase
       .from("messages")
       .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(limit);
 

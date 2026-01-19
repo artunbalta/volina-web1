@@ -6,11 +6,22 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("userId");
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+
     const { data: campaigns, error } = await supabase
       .from("campaigns")
       .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -71,7 +82,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, ...updates } = body;
+    const { id, userId, ...updates } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -80,10 +91,33 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Verify campaign belongs to user before updating
+    const { data: existing } = await supabase
+      .from("campaigns")
+      .select("id")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "Campaign not found or access denied" },
+        { status: 404 }
+      );
+    }
+
     const { data, error } = await supabase
       .from("campaigns")
       .update(updates)
       .eq("id", id)
+      .eq("user_id", userId)
       .select()
       .single();
 

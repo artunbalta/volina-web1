@@ -101,8 +101,9 @@ export default function LeadsPage() {
   });
 
   const loadLeads = useCallback(async () => {
+    if (!user?.id) return;
     try {
-      const response = await fetch("/api/dashboard/leads?limit=500");
+      const response = await fetch(`/api/dashboard/leads?limit=500&userId=${user.id}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -156,11 +157,14 @@ export default function LeadsPage() {
     if (!formData.full_name) return;
     setIsSaving(true);
 
+    if (!user?.id) return;
+    setIsSaving(true);
+
     try {
       const response = await fetch("/api/dashboard/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, user_id: user.id }),
       });
 
       if (response.ok) {
@@ -177,14 +181,14 @@ export default function LeadsPage() {
 
   // Handle edit lead
   const handleEditLead = async () => {
-    if (!selectedLead) return;
+    if (!selectedLead || !user?.id) return;
     setIsSaving(true);
 
     try {
       const response = await fetch(`/api/dashboard/leads?id=${selectedLead.id}`, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, id: selectedLead.id, user_id: user.id }),
       });
 
       if (response.ok) {
@@ -202,11 +206,11 @@ export default function LeadsPage() {
 
   // Handle delete lead
   const handleDeleteLead = async () => {
-    if (!selectedLead) return;
+    if (!selectedLead || !user?.id) return;
     setIsSaving(true);
 
     try {
-      const response = await fetch(`/api/dashboard/leads?id=${selectedLead.id}`, {
+      const response = await fetch(`/api/dashboard/leads?id=${selectedLead.id}&userId=${user.id}`, {
         method: "DELETE",
       });
 
@@ -224,15 +228,15 @@ export default function LeadsPage() {
 
   // Handle bulk delete leads
   const handleBulkDeleteLeads = async () => {
-    if (selectedLeadIds.size === 0) return;
+    if (selectedLeadIds.size === 0 || !user?.id) return;
     setIsSaving(true);
 
     try {
       const ids = Array.from(selectedLeadIds);
-      const response = await fetch("/api/dashboard/leads", {
+      const response = await fetch(`/api/dashboard/leads?userId=${user.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify({ ids, userId: user.id }),
       });
 
       if (response.ok) {
@@ -336,14 +340,14 @@ export default function LeadsPage() {
 
   // Confirm CSV upload
   const handleCsvUpload = async () => {
-    if (csvData.length === 0) return;
+    if (csvData.length === 0 || !user?.id) return;
     setIsUploading(true);
 
     try {
-      const response = await fetch("/api/dashboard/leads", {
+      const response = await fetch(`/api/dashboard/leads?userId=${user.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: csvData }),
+        body: JSON.stringify({ leads: csvData.map(lead => ({ ...lead, user_id: user.id })) }),
       });
 
       if (response.ok) {

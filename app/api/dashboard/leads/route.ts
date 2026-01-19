@@ -22,10 +22,19 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const search = searchParams.get("search");
+    const userId = searchParams.get("userId");
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
 
     let query = supabase
       .from("leads")
       .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (status && status !== "all") {
@@ -189,12 +198,35 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { id, ...updates } = body;
+    if (!body.user_id) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required" },
+        { status: 400 }
+      );
+    }
+
+    const { id, user_id, ...updates } = body;
+
+    // Verify lead belongs to user before updating
+    const { data: existing } = await supabase
+      .from("leads")
+      .select("id")
+      .eq("id", id)
+      .eq("user_id", user_id)
+      .single();
+
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "Lead not found or access denied" },
+        { status: 404 }
+      );
+    }
 
     const { data, error } = await supabase
       .from("leads")
       .update(updates as never)
       .eq("id", id)
+      .eq("user_id", user_id)
       .select()
       .single();
 
@@ -222,9 +254,10 @@ export async function DELETE(request: NextRequest) {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
+    const userId = searchParams.get("userId");
     
-    // Try to get ids from request body for bulk delete
-    let body: { ids?: string[] } | null = null;
+    // Try to get ids and userId from request body for bulk delete
+    let body: { ids?: string[]; userId?: string } | null = null;
     try {
       body = await request.json();
     } catch {
@@ -232,6 +265,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const ids = body?.ids || (id ? [id] : []);
+    const user_id = body?.userId || userId;
 
     if (!ids || ids.length === 0) {
       return NextResponse.json(
@@ -240,10 +274,32 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    if (!user_id) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required" },
+        { status: 400 }
+      );
+    }
+
+    // Verify all leads belong to user before deleting
+    const { data: existingLeads } = await supabase
+      .from("leads")
+      .select("id")
+      .in("id", ids)
+      .eq("user_id", user_id);
+
+    if (!existingLeads || existingLeads.length !== ids.length) {
+      return NextResponse.json(
+        { success: false, error: "Some leads not found or access denied" },
+        { status: 403 }
+      );
+    }
+
     const { error } = await supabase
       .from("leads")
       .delete()
-      .in("id", ids);
+      .in("id", ids)
+      .eq("user_id", user_id);
 
     if (error) {
       console.error("Error deleting lead(s):", error);

@@ -112,9 +112,10 @@ export default function CampaignsPage() {
   });
 
   const loadCampaigns = useCallback(async () => {
+    if (!user?.id) return;
     try {
       // Use server-side API route
-      const response = await fetch("/api/dashboard/campaigns");
+      const response = await fetch(`/api/dashboard/campaigns?userId=${user.id}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -151,6 +152,7 @@ export default function CampaignsPage() {
           duration_days: formData.duration_days,
           is_active: formData.is_active,
           steps: formData.steps,
+          userId: user?.id,
         }),
       });
       
@@ -176,6 +178,7 @@ export default function CampaignsPage() {
         body: JSON.stringify({
           id: campaign.id,
           is_active: !campaign.is_active,
+          userId: user?.id,
         }),
       });
       
