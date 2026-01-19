@@ -158,25 +158,35 @@ export default function LeadsPage() {
 
   // Handle add lead
   const handleAddLead = async () => {
+    console.log("handleAddLead called", { formData, userId: user?.id });
+    
     if (!formData.full_name || !user?.id) {
-      console.error("Missing required fields: full_name or user.id");
+      console.error("Missing required fields:", { full_name: formData.full_name, userId: user?.id });
+      alert("Please fill in the full name field");
       return;
     }
+    
     setIsSaving(true);
 
     try {
+      const requestBody = {
+        ...formData,
+        user_id: user.id,
+      };
+      
+      console.log("Sending request:", requestBody);
+      
       const response = await fetch("/api/dashboard/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          user_id: user.id,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const result = await response.json();
+      console.log("API Response:", { status: response.status, result });
       
       if (response.ok && result.success) {
+        console.log("Lead added successfully");
         await loadLeads();
         setShowAddDialog(false);
         resetForm();
