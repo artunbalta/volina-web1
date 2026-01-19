@@ -107,10 +107,9 @@ export default function MessagesPage() {
   });
 
   const loadData = useCallback(async () => {
-    if (!user?.id) return;
     try {
       // Use server-side API route
-      const response = await fetch(`/api/dashboard/messages?channel=${activeChannel}&limit=50&userId=${user.id}`);
+      const response = await fetch(`/api/dashboard/messages?channel=${activeChannel}&limit=50`);
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -149,7 +148,6 @@ export default function MessagesPage() {
           recipient: composeData.recipient,
           subject: composeData.subject,
           content: composeData.content,
-          userId: user?.id,
         }),
       });
       

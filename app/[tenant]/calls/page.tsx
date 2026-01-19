@@ -502,9 +502,8 @@ export default function CallsPage() {
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   const loadCalls = useCallback(async () => {
-    if (!user?.id) return;
     try {
-      const response = await fetch(`/api/dashboard/calls?days=90&limit=100&userId=${user.id}`);
+      const response = await fetch("/api/dashboard/calls?days=90&limit=100");
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {

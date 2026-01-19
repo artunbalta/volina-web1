@@ -22,26 +22,25 @@ export async function GET(request: NextRequest) {
     
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const days = parseInt(searchParams.get("days") || "14");
+    // userId filter is now optional - for single-tenant, show all calls
+    // For multi-tenant, you can still pass userId to filter
     const userId = searchParams.get("userId");
-    
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "User ID is required" },
-        { status: 400 }
-      );
-    }
     
     // Calculate date range
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Build query - filter by user_id (required)
+    // Build query - get all calls for display (user_id filter optional)
     let query = supabase
       .from("calls")
       .select("*")
-      .eq("user_id", userId)
       .gte("created_at", startDate.toISOString())
       .order("created_at", { ascending: false });
+    
+    // Only filter by user_id if explicitly provided and not empty
+    if (userId && userId.trim() !== "") {
+      query = query.eq("user_id", userId);
+    }
     
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
 
