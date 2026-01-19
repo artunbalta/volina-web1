@@ -47,6 +47,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { userId, ...settings } = body;
 
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "userId is required" },
+        { status: 400 }
+      );
+    }
+
     // Check if settings exist
     const { data: existing } = await supabase
       .from("ai_settings")
@@ -82,6 +89,61 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: result.data });
   } catch (error: any) {
     console.error("Save AI Settings API error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { userId, ...settings } = body;
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "userId is required" },
+        { status: 400 }
+      );
+    }
+
+    // Update existing settings
+    const result = await supabase
+      .from("ai_settings")
+      .update(settings)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (result.error) {
+      // If not found, create new
+      if (result.error.code === "PGRST116") {
+        const insertResult = await supabase
+          .from("ai_settings")
+          .insert({ user_id: userId, ...settings })
+          .select()
+          .single();
+
+        if (insertResult.error) {
+          return NextResponse.json(
+            { success: false, error: insertResult.error.message },
+            { status: 400 }
+          );
+        }
+
+        return NextResponse.json({ success: true, data: insertResult.data });
+      }
+
+      return NextResponse.json(
+        { success: false, error: result.error.message },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: result.data });
+  } catch (error: any) {
+    console.error("Update AI Settings API error:", error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

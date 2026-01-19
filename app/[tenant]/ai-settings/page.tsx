@@ -44,7 +44,10 @@ export default function AISettingsPage() {
   });
 
   const loadSettings = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
     
     try {
       const response = await fetch(`/api/dashboard/ai-settings?user_id=${user.id}`);
@@ -69,10 +72,17 @@ export default function AISettingsPage() {
             call_hours_end: data.call_hours_end || "18:00",
             announce_ai: data.announce_ai ?? true,
           });
+        } else {
+          // No data found, use defaults
+          setSettings(null);
         }
+      } else {
+        // API error, use defaults
+        setSettings(null);
       }
     } catch (error) {
       console.error("Error loading AI settings:", error);
+      setSettings(null);
     } finally {
       setIsLoading(false);
     }
