@@ -107,9 +107,14 @@ export default function MessagesPage() {
   });
 
   const loadData = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      // Use server-side API route
-      const response = await fetch(`/api/dashboard/messages?channel=${activeChannel}&limit=50`);
+      // Use server-side API route with user_id
+      const response = await fetch(`/api/dashboard/messages?channel=${activeChannel}&limit=50&user_id=${user.id}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -125,7 +130,7 @@ export default function MessagesPage() {
       setMessages([]);
       setTemplates([]);
     }
-  }, [activeChannel]);
+  }, [activeChannel, user?.id]);
 
   useEffect(() => {
     loadData().then(() => setIsLoading(false));
@@ -138,6 +143,8 @@ export default function MessagesPage() {
   };
 
   const handleSendMessage = async () => {
+    if (!user?.id) return;
+    
     setIsSending(true);
     try {
       const response = await fetch("/api/dashboard/messages", {
@@ -148,6 +155,7 @@ export default function MessagesPage() {
           recipient: composeData.recipient,
           subject: composeData.subject,
           content: composeData.content,
+          userId: user.id,
         }),
       });
       

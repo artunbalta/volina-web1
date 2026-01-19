@@ -6,11 +6,23 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    
+    // REQUIRED: user_id must be provided for data isolation
+    const userId = searchParams.get("user_id");
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required for data isolation", data: [] },
+        { status: 400 }
+      );
+    }
+    
     const { data: campaigns, error } = await supabase
       .from("campaigns")
       .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -71,7 +83,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, ...updates } = body;
+    const { id, userId, ...updates } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -79,11 +91,20 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+    
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required for data isolation" },
+        { status: 400 }
+      );
+    }
 
+    // Ensure user can only update their own campaigns
     const { data, error } = await supabase
       .from("campaigns")
       .update(updates)
       .eq("id", id)
+      .eq("user_id", userId)
       .select()
       .single();
 

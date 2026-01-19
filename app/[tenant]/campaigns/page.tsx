@@ -112,9 +112,14 @@ export default function CampaignsPage() {
   });
 
   const loadCampaigns = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      // Use server-side API route
-      const response = await fetch("/api/dashboard/campaigns");
+      // Use server-side API route with user_id
+      const response = await fetch(`/api/dashboard/campaigns?user_id=${user.id}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -127,7 +132,7 @@ export default function CampaignsPage() {
       console.error("Error loading campaigns:", error);
       setCampaigns([]);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     loadCampaigns().then(() => setIsLoading(false));
@@ -140,6 +145,8 @@ export default function CampaignsPage() {
   };
 
   const handleCreate = async () => {
+    if (!user?.id) return;
+    
     setIsSaving(true);
     try {
       const response = await fetch("/api/dashboard/campaigns", {
@@ -151,6 +158,7 @@ export default function CampaignsPage() {
           duration_days: formData.duration_days,
           is_active: formData.is_active,
           steps: formData.steps,
+          userId: user.id,
         }),
       });
       
@@ -169,12 +177,15 @@ export default function CampaignsPage() {
   };
 
   const handleToggleActive = async (campaign: Campaign) => {
+    if (!user?.id) return;
+    
     try {
       const response = await fetch("/api/dashboard/campaigns", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: campaign.id,
+          userId: user.id,
           is_active: !campaign.is_active,
         }),
       });

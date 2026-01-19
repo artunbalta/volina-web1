@@ -18,14 +18,25 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     
+    // REQUIRED: user_id must be provided for data isolation
+    const userId = searchParams.get("user_id");
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required for data isolation" },
+        { status: 400 }
+      );
+    }
+    
     const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 200);
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const search = searchParams.get("search");
 
+    // ALWAYS filter by user_id first for data isolation
     let query = supabase
       .from("leads")
       .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (status && status !== "all") {

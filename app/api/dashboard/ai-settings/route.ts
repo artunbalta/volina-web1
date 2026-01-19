@@ -6,12 +6,23 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    
+    // REQUIRED: user_id must be provided for data isolation
+    const userId = searchParams.get("user_id");
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required for data isolation", data: null },
+        { status: 400 }
+      );
+    }
+    
     const { data, error } = await supabase
       .from("ai_settings")
       .select("*")
-      .limit(1)
+      .eq("user_id", userId)
       .single();
 
     if (error && error.code !== "PGRST116") {

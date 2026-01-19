@@ -20,27 +20,29 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     
+    // REQUIRED: user_id must be provided for data isolation
+    const userId = searchParams.get("user_id") || searchParams.get("userId");
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required for data isolation" },
+        { status: 400 }
+      );
+    }
+    
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const days = parseInt(searchParams.get("days") || "14");
-    // userId filter is now optional - for single-tenant, show all calls
-    // For multi-tenant, you can still pass userId to filter
-    const userId = searchParams.get("userId");
     
     // Calculate date range
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Build query - get all calls for display (user_id filter optional)
+    // ALWAYS filter by user_id first for data isolation
     let query = supabase
       .from("calls")
       .select("*")
+      .eq("user_id", userId)
       .gte("created_at", startDate.toISOString())
       .order("created_at", { ascending: false });
-    
-    // Only filter by user_id if explicitly provided and not empty
-    if (userId && userId.trim() !== "") {
-      query = query.eq("user_id", userId);
-    }
     
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
 

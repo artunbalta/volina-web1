@@ -44,8 +44,10 @@ export default function AISettingsPage() {
   });
 
   const loadSettings = useCallback(async () => {
+    if (!user?.id) return;
+    
     try {
-      const response = await fetch("/api/dashboard/ai-settings");
+      const response = await fetch(`/api/dashboard/ai-settings?user_id=${user.id}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
@@ -74,7 +76,7 @@ export default function AISettingsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     loadSettings();
@@ -86,13 +88,18 @@ export default function AISettingsPage() {
   };
 
   const handleSave = async () => {
+    if (!user?.id) return;
+    
     setIsSaving(true);
 
     try {
       const response = await fetch("/api/dashboard/ai-settings", {
         method: settings ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          userId: user.id,
+        }),
       });
 
       if (response.ok) {

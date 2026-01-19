@@ -101,8 +101,13 @@ export default function LeadsPage() {
   });
 
   const loadLeads = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      const response = await fetch("/api/dashboard/leads?limit=500");
+      const response = await fetch(`/api/dashboard/leads?limit=500&user_id=${user.id}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -114,7 +119,7 @@ export default function LeadsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     loadLeads();
@@ -153,14 +158,17 @@ export default function LeadsPage() {
 
   // Handle add lead
   const handleAddLead = async () => {
-    if (!formData.full_name) return;
+    if (!formData.full_name || !user?.id) return;
     setIsSaving(true);
 
     try {
       const response = await fetch("/api/dashboard/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          user_id: user.id,
+        }),
       });
 
       if (response.ok) {
@@ -336,14 +344,20 @@ export default function LeadsPage() {
 
   // Confirm CSV upload
   const handleCsvUpload = async () => {
-    if (csvData.length === 0) return;
+    if (csvData.length === 0 || !user?.id) return;
     setIsUploading(true);
 
     try {
+      // Add user_id to each lead in CSV data
+      const leadsWithUserId = csvData.map(lead => ({
+        ...lead,
+        user_id: user.id,
+      }));
+      
       const response = await fetch("/api/dashboard/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: csvData }),
+        body: JSON.stringify({ leads: leadsWithUserId }),
       });
 
       if (response.ok) {

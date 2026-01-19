@@ -145,10 +145,15 @@ export default function OutboundDashboard() {
   const [currentMonthProgress, setCurrentMonthProgress] = useState<{ leads: number; calls: number }>({ leads: 0, calls: 0 });
 
   const loadData = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+    
     try {
       const [leadsResponse, callsResponse] = await Promise.all([
-        fetch("/api/dashboard/leads?limit=500"),
-        fetch("/api/dashboard/calls?days=30&limit=500"),
+        fetch(`/api/dashboard/leads?limit=500&user_id=${user.id}`),
+        fetch(`/api/dashboard/calls?days=30&limit=500&user_id=${user.id}`),
       ]);
 
       if (leadsResponse.ok) {

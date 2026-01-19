@@ -502,8 +502,13 @@ export default function CallsPage() {
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   const loadCalls = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      const response = await fetch("/api/dashboard/calls?days=90&limit=100");
+      const response = await fetch(`/api/dashboard/calls?days=90&limit=100&user_id=${user.id}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
@@ -550,7 +555,7 @@ export default function CallsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     loadCalls();
