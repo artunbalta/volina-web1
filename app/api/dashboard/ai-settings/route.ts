@@ -6,23 +6,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    
-    // REQUIRED: user_id must be provided for data isolation
-    const userId = searchParams.get("user_id");
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "user_id is required for data isolation", data: null },
-        { status: 400 }
-      );
-    }
-    
     const { data, error } = await supabase
       .from("ai_settings")
       .select("*")
-      .eq("user_id", userId)
+      .limit(1)
       .single();
 
     if (error && error.code !== "PGRST116") {
@@ -46,13 +35,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { userId, ...settings } = body;
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "userId is required" },
-        { status: 400 }
-      );
-    }
 
     // Check if settings exist
     const { data: existing } = await supabase
@@ -89,61 +71,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: result.data });
   } catch (error: any) {
     console.error("Save AI Settings API error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PATCH(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { userId, ...settings } = body;
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "userId is required" },
-        { status: 400 }
-      );
-    }
-
-    // Update existing settings
-    const result = await supabase
-      .from("ai_settings")
-      .update(settings)
-      .eq("user_id", userId)
-      .select()
-      .single();
-
-    if (result.error) {
-      // If not found, create new
-      if (result.error.code === "PGRST116") {
-        const insertResult = await supabase
-          .from("ai_settings")
-          .insert({ user_id: userId, ...settings })
-          .select()
-          .single();
-
-        if (insertResult.error) {
-          return NextResponse.json(
-            { success: false, error: insertResult.error.message },
-            { status: 400 }
-          );
-        }
-
-        return NextResponse.json({ success: true, data: insertResult.data });
-      }
-
-      return NextResponse.json(
-        { success: false, error: result.error.message },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json({ success: true, data: result.data });
-  } catch (error: any) {
-    console.error("Update AI Settings API error:", error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

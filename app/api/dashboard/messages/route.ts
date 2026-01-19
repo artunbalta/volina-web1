@@ -9,24 +9,13 @@ const supabase = createClient(
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    
-    // REQUIRED: user_id must be provided for data isolation
-    const userId = searchParams.get("user_id");
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "user_id is required for data isolation", messages: [], templates: [] },
-        { status: 400 }
-      );
-    }
-    
     const channel = searchParams.get("channel");
     const limit = parseInt(searchParams.get("limit") || "50");
 
-    // ALWAYS filter by user_id first for data isolation
+    // Fetch messages
     let messagesQuery = supabase
       .from("messages")
       .select("*")
-      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(limit);
 

@@ -18,25 +18,14 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     
-    // REQUIRED: user_id must be provided for data isolation
-    const userId = searchParams.get("user_id");
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "user_id is required for data isolation" },
-        { status: 400 }
-      );
-    }
-    
     const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 200);
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const search = searchParams.get("search");
 
-    // ALWAYS filter by user_id first for data isolation
     let query = supabase
       .from("leads")
       .select("*")
-      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (status && status !== "all") {
@@ -90,95 +79,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create a new lead or bulk create leads
+// POST - Create a new lead
 export async function POST(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const body = await request.json();
 
-    // Handle bulk CSV upload - check if leads array exists and is not empty
-    if (body.leads && Array.isArray(body.leads) && body.leads.length > 0) {
-      if (body.leads.length === 0) {
-        return NextResponse.json(
-          { success: false, error: "No leads provided" },
-          { status: 400 }
-        );
-      }
-
-      // Get user_id from first lead (all should have same user_id)
-      let user_id = body.leads[0]?.user_id;
-      
-      if (!user_id) {
-        return NextResponse.json(
-          { success: false, error: "user_id is required for all leads" },
-          { status: 400 }
-        );
-      }
-
-      const validSources = ['web_form', 'instagram', 'referral', 'facebook', 'google_ads', 'other'];
-      
-      const leadsData = body.leads.map((lead: any) => {
-        let source = lead.source?.toLowerCase() || 'other';
-        if (!validSources.includes(source)) {
-          if (source.includes('web') || source.includes('site') || source.includes('form')) {
-            source = 'web_form';
-          } else if (source.includes('insta') || source.includes('ig')) {
-            source = 'instagram';
-          } else if (source.includes('face') || source.includes('fb')) {
-            source = 'facebook';
-          } else if (source.includes('google') || source.includes('ads')) {
-            source = 'google_ads';
-          } else if (source.includes('refer')) {
-            source = 'referral';
-          } else {
-            source = 'other';
-          }
-        }
-
-        return {
-          user_id: lead.user_id || user_id,
-          full_name: lead.full_name || null,
-          email: lead.email || null,
-          phone: lead.phone || null,
-          whatsapp: lead.whatsapp || null,
-          instagram: lead.instagram || null,
-          language: lead.language || 'tr',
-          source: source,
-          treatment_interest: lead.interest || lead.treatment_interest || null,
-          notes: lead.notes || null,
-          status: lead.status || 'new',
-          priority: lead.priority || 'medium',
-        };
-      }).filter((lead: any) => lead.full_name || lead.phone || lead.email); // Only include leads with at least one identifier
-
-      if (leadsData.length === 0) {
-        return NextResponse.json(
-          { success: false, error: "No valid leads to import" },
-          { status: 400 }
-        );
-      }
-
-      const { data, error } = await supabase
-        .from("leads")
-        .insert(leadsData as never)
-        .select();
-
-      if (error) {
-        console.error("Error creating leads:", error);
-        return NextResponse.json(
-          { success: false, error: "Failed to create leads", details: error.message },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({ 
-        success: true, 
-        data,
-        count: data?.length || 0
-      });
-    }
-
-    // Handle single lead creation
     if (!body.full_name) {
       return NextResponse.json(
         { success: false, error: "full_name is required" },

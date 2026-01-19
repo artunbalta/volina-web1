@@ -101,13 +101,8 @@ export default function LeadsPage() {
   });
 
   const loadLeads = useCallback(async () => {
-    if (!user?.id) {
-      setIsLoading(false);
-      return;
-    }
-    
     try {
-      const response = await fetch(`/api/dashboard/leads?limit=500&user_id=${user.id}`);
+      const response = await fetch("/api/dashboard/leads?limit=500");
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -119,7 +114,7 @@ export default function LeadsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     loadLeads();
@@ -158,45 +153,23 @@ export default function LeadsPage() {
 
   // Handle add lead
   const handleAddLead = async () => {
-    console.log("handleAddLead called", { formData, userId: user?.id });
-    
-    if (!formData.full_name || !user?.id) {
-      console.error("Missing required fields:", { full_name: formData.full_name, userId: user?.id });
-      alert("Please fill in the full name field");
-      return;
-    }
-    
+    if (!formData.full_name) return;
     setIsSaving(true);
 
     try {
-      const requestBody = {
-        ...formData,
-        user_id: user.id,
-      };
-      
-      console.log("Sending request:", requestBody);
-      
       const response = await fetch("/api/dashboard/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(formData),
       });
 
-      const result = await response.json();
-      console.log("API Response:", { status: response.status, result });
-      
-      if (response.ok && result.success) {
-        console.log("Lead added successfully");
+      if (response.ok) {
         await loadLeads();
         setShowAddDialog(false);
         resetForm();
-      } else {
-        console.error("Error adding lead:", result.error || "Unknown error");
-        alert(result.error || "Failed to add lead");
       }
     } catch (error) {
       console.error("Error adding lead:", error);
-      alert("Failed to add lead. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -363,40 +336,24 @@ export default function LeadsPage() {
 
   // Confirm CSV upload
   const handleCsvUpload = async () => {
-    if (csvData.length === 0 || !user?.id) {
-      console.error("No CSV data or user.id missing");
-      return;
-    }
+    if (csvData.length === 0) return;
     setIsUploading(true);
 
     try {
-      // Add user_id to each lead in CSV data
-      const leadsWithUserId = csvData.map(lead => ({
-        ...lead,
-        user_id: user.id,
-      }));
-      
       const response = await fetch("/api/dashboard/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: leadsWithUserId }),
+        body: JSON.stringify({ leads: csvData }),
       });
 
-      const result = await response.json();
-      
-      if (response.ok && result.success) {
+      if (response.ok) {
         await loadLeads();
         setShowCsvDialog(false);
         setCsvData([]);
         setCsvFileName("");
-        alert(`Successfully imported ${result.count || leadsWithUserId.length} leads`);
-      } else {
-        console.error("Error uploading CSV:", result.error || "Unknown error");
-        alert(result.error || "Failed to import leads");
       }
     } catch (error) {
       console.error("Error uploading CSV:", error);
-      alert("Failed to import leads. Please try again.");
     } finally {
       setIsUploading(false);
     }

@@ -44,13 +44,8 @@ export default function AISettingsPage() {
   });
 
   const loadSettings = useCallback(async () => {
-    if (!user?.id) {
-      setIsLoading(false);
-      return;
-    }
-    
     try {
-      const response = await fetch(`/api/dashboard/ai-settings?user_id=${user.id}`);
+      const response = await fetch("/api/dashboard/ai-settings");
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
@@ -72,21 +67,14 @@ export default function AISettingsPage() {
             call_hours_end: data.call_hours_end || "18:00",
             announce_ai: data.announce_ai ?? true,
           });
-        } else {
-          // No data found, use defaults
-          setSettings(null);
         }
-      } else {
-        // API error, use defaults
-        setSettings(null);
       }
     } catch (error) {
       console.error("Error loading AI settings:", error);
-      setSettings(null);
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     loadSettings();
@@ -98,18 +86,13 @@ export default function AISettingsPage() {
   };
 
   const handleSave = async () => {
-    if (!user?.id) return;
-    
     setIsSaving(true);
 
     try {
       const response = await fetch("/api/dashboard/ai-settings", {
         method: settings ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          userId: user.id,
-        }),
+        body: JSON.stringify(formData),
       });
 
       if (response.ok) {

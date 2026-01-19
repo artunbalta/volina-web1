@@ -145,17 +145,10 @@ export default function OutboundDashboard() {
   const [currentMonthProgress, setCurrentMonthProgress] = useState<{ leads: number; calls: number }>({ leads: 0, calls: 0 });
 
   const loadData = useCallback(async () => {
-    if (!user?.id) {
-      setIsLoading(false);
-      return;
-    }
-    
     try {
-      // Fetch from VAPI analytics and dashboard APIs
-      const [leadsResponse, callsResponse, vapiAnalyticsResponse] = await Promise.all([
-        fetch(`/api/dashboard/leads?limit=500&user_id=${user.id}`),
-        fetch(`/api/dashboard/calls?days=30&limit=500&user_id=${user.id}`),
-        fetch(`/api/vapi/analytics?days=30&limit=500`),
+      const [leadsResponse, callsResponse] = await Promise.all([
+        fetch("/api/dashboard/leads?limit=500"),
+        fetch("/api/dashboard/calls?days=30&limit=500"),
       ]);
 
       if (leadsResponse.ok) {
@@ -339,22 +332,12 @@ export default function OutboundDashboard() {
           setConversionTrend(conversionTrendData);
         }
       }
-
-      // Fetch VAPI analytics for real data
-      if (vapiAnalyticsResponse.ok) {
-        const vapiData = await vapiAnalyticsResponse.json();
-        if (vapiData.success && vapiData.kpi) {
-          // Use VAPI data for monthly goal progress
-          const monthlyCallsFromVapi = vapiData.kpi.monthlyCalls || 0;
-          setCurrentMonthProgress(prev => ({ ...prev, calls: monthlyCallsFromVapi }));
-        }
-      }
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -397,7 +380,7 @@ export default function OutboundDashboard() {
         </Button>
       </div>
 
-      {/* Stats Grid - Total Leads */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard 
           label="Total Leads" 
@@ -419,22 +402,6 @@ export default function OutboundDashboard() {
           label="Conversion Rate" 
           value={`${stats?.conversionRate || 0}%`}
         />
-      </div>
-
-      {/* Monthly Goal Progress - En üstte, tek başına, gradient bar */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Monthly Goal Progress</h3>
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">
-            {currentMonthProgress.calls} / {monthlyGoal}
-          </span>
-        </div>
-        <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-          <div 
-            className="h-3 rounded-full transition-all bg-gradient-to-r from-blue-500 to-purple-600"
-            style={{ width: `${Math.min((currentMonthProgress.calls / monthlyGoal) * 100, 100)}%` }}
-          />
-        </div>
       </div>
 
       {/* Trend Charts - Separated into 3 clear cards */}
@@ -515,48 +482,70 @@ export default function OutboundDashboard() {
         </div>
       </div>
 
-      {/* AI Agent Performance */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">AI Agent Performance</h2>
-        <div className="space-y-4">
+      {/* AI Performance & Goal Progress Row */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* AI Agent Performance */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">AI Agent Performance</h2>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Average Call Duration</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {Math.floor(avgCallDuration / 60)}:{(avgCallDuration % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Success Rate</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">{successRate}%</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Sentiment Distribution</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Positive</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.positive}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Neutral</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.neutral}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Negative</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.negative}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Goal Progress */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Goal Progress</h2>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">Average Call Duration</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Calls Goal</span>
               <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                {Math.floor(avgCallDuration / 60)}:{(avgCallDuration % 60).toString().padStart(2, '0')}
+                {currentMonthProgress.calls} / {monthlyGoal}
               </span>
             </div>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">Success Rate</span>
-              <span className="text-sm font-semibold text-gray-900 dark:text-white">{successRate}%</span>
-            </div>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Sentiment Distribution</p>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Positive</span>
-                </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.positive}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Neutral</span>
-                </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.neutral}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">Negative</span>
-                </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">{sentimentDistribution.negative}</span>
-              </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div 
+                className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all"
+                style={{ width: `${Math.min((currentMonthProgress.calls / monthlyGoal) * 100, 100)}%` }}
+              />
             </div>
           </div>
         </div>
