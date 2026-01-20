@@ -91,6 +91,17 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       setUser(profile);
     } catch (error) {
       console.error("Error in fetchProfile:", error);
+      // Even on error, set a basic user so loading doesn't hang
+      setUser({
+        id: authUser.id,
+        email: authUser.email || "",
+        full_name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "User",
+        avatar_url: authUser.user_metadata?.avatar_url || null,
+        role: "user",
+        slug: generateSlugFromEmail(authUser.email || ""),
+        created_at: authUser.created_at,
+        updated_at: authUser.updated_at || authUser.created_at,
+      });
     }
   }, []);
 
@@ -120,8 +131,8 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         setSession(initialSession);
         
         if (initialSession?.user) {
-          // Fetch profile but don't block
-          fetchProfile(initialSession.user);
+          // Fetch profile and wait for it to complete
+          await fetchProfile(initialSession.user);
         } else {
           setUser(null);
         }
@@ -147,19 +158,23 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
         
         if (event === "SIGNED_IN" && currentSession?.user) {
           await fetchProfile(currentSession.user);
+          setIsLoading(false);
         } else if (event === "SIGNED_OUT") {
           setUser(null);
           setSession(null);
+          setIsLoading(false);
         } else if (event === "USER_UPDATED" && currentSession?.user) {
           await fetchProfile(currentSession.user);
+          setIsLoading(false);
         } else if (event === "TOKEN_REFRESHED" && currentSession?.user) {
           // Session token was refreshed, profile should still be valid
           if (!user) {
             await fetchProfile(currentSession.user);
           }
+          setIsLoading(false);
+        } else {
+          setIsLoading(false);
         }
-        
-        setIsLoading(false);
       }
     );
 
@@ -167,7 +182,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchProfile, isLoading, user]);
+  }, [fetchProfile]);
 
   // Handle visibility change - refresh session when tab becomes visible
   useEffect(() => {

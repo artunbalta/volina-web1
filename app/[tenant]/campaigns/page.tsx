@@ -112,9 +112,14 @@ export default function CampaignsPage() {
   });
 
   const loadCampaigns = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // Use server-side API route
-      const response = await fetch("/api/dashboard/campaigns");
+      const response = await fetch(`/api/dashboard/campaigns?userId=${user.id}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -126,12 +131,18 @@ export default function CampaignsPage() {
     } catch (error) {
       console.error("Error loading campaigns:", error);
       setCampaigns([]);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
-    loadCampaigns().then(() => setIsLoading(false));
-  }, [loadCampaigns]);
+    if (user?.id) {
+      loadCampaigns();
+    } else {
+      setIsLoading(false);
+    }
+  }, [user?.id, loadCampaigns]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -140,12 +151,14 @@ export default function CampaignsPage() {
   };
 
   const handleCreate = async () => {
+    if (!user?.id) return;
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard/campaigns", {
+      const response = await fetch(`/api/dashboard/campaigns?userId=${user.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: user.id,
           name: formData.name,
           description: formData.description,
           duration_days: formData.duration_days,
@@ -169,12 +182,14 @@ export default function CampaignsPage() {
   };
 
   const handleToggleActive = async (campaign: Campaign) => {
+    if (!user?.id) return;
     try {
-      const response = await fetch("/api/dashboard/campaigns", {
+      const response = await fetch(`/api/dashboard/campaigns?userId=${user.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: campaign.id,
+          userId: user.id,
           is_active: !campaign.is_active,
         }),
       });

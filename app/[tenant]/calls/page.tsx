@@ -32,6 +32,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -209,7 +211,7 @@ function AudioPlayer({
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const remainingTime = duration - currentTime;
-
+  
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-3xl bg-white dark:bg-gray-800 p-0 gap-0 [&>button]:hidden">
@@ -320,8 +322,8 @@ function AudioPlayer({
             <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 font-mono tabular-nums">
               <span>{formatTime(currentTime)}</span>
               <span>-{formatTime(remainingTime)}</span>
-            </div>
-          </div>
+      </div>
+    </div>
 
           {/* Loading State */}
           {isLoading && !error && (
@@ -491,7 +493,7 @@ function CallRow({
 }
 
 export default function CallsPage() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [calls, setCalls] = useState<Call[]>([]);
   const [filteredCalls, setFilteredCalls] = useState<Call[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -500,10 +502,18 @@ export default function CallsPage() {
   const [scoreFilter, setScoreFilter] = useState<string>("all");
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadCalls = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      const response = await fetch("/api/dashboard/calls?days=90&limit=100");
+      const response = await fetch(`/api/dashboard/calls?days=365&userId=${user.id}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
@@ -543,18 +553,38 @@ export default function CallsPage() {
           }));
           setCalls(transformedCalls);
           setFilteredCalls(transformedCalls);
+        } else {
+          setCalls([]);
+          setFilteredCalls([]);
         }
+      } else {
+        console.error("Failed to load calls:", response.statusText);
+        setCalls([]);
+        setFilteredCalls([]);
       }
     } catch (error) {
       console.error("Error loading calls:", error);
+      setCalls([]);
+      setFilteredCalls([]);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
-    loadCalls();
-  }, [loadCalls]);
+    if (authLoading) {
+      setIsLoading(true);
+      return;
+    }
+    
+    if (user?.id) {
+      loadCalls();
+    } else {
+      setIsLoading(false);
+      setCalls([]);
+      setFilteredCalls([]);
+    }
+  }, [user?.id, authLoading, loadCalls]);
 
   // Filter calls
   useEffect(() => {
@@ -590,6 +620,35 @@ export default function CallsPage() {
     setIsRefreshing(false);
   };
 
+  const handleClearAll = async () => {
+    if (!user?.id) return;
+    
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/dashboard/calls?userId=${user.id}`, {
+        method: 'DELETE',
+      });
+      
+      if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+          setCalls([]);
+          setFilteredCalls([]);
+          setShowClearAllDialog(false);
+      } else {
+          alert("Failed to delete calls: " + (data.error || "Unknown error"));
+        }
+      } else {
+        alert("Failed to delete calls. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error deleting calls:", error);
+      alert("An error occurred while deleting calls. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Stats
   const totalCalls = calls.length;
   const successfulCalls = calls.filter(c => c.evaluation_score !== null && c.evaluation_score >= 7).length;
@@ -606,20 +665,20 @@ export default function CallsPage() {
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
+            <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Calls</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">View and manage your call history</p>
-        </div>
-        <Button 
-          variant="outline" 
-          onClick={handleRefresh} 
-          disabled={isRefreshing}
+            </div>
+              <Button 
+                variant="outline" 
+                onClick={handleRefresh} 
+                disabled={isRefreshing}
           className="border-gray-200 dark:border-gray-700"
-        >
-          <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
+              >
+                <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
           Refresh
-        </Button>
-      </div>
+              </Button>
+            </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
@@ -630,7 +689,7 @@ export default function CallsPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Transferred</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">0</p>
-        </div>
+          </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Successful</p>
           <p className="text-2xl font-bold text-gray-900 dark:text-white">{successfulCalls}</p>
@@ -646,22 +705,22 @@ export default function CallsPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
-          />
-        </div>
-        
-        <Select value={scoreFilter} onValueChange={setScoreFilter}>
+        />
+      </div>
+
+              <Select value={scoreFilter} onValueChange={setScoreFilter}>
           <SelectTrigger className="w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
             <Filter className="w-4 h-4 mr-2 text-gray-400 dark:text-gray-500" />
             <SelectValue placeholder="Filter" />
-          </SelectTrigger>
-          <SelectContent>
+                </SelectTrigger>
+                <SelectContent>
             <SelectItem value="all">All Scores</SelectItem>
             <SelectItem value="high">High (8+)</SelectItem>
             <SelectItem value="medium">Medium (5-7)</SelectItem>
             <SelectItem value="low">Low (&lt;5)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+                </SelectContent>
+              </Select>
+            </div>
 
       {/* Calls Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -675,8 +734,8 @@ export default function CallsPage() {
             <div className="w-24 text-right">Date</div>
             <div className="w-24"></div>
           </div>
-        </div>
-        
+      </div>
+
         {/* Table Body */}
         {filteredCalls.length === 0 ? (
           <div className="px-6 py-12 text-center">
@@ -695,7 +754,7 @@ export default function CallsPage() {
                 }}
               />
             ))}
-          </div>
+              </div>
         )}
       </div>
 
@@ -708,6 +767,32 @@ export default function CallsPage() {
           setSelectedCall(null);
         }}
       />
+
+      {/* Clear All Confirmation Dialog */}
+      <Dialog open={showClearAllDialog} onOpenChange={setShowClearAllDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Clear All Calls</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete all {calls.length} calls? This action cannot be undone and will permanently remove all calls from the database.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearAllDialog(false)} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleClearAll} 
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

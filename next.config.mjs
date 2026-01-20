@@ -20,9 +20,6 @@ const nextConfig = {
     // Strict type checking for Vercel builds
     ignoreBuildErrors: false,
   },
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
 };
 
 export default nextConfig;

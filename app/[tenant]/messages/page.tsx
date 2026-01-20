@@ -107,9 +107,14 @@ export default function MessagesPage() {
   });
 
   const loadData = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // Use server-side API route
-      const response = await fetch(`/api/dashboard/messages?channel=${activeChannel}&limit=50`);
+      const response = await fetch(`/api/dashboard/messages?channel=${activeChannel}&limit=50&userId=${user.id}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
@@ -124,12 +129,18 @@ export default function MessagesPage() {
       console.error("Error loading messages:", error);
       setMessages([]);
       setTemplates([]);
+    } finally {
+      setIsLoading(false);
     }
-  }, [activeChannel]);
+  }, [activeChannel, user?.id]);
 
   useEffect(() => {
-    loadData().then(() => setIsLoading(false));
-  }, [loadData]);
+    if (user?.id) {
+      loadData();
+    } else {
+      setIsLoading(false);
+    }
+  }, [user?.id, loadData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -138,12 +149,14 @@ export default function MessagesPage() {
   };
 
   const handleSendMessage = async () => {
+    if (!user?.id) return;
     setIsSending(true);
     try {
-      const response = await fetch("/api/dashboard/messages", {
+      const response = await fetch(`/api/dashboard/messages?userId=${user.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: user.id,
           channel: composeData.channel,
           recipient: composeData.recipient,
           subject: composeData.subject,

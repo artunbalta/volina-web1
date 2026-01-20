@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 interface CallRecord {
   id: string;
+  user_id: string;
   created_at: string;
   duration?: number;
   type?: string;
@@ -14,33 +16,35 @@ interface CallRecord {
   [key: string]: unknown;
 }
 
-// GET - Fetch calls from Supabase (synced from VAPI)
+// GET - Fetch calls from Supabase (synced from VAPI) - User-specific
 export async function GET(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
-    const days = parseInt(searchParams.get("days") || "14");
-    // userId filter is now optional - for single-tenant, show all calls
-    // For multi-tenant, you can still pass userId to filter
+    // Get user_id from query params (REQUIRED - sent from frontend)
     const userId = searchParams.get("userId");
+    
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+    
+    const days = parseInt(searchParams.get("days") || "365");
     
     // Calculate date range
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Build query - get all calls for display (user_id filter optional)
+    // Build query - MUST filter by user_id for security
     let query = supabase
       .from("calls")
       .select("*")
+      .eq("user_id", userId)
       .gte("created_at", startDate.toISOString())
       .order("created_at", { ascending: false });
-    
-    // Only filter by user_id if explicitly provided and not empty
-    if (userId && userId.trim() !== "") {
-      query = query.eq("user_id", userId);
-    }
     
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
 
@@ -52,8 +56,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Limited calls for display
-    const calls = allCalls?.slice(0, limit) || [];
+    // Return all calls (no limit)
+    const calls = allCalls || [];
 
     // Calculate KPI stats from all fetched data
     const now = new Date();
@@ -93,6 +97,49 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Dashboard calls error:", error);
+    return NextResponse.json(
+      { success: false, error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Delete all calls for a user (from database)
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = createAdminClient();
+    const { searchParams } = new URL(request.url);
+    
+    // Get user_id from query params (REQUIRED - sent from frontend)
+    const userId = searchParams.get("userId");
+    
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+    
+    // Delete all calls for this user
+    const { error } = await supabase
+      .from("calls")
+      .delete()
+      .eq("user_id", userId);
+    
+    if (error) {
+      console.error("Error deleting calls:", error);
+      return NextResponse.json(
+        { success: false, error: "Failed to delete calls", details: error.message },
+        { status: 500 }
+      );
+    }
+    
+    return NextResponse.json({
+      success: true,
+      message: "All calls deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete calls error:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }

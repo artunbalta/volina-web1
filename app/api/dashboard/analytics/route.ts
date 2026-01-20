@@ -43,29 +43,44 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
+    
+    // Get user_id from query params (REQUIRED - sent from frontend)
+    const userId = searchParams.get("userId");
+    
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+    
     const startDate = searchParams.get("startDate") || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const endDate = searchParams.get("endDate") || new Date().toISOString();
 
-    // Fetch all data in parallel
+    // Fetch all data in parallel - MUST filter by user_id for security
     const [leadsResult, callsResult, outreachResult, messagesResult] = await Promise.all([
       supabase
         .from("leads")
         .select("*")
+        .eq("user_id", userId)
         .gte("created_at", startDate)
         .lte("created_at", endDate),
       supabase
         .from("calls")
         .select("*")
+        .eq("user_id", userId)
         .gte("created_at", startDate)
         .lte("created_at", endDate),
       supabase
         .from("outreach")
         .select("*")
+        .eq("user_id", userId)
         .gte("created_at", startDate)
         .lte("created_at", endDate),
       supabase
         .from("messages")
         .select("*")
+        .eq("user_id", userId)
         .gte("created_at", startDate)
         .lte("created_at", endDate)
     ]);

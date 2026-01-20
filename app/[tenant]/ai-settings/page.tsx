@@ -44,8 +44,13 @@ export default function AISettingsPage() {
   });
 
   const loadSettings = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch("/api/dashboard/ai-settings");
+      const response = await fetch(`/api/dashboard/ai-settings?userId=${user.id}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
@@ -74,11 +79,15 @@ export default function AISettingsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
+    if (user?.id) {
+      loadSettings();
+    } else {
+      setIsLoading(false);
+    }
+  }, [user?.id, loadSettings]);
 
   const handleInputChange = (field: string, value: string | number | boolean | string[]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -86,13 +95,14 @@ export default function AISettingsPage() {
   };
 
   const handleSave = async () => {
+    if (!user?.id) return;
     setIsSaving(true);
 
     try {
-      const response = await fetch("/api/dashboard/ai-settings", {
+      const response = await fetch(`/api/dashboard/ai-settings?userId=${user.id}`, {
         method: settings ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, userId: user.id }),
       });
 
       if (response.ok) {

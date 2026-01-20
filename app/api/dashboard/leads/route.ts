@@ -12,33 +12,76 @@ interface LeadRecord {
   [key: string]: unknown;
 }
 
-// GET - Fetch leads from Supabase (admin access)
+// GET - Fetch leads from Supabase - User-specific
 export async function GET(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
     
-    const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 200);
+    // Get user_id from query params (REQUIRED - sent from frontend)
+    const userId = searchParams.get("userId");
+    
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+    
+    const idsOnly = searchParams.get("idsOnly") === "true";
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
+    const pageSize = 100;
+    const limit = pageSize;
+    const offset = (page - 1) * pageSize;
+    
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const search = searchParams.get("search");
 
-    let query = supabase
+    // Build base query for filtering - MUST filter by user_id for security
+    const selectFields = idsOnly ? "id" : "*";
+    let baseQuery = supabase
       .from("leads")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select(selectFields, { count: "exact" })
+      .eq("user_id", userId);
 
     if (status && status !== "all") {
-      query = query.eq("status", status);
+      baseQuery = baseQuery.eq("status", status);
     }
     if (priority && priority !== "all") {
-      query = query.eq("priority", priority);
+      baseQuery = baseQuery.eq("priority", priority);
     }
     if (search) {
-      query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+      baseQuery = baseQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
-    const { data: leads, error } = await query.limit(limit) as { data: LeadRecord[] | null; error: { message: string } | null };
+    // If idsOnly, return all IDs without pagination
+    if (idsOnly) {
+      const { data: allIds, count, error } = await baseQuery
+        .order("created_at", { ascending: false }) as { data: { id: string }[] | null; count: number | null; error: { message: string } | null };
+      
+      if (error) {
+        console.error("Error fetching lead IDs:", error);
+        return NextResponse.json(
+          { success: false, error: "Failed to fetch lead IDs", details: error.message },
+          { status: 500 }
+        );
+      }
+      
+      const ids = allIds?.map(lead => lead.id) || [];
+      const total = count || 0;
+      
+      return NextResponse.json({
+        success: true,
+        data: ids,
+        count: total,
+      });
+    }
+
+    // Get paginated data with count in single query
+    const { data: leads, count, error } = await baseQuery
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1) as { data: LeadRecord[] | null; count: number | null; error: { message: string } | null };
 
     if (error) {
       console.error("Error fetching leads:", error);
@@ -48,17 +91,45 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const total = leads?.length || 0;
-    const newLeads = leads?.filter(l => l.status === "new").length || 0;
-    const contacted = leads?.filter(l => l.status === "contacted").length || 0;
-    const interested = leads?.filter(l => l.status === "interested").length || 0;
-    const appointmentSet = leads?.filter(l => l.status === "appointment_set").length || 0;
-    const converted = leads?.filter(l => l.status === "converted").length || 0;
-    const unreachable = leads?.filter(l => l.status === "unreachable").length || 0;
+    const total = count || 0;
+    const totalPages = Math.ceil(total / pageSize);
+    
+    // Get all leads for stats (not just current page) - use a separate query
+    let statsQuery = supabase
+      .from("leads")
+      .select("status")
+      .eq("user_id", userId);
+    
+    if (status && status !== "all") {
+      statsQuery = statsQuery.eq("status", status);
+    }
+    if (priority && priority !== "all") {
+      statsQuery = statsQuery.eq("priority", priority);
+    }
+    if (search) {
+      statsQuery = statsQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+    }
+    
+    const { data: allLeadsForStats } = await statsQuery;
+    const allLeads = allLeadsForStats || [];
+    const newLeads = allLeads.filter((l: any) => l.status === "new").length || 0;
+    const contacted = allLeads.filter((l: any) => l.status === "contacted").length || 0;
+    const interested = allLeads.filter((l: any) => l.status === "interested").length || 0;
+    const appointmentSet = allLeads.filter((l: any) => l.status === "appointment_set").length || 0;
+    const converted = allLeads.filter((l: any) => l.status === "converted").length || 0;
+    const unreachable = allLeads.filter((l: any) => l.status === "unreachable").length || 0;
 
     return NextResponse.json({
       success: true,
       data: leads,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
       stats: {
         total,
         newLeads,
@@ -79,44 +150,98 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create a new lead
+// POST - Create a new lead or multiple leads (CSV upload)
 export async function POST(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const body = await request.json();
 
+    // Get user_id from query params or body (REQUIRED)
+    let user_id = body.user_id || request.nextUrl.searchParams.get("userId");
+    
+    if (!user_id) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Handle bulk insert (CSV upload)
+    if (body.leads && Array.isArray(body.leads)) {
+      const leadsData = body.leads.map((lead: any) => {
+        const validSources = ['web_form', 'instagram', 'referral', 'facebook', 'google_ads', 'other'];
+        let source = lead.source?.toLowerCase() || 'other';
+        if (!validSources.includes(source)) {
+          source = 'other';
+        }
+
+        return {
+          user_id: user_id,
+          full_name: lead.full_name || null,
+          email: lead.email || null,
+          phone: lead.phone || null,
+          whatsapp: lead.whatsapp || null,
+          instagram: lead.instagram || null,
+          language: lead.language || 'tr',
+          source: source,
+          treatment_interest: lead.interest || lead.treatment_interest || null,
+          notes: lead.notes || null,
+          status: lead.status || 'new',
+          priority: lead.priority || 'medium',
+          form_data: lead.form_data || {},
+        };
+      }).filter((lead: any) => lead.full_name || lead.phone || lead.email); // Filter out invalid leads
+
+      if (leadsData.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "No valid leads to insert" },
+          { status: 400 }
+        );
+      }
+
+      // Insert in batches of 100 (Supabase has limits)
+      const BATCH_SIZE = 100;
+      const batches: typeof leadsData[] = [];
+      for (let i = 0; i < leadsData.length; i += BATCH_SIZE) {
+        batches.push(leadsData.slice(i, i + BATCH_SIZE));
+      }
+
+      const allInserted: any[] = [];
+      let errorOccurred: any = null;
+
+      for (const batch of batches) {
+        const { data, error } = await supabase
+          .from("leads")
+          .insert(batch as never)
+          .select();
+
+        if (error) {
+          console.error("Error creating leads batch:", error);
+          errorOccurred = error;
+          break; // Stop on first error
+        }
+
+        if (data) {
+          allInserted.push(...data);
+        }
+      }
+
+      if (errorOccurred) {
+        return NextResponse.json(
+          { success: false, error: "Failed to create leads", details: errorOccurred.message },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ success: true, data: allInserted, count: allInserted.length });
+    }
+
+    // Handle single lead insert
     if (!body.full_name) {
       return NextResponse.json(
         { success: false, error: "full_name is required" },
         { status: 400 }
       );
-    }
-
-    let user_id = body.user_id;
-    
-    if (!user_id) {
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("dashboard_type", "outbound")
-        .limit(1) as { data: { id: string }[] | null };
-      
-      if (profiles && profiles.length > 0 && profiles[0]) {
-        user_id = profiles[0].id;
-      } else {
-        const { data: anyProfiles } = await supabase
-          .from("profiles")
-          .select("id")
-          .limit(1) as { data: { id: string }[] | null };
-        
-        if (!anyProfiles || anyProfiles.length === 0 || !anyProfiles[0]) {
-          return NextResponse.json(
-            { success: false, error: "No user found" },
-            { status: 400 }
-          );
-        }
-        user_id = anyProfiles[0].id;
-      }
     }
 
     const validSources = ['web_form', 'instagram', 'referral', 'facebook', 'google_ads', 'other'];
@@ -176,25 +301,51 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Update a lead
-export async function PUT(request: NextRequest) {
+// PATCH - Update a lead (User-specific)
+export async function PATCH(request: NextRequest) {
   try {
     const supabase = createAdminClient();
+    const { searchParams } = new URL(request.url);
     const body = await request.json();
 
-    if (!body.id) {
+    const userId = searchParams.get("userId");
+    if (!userId) {
       return NextResponse.json(
-        { success: false, error: "id is required" },
+        { success: false, error: "User ID is required" },
         { status: 400 }
       );
     }
 
-    const { id, ...updates } = body;
+    const id = searchParams.get("id") || body.id;
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "Lead ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const { id: _, ...updates } = body;
+
+    // Verify the lead belongs to this user before updating
+    const { data: existingLead } = await supabase
+      .from("leads")
+      .select("user_id")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+
+    if (!existingLead) {
+      return NextResponse.json(
+        { success: false, error: "Lead not found or access denied" },
+        { status: 404 }
+      );
+    }
 
     const { data, error } = await supabase
       .from("leads")
       .update(updates as never)
       .eq("id", id)
+      .eq("user_id", userId)
       .select()
       .single();
 
@@ -216,12 +367,20 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE - Delete a lead or multiple leads
+// DELETE - Delete a lead or multiple leads (User-specific)
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("userId");
     const id = searchParams.get("id");
+    
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
     
     // Try to get ids from request body for bulk delete
     let body: { ids?: string[] } | null = null;
@@ -240,20 +399,70 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { error } = await supabase
+    // Verify all leads belong to this user before deleting
+    const { data: existingLeads, error: verifyError } = await supabase
       .from("leads")
-      .delete()
-      .in("id", ids);
+      .select("id")
+      .in("id", ids)
+      .eq("user_id", userId) as { data: { id: string }[] | null; error: { message: string } | null };
 
-    if (error) {
-      console.error("Error deleting lead(s):", error);
+    if (verifyError) {
+      console.error("Error verifying leads:", verifyError);
       return NextResponse.json(
-        { success: false, error: "Failed to delete lead(s)", details: error.message },
+        { success: false, error: "Failed to verify leads", details: verifyError.message },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true, deletedCount: ids.length });
+    // Only delete leads that exist and belong to the user
+    const validIds = existingLeads?.map((lead: { id: string }) => lead.id) || [];
+    
+    if (validIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "No valid leads found to delete" },
+        { status: 404 }
+      );
+    }
+
+    // If some IDs were not found, log a warning but continue with valid ones
+    if (validIds.length < ids.length) {
+      console.warn(`Only ${validIds.length} out of ${ids.length} leads found and will be deleted`);
+    }
+
+    // Delete in batches to avoid Supabase limits (max 1000 items per query)
+    const batchSize = 500;
+    let deletedCount = 0;
+    let lastError: any = null;
+
+    for (let i = 0; i < validIds.length; i += batchSize) {
+      const batch = validIds.slice(i, i + batchSize);
+      const { error: deleteError } = await supabase
+        .from("leads")
+        .delete()
+        .in("id", batch)
+        .eq("user_id", userId);
+
+      if (deleteError) {
+        console.error(`Error deleting batch ${i / batchSize + 1}:`, deleteError);
+        lastError = deleteError;
+      } else {
+        deletedCount += batch.length;
+      }
+    }
+
+    if (lastError && deletedCount === 0) {
+      return NextResponse.json(
+        { success: false, error: "Failed to delete leads", details: lastError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      deletedCount,
+      requestedCount: ids.length,
+      validCount: validIds.length
+    });
   } catch (error) {
     console.error("Delete lead error:", error);
     return NextResponse.json(

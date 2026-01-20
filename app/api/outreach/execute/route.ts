@@ -204,10 +204,19 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
   vapi_call_id?: string;
   error?: string;
 }> {
-  if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID || !VAPI_PHONE_NUMBER_ID) {
+  // Get user-specific assistant ID from profiles table
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("vapi_assistant_id")
+    .eq("id", user_id)
+    .single() as { data: { vapi_assistant_id?: string | null } | null };
+
+  const assistantId = profile?.vapi_assistant_id || VAPI_ASSISTANT_ID;
+
+  if (!VAPI_API_KEY || !assistantId || !VAPI_PHONE_NUMBER_ID) {
     return {
       success: false,
-      message: "VAPI entegrasyonu yapılandırılmamış.",
+      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen assistant ID ayarlayın.",
       error: "VAPI not configured"
     };
   }
@@ -228,7 +237,7 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        assistantId: VAPI_ASSISTANT_ID,
+        assistantId: assistantId,
         phoneNumberId: VAPI_PHONE_NUMBER_ID,
         customer: {
           number: lead.phone,
@@ -276,12 +285,21 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
   vapi_call_id?: string;
   error?: string;
 }> {
+  // Get user-specific assistant ID from profiles table
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("vapi_assistant_id")
+    .eq("id", user_id)
+    .single() as { data: { vapi_assistant_id?: string | null } | null };
+
+  const assistantId = profile?.vapi_assistant_id || VAPI_ASSISTANT_ID;
+
   // Check if VAPI is configured
-  if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID || !VAPI_PHONE_NUMBER_ID) {
+  if (!VAPI_API_KEY || !assistantId || !VAPI_PHONE_NUMBER_ID) {
     console.log("VAPI not configured. Call would be made to:", lead.phone);
     return {
       success: false,
-      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen VAPI_API_KEY, VAPI_ASSISTANT_ID ve VAPI_PHONE_NUMBER_ID environment variable'larını ayarlayın.",
+      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen assistant ID ayarlayın.",
       error: "VAPI not configured"
     };
   }
@@ -303,7 +321,7 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        assistantId: VAPI_ASSISTANT_ID,
+        assistantId: assistantId,
         phoneNumberId: VAPI_PHONE_NUMBER_ID,
         customer: {
           number: lead.phone,

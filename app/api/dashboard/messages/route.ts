@@ -9,13 +9,22 @@ const supabase = createClient(
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("userId");
     const channel = searchParams.get("channel");
     const limit = parseInt(searchParams.get("limit") || "50");
 
-    // Fetch messages
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch messages - MUST filter by user_id for security
     let messagesQuery = supabase
       .from("messages")
       .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -29,10 +38,11 @@ export async function GET(request: NextRequest) {
       console.error("Error fetching messages:", messagesError);
     }
 
-    // Fetch templates
+    // Fetch templates - filter by user_id
     const { data: templates, error: templatesError } = await supabase
       .from("message_templates")
       .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (templatesError) {
