@@ -408,32 +408,32 @@ function CallRow({
           </div>
           
           {/* Customer Info */}
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 dark:text-white">
+          <div className="w-64">
+            <p className="font-medium text-gray-900 dark:text-white truncate">
               {call.caller_name || "Unknown Caller"}
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
               {call.caller_phone || "No phone"}
             </p>
           </div>
           
           {/* Score */}
-          <div className="w-20">
+          <div className="w-24 text-center">
             <ScoreBadge score={call.evaluation_score} />
           </div>
           
           {/* Duration */}
-          <div className="w-20 text-sm text-gray-600 dark:text-gray-300 text-right font-mono tabular-nums">
+          <div className="w-24 text-sm text-gray-600 dark:text-gray-300 text-center font-mono tabular-nums">
             {formatDuration(call.duration)}
           </div>
           
           {/* Date */}
-          <div className="w-24 text-sm text-gray-500 dark:text-gray-400 text-right">
+          <div className="w-32 text-sm text-gray-500 dark:text-gray-400 text-center">
             {format(new Date(call.created_at), "MMM d, HH:mm")}
           </div>
           
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="w-20 flex items-center justify-end gap-2">
             {call.recording_url && (
               <button 
                 onClick={(e) => {
@@ -728,11 +728,11 @@ export default function CallsPage() {
         <div className="px-6 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
             <div className="w-8 text-center">#</div>
-            <div className="flex-1">Customer</div>
-            <div className="w-20">Score</div>
-            <div className="w-20 text-right">Duration</div>
-            <div className="w-24 text-right">Date</div>
-            <div className="w-24"></div>
+            <div className="w-64">Customer</div>
+            <div className="w-24 text-center">Score</div>
+            <div className="w-24 text-center">Duration</div>
+            <div className="w-32 text-center">Date</div>
+            <div className="w-20"></div>
           </div>
       </div>
 
