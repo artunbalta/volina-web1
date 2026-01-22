@@ -68,17 +68,12 @@ function LoginContent() {
         return;
       }
 
-      // Store session in localStorage
+      // Store session in localStorage - use the actual Supabase URL to generate the key
       if (result.session) {
-        const storageKey = `sb-${process.env.NEXT_PUBLIC_SUPABASE_URL?.split('//')[1]?.split('.')[0]}-auth-token`;
-        localStorage.setItem(storageKey, JSON.stringify({
-          access_token: result.session.access_token,
-          refresh_token: result.session.refresh_token,
-          expires_at: result.session.expires_at,
-          expires_in: result.session.expires_in,
-          token_type: 'bearer',
-          user: result.user,
-        }));
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || 'ydgsarbkvtyjevyzyuzq';
+        const storageKey = `sb-${projectRef}-auth-token`;
+        localStorage.setItem(storageKey, JSON.stringify(result.session));
       }
       
       // Sign-in successful - redirect to dashboard

@@ -9,8 +9,7 @@ import {
   Loader2,
   ArrowUpRight,
   ArrowDownRight,
-  MessageSquare,
-  CheckCircle2
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/SupabaseProvider";
@@ -379,9 +378,6 @@ export default function OutboundDashboard() {
   };
 
   const basePath = tenant ? `/${tenant}` : '/dashboard/outbound';
-  
-  // Current time for display
-  const currentTime = format(new Date(), "HH:mm");
 
   if (isLoading) {
     return (
@@ -414,17 +410,10 @@ export default function OutboundDashboard() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Hoş geldin{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ""}! AI asistanının özeti burada.
+            Welcome{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ""}! Here's your AI assistant summary.
           </p>
         </div>
         <div className="flex items-center gap-4">
-          {/* VAPI Live Indicator */}
-          <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-            <CheckCircle2 className="w-4 h-4" />
-            <span className="text-sm font-medium">VAPI Live</span>
-          </div>
-          {/* Current Time */}
-          <span className="text-sm text-gray-600 dark:text-gray-400 font-mono">{currentTime}</span>
           {/* Refresh Button */}
           <Button 
             variant="outline" 
@@ -434,7 +423,7 @@ export default function OutboundDashboard() {
             className="border-gray-200 dark:border-gray-700"
           >
             <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
-            Yenile
+            Refresh
           </Button>
         </div>
       </div>
@@ -546,19 +535,19 @@ export default function OutboundDashboard() {
             <div className="ml-8 space-y-3">
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-blue-600 dark:bg-blue-400" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Randevu</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Appointment</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-purple-600 dark:bg-purple-400" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Bilgi</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Information</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-orange-600 dark:text-orange-400" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Takip</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Follow-up</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-red-600 dark:text-red-400" />
-                <span className="text-sm text-gray-700 dark:text-gray-300">İptal</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Cancellation</span>
               </div>
             </div>
           </div>
@@ -647,7 +636,7 @@ export default function OutboundDashboard() {
                     <div className="flex items-center gap-3">
                       <MessageSquare className="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-900 dark:text-white">inquiry arama</p>
+                        <p className="text-sm text-gray-900 dark:text-white">Inquiry call</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{timeAgo}</p>
                       </div>
                     </div>
@@ -660,29 +649,29 @@ export default function OutboundDashboard() {
 
         {/* AI Performance */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-6">AI Performansı</h3>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-6">AI Performance</h3>
           <div className="space-y-6">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Arama Tamamlama</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">Call Completion</span>
                 <span className="text-sm font-semibold text-gray-900 dark:text-white">{callCompletion}%</span>
               </div>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Randevu Dönüşümü</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">Appointment Conversion</span>
                 <span className="text-sm font-semibold text-gray-900 dark:text-white">{appointmentConversion}%</span>
               </div>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Müşteri Memnuniyeti</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">Customer Satisfaction</span>
                 <span className="text-sm font-semibold text-gray-900 dark:text-white">{customerSatisfaction}%</span>
               </div>
             </div>
             <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
               <p className="text-sm text-gray-600 dark:text-gray-400 italic">
-                AI'ınız benzer işletmelere göre ortalamanın üstünde performans gösteriyor.
+                Your AI is performing above average compared to similar businesses.
               </p>
             </div>
           </div>

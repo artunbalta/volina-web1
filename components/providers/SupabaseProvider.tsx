@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/lib/types";
 import type { User, Session, AuthError } from "@supabase/supabase-js";
@@ -42,103 +42,163 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const initRef = useRef(false);
-
   // Fetch user profile from profiles table
   const fetchProfile = useCallback(async (authUser: User) => {
+    console.log("[Auth] fetchProfile called for:", authUser.id);
+    const email = authUser.email || "";
+    const generatedSlug = generateSlugFromEmail(email);
+    
+    // Create a basic profile from auth user data (fallback)
+    const basicProfile: Profile = {
+      id: authUser.id,
+      email: email,
+      full_name: authUser.user_metadata?.full_name || email.split("@")[0] || "User",
+      avatar_url: authUser.user_metadata?.avatar_url || null,
+      role: "user",
+      slug: generatedSlug,
+      created_at: authUser.created_at,
+      updated_at: authUser.updated_at || authUser.created_at,
+    };
+    
     try {
-      const { data, error } = await supabase
+      console.log("[Auth] Querying profiles table with timeout...");
+      
+      // Add timeout to profile fetch
+      const timeoutPromise = new Promise<{ data: null, error: Error }>((resolve) => {
+        setTimeout(() => {
+          console.log("[Auth] Profile query timed out");
+          resolve({ data: null, error: new Error('Timeout') });
+        }, 3000);
+      });
+      
+      const queryPromise = supabase
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
         .single();
+      
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
-      if (error) {
-        console.error("Error fetching profile:", error);
-        // If profile doesn't exist, create a basic one from auth user
-        const email = authUser.email || "";
-        const generatedSlug = generateSlugFromEmail(email);
-        setUser({
-          id: authUser.id,
-          email: email,
-          full_name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "User",
-          avatar_url: authUser.user_metadata?.avatar_url || null,
-          role: "user",
-          slug: generatedSlug,
-          created_at: authUser.created_at,
-          updated_at: authUser.updated_at || authUser.created_at,
-        });
+      console.log("[Auth] Profile query result:", { data: !!data, error: error?.message });
+      
+      if (error || !data) {
+        console.log("[Auth] Using basic profile from auth data");
+        setUser(basicProfile);
         return;
       }
 
       // Cast to Profile type
       const profile = data as Profile;
       
-      // If profile exists but has no slug, generate one
-      if (profile && !profile.slug && authUser.email) {
-        const generatedSlug = generateSlugFromEmail(authUser.email);
-        // Update the profile with the generated slug
-        const { error: updateError } = await supabase
-          .from("profiles")
-          .update({ slug: generatedSlug } as never)
-          .eq("id", authUser.id);
-        
-        if (!updateError) {
-          profile.slug = generatedSlug;
-        }
+      // If profile exists but has no slug, use the generated one
+      if (!profile.slug) {
+        profile.slug = generatedSlug;
       }
 
+      console.log("[Auth] Profile loaded:", profile.email, profile.slug);
       setUser(profile);
     } catch (error) {
-      console.error("Error in fetchProfile:", error);
-      // Even on error, set a basic user so loading doesn't hang
-      setUser({
-        id: authUser.id,
-        email: authUser.email || "",
-        full_name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "User",
-        avatar_url: authUser.user_metadata?.avatar_url || null,
-        role: "user",
-        slug: generateSlugFromEmail(authUser.email || ""),
-        created_at: authUser.created_at,
-        updated_at: authUser.updated_at || authUser.created_at,
-      });
+      console.error("[Auth] Error in fetchProfile:", error);
+      // Use basic profile on error
+      setUser(basicProfile);
     }
   }, []);
 
   // Initialize auth state
   useEffect(() => {
-    // Prevent double initialization in strict mode
-    if (initRef.current) return;
-    initRef.current = true;
-
     let mounted = true;
 
     const initializeAuth = async () => {
+      console.log("[Auth] Starting auth initialization...");
       try {
-        // Get initial session - this is the critical auth check
-        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        // First, check if there's a session in localStorage
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || '';
+        const storageKey = `sb-${projectRef}-auth-token`;
+        const storedSession = localStorage.getItem(storageKey);
+        
+        console.log("[Auth] Storage key:", storageKey, "Has stored session:", !!storedSession);
+        
+        if (storedSession) {
+          try {
+            const parsedSession = JSON.parse(storedSession);
+            console.log("[Auth] Parsed session has access_token:", !!parsedSession.access_token);
+            
+            // Check if token is expired
+            const expiresAt = parsedSession.expires_at;
+            const now = Math.floor(Date.now() / 1000);
+            const isExpired = expiresAt && now >= expiresAt;
+            console.log("[Auth] Token expired:", isExpired, "expiresAt:", expiresAt, "now:", now);
+            
+            if (parsedSession.access_token && !isExpired && parsedSession.user) {
+              console.log("[Auth] Using stored session directly...");
+              
+              // Use the stored session directly without calling Supabase API
+              // This avoids network issues with supabase.auth.setSession()
+              const reconstructedSession = {
+                access_token: parsedSession.access_token,
+                refresh_token: parsedSession.refresh_token,
+                expires_at: parsedSession.expires_at,
+                expires_in: parsedSession.expires_in,
+                token_type: parsedSession.token_type || 'bearer',
+                user: parsedSession.user,
+              };
+              
+              setSession(reconstructedSession as any);
+              
+              // Create a user object from the stored data
+              const authUser = {
+                id: parsedSession.user.id,
+                email: parsedSession.user.email,
+                created_at: parsedSession.user.created_at,
+                updated_at: parsedSession.user.updated_at,
+                user_metadata: parsedSession.user.user_metadata || {},
+              };
+              
+              console.log("[Auth] Fetching profile for user:", authUser.id);
+              await fetchProfile(authUser as any);
+              setIsLoading(false);
+              console.log("[Auth] Initialization complete via localStorage session");
+              return;
+            }
+          } catch (e) {
+            console.error("[Auth] Error parsing stored session:", e);
+          }
+        }
+        
+        // Fallback: try getSession (may be slow or hang)
+        console.log("[Auth] No valid localStorage session, trying getSession...");
+        const timeoutPromise = new Promise<{ data: { session: null }, error: Error }>((resolve) => {
+          setTimeout(() => {
+            console.log("[Auth] getSession timed out after 3s");
+            resolve({ data: { session: null }, error: new Error('Timeout') });
+          }, 3000);
+        });
+        
+        const { data: { session: initialSession }, error } = await Promise.race([
+          supabase.auth.getSession(),
+          timeoutPromise
+        ]);
+        
+        console.log("[Auth] getSession result:", { 
+          hasSession: !!initialSession, 
+          hasUser: !!initialSession?.user,
+          error: error?.message 
+        });
         
         if (!mounted) return;
         
-        if (error) {
-          setSession(null);
-          setUser(null);
-          setIsLoading(false);
-          return;
-        }
-        
-        // Set session immediately
-        setSession(initialSession);
-        
         if (initialSession?.user) {
-          // Fetch profile and wait for it to complete
+          setSession(initialSession);
           await fetchProfile(initialSession.user);
         } else {
           setUser(null);
         }
         
         setIsLoading(false);
+        console.log("[Auth] Initialization complete");
       } catch (error) {
+        console.error("[Auth] Error initializing auth:", error);
         if (mounted) {
           setSession(null);
           setUser(null);

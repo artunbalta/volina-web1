@@ -60,12 +60,12 @@ const outboundNavItems = [
     icon: Users,
   },
   {
-    label: "Aramalar",
+    label: "Calls",
     href: "/dashboard/outbound/calls",
     icon: PhoneOutgoing,
   },
   {
-    label: "Mesajlar",
+    label: "Messages",
     href: "/dashboard/outbound/messages",
     icon: MessageSquare,
   },
