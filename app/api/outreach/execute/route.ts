@@ -259,6 +259,8 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
   }
 
   // Prepare VAPI call payload
+  // Note: VAPI uses phoneNumberId for caller ID, not a 'from' field
+  // The caller ID is configured in the phone number settings in VAPI dashboard
   const vapiPayload = {
     assistantId: assistantId,
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
@@ -266,7 +268,6 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
       number: normalizedPhone,
       name: lead.full_name,
     },
-    from: DEFAULT_CALLER_ID, // Explicitly set caller ID for international calls
     metadata: {
       lead_id: lead.id,
       user_id: user_id,  // Include user_id for webhook to save call
@@ -274,13 +275,14 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
       language: lead.language || "tr",
       original_phone: lead.phone, // Keep original for reference
       normalized_phone: normalizedPhone,
+      caller_id: DEFAULT_CALLER_ID, // Store in metadata for reference
     },
   };
 
   // Log the payload for debugging
   console.log(`[executeCallDirect] Making outbound call:`, {
     to: normalizedPhone,
-    from: DEFAULT_CALLER_ID,
+    caller_id: DEFAULT_CALLER_ID, // Expected caller ID (configured in VAPI phone number settings)
     assistantId,
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     lead_id: lead.id,
@@ -308,9 +310,14 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
     }
 
     const callData = await response.json();
+    console.log(`[executeCallDirect] Call initiated successfully:`, {
+      vapi_call_id: callData.id,
+      to: normalizedPhone,
+      status: callData.status || 'unknown'
+    });
     return {
       success: true,
-      message: `Arama başlatıldı: ${lead.full_name} (${lead.phone})`,
+      message: `Arama başlatıldı: ${lead.full_name} (${normalizedPhone})`,
       vapi_call_id: callData.id
     };
   } catch (error) {
@@ -371,17 +378,12 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
     };
   }
 
-  // Validate caller ID is E.164
-  if (!isValidE164(DEFAULT_CALLER_ID)) {
-    console.error(`[executeCall] Invalid DEFAULT_CALLER_ID: ${DEFAULT_CALLER_ID}`);
-    return {
-      success: false,
-      message: "Sistem yapılandırma hatası: Geçersiz caller ID",
-      error: "Invalid DEFAULT_CALLER_ID configuration"
-    };
-  }
+  // Note: Caller ID is configured in VAPI phone number settings, not via API field
+  // DEFAULT_CALLER_ID is logged for reference but not sent to VAPI API
 
   // Prepare VAPI call payload
+  // Note: VAPI uses phoneNumberId for caller ID, not a 'from' field
+  // The caller ID is configured in the phone number settings in VAPI dashboard
   const vapiPayload = {
     assistantId: assistantId,
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
@@ -389,7 +391,6 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
       number: normalizedPhone,
       name: lead.full_name,
     },
-    from: DEFAULT_CALLER_ID, // Explicitly set caller ID for international calls
     metadata: {
       lead_id: lead.id,
       outreach_id: outreach_id,
@@ -397,13 +398,14 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
       language: lead.language || "tr",
       original_phone: lead.phone, // Keep original for reference
       normalized_phone: normalizedPhone,
+      caller_id: DEFAULT_CALLER_ID, // Store in metadata for reference
     },
   };
 
   // Log the payload for debugging
   console.log(`[executeCall] Making outbound call:`, {
     to: normalizedPhone,
-    from: DEFAULT_CALLER_ID,
+    caller_id: DEFAULT_CALLER_ID, // Expected caller ID (configured in VAPI phone number settings)
     assistantId,
     phoneNumberId: VAPI_PHONE_NUMBER_ID,
     lead_id: lead.id,
@@ -433,10 +435,14 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
     }
 
     const callData = await response.json();
-    
+    console.log(`[executeCall] Call initiated successfully:`, {
+      vapi_call_id: callData.id,
+      to: normalizedPhone,
+      status: callData.status || 'unknown'
+    });
     return {
       success: true,
-      message: `Arama başlatıldı: ${lead.full_name} (${lead.phone})`,
+      message: `Arama başlatıldı: ${lead.full_name} (${normalizedPhone})`,
       vapi_call_id: callData.id
     };
 
