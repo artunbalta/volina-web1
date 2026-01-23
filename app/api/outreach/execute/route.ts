@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  validateAndNormalize,
+  DEFAULT_CALLER_ID,
+  isValidE164,
+} from "@/lib/phone-utils";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -229,6 +234,59 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
     };
   }
 
+  // Normalize and validate phone number to E.164 format
+  let normalizedPhone: string;
+  try {
+    normalizedPhone = validateAndNormalize(lead.phone, lead.language === "en" ? "US" : "TR");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Invalid phone number format";
+    console.error(`[executeCallDirect] Phone normalization failed for ${lead.phone}:`, errorMessage);
+    return {
+      success: false,
+      message: `Geçersiz telefon numarası formatı: ${lead.phone}. Lütfen E.164 formatında girin (örn: +903129114094, +33123456789)`,
+      error: errorMessage
+    };
+  }
+
+  // Validate caller ID is E.164
+  if (!isValidE164(DEFAULT_CALLER_ID)) {
+    console.error(`[executeCallDirect] Invalid DEFAULT_CALLER_ID: ${DEFAULT_CALLER_ID}`);
+    return {
+      success: false,
+      message: "Sistem yapılandırma hatası: Geçersiz caller ID",
+      error: "Invalid DEFAULT_CALLER_ID configuration"
+    };
+  }
+
+  // Prepare VAPI call payload
+  const vapiPayload = {
+    assistantId: assistantId,
+    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    customer: {
+      number: normalizedPhone,
+      name: lead.full_name,
+    },
+    from: DEFAULT_CALLER_ID, // Explicitly set caller ID for international calls
+    metadata: {
+      lead_id: lead.id,
+      user_id: user_id,  // Include user_id for webhook to save call
+      direct_call: true,
+      language: lead.language || "tr",
+      original_phone: lead.phone, // Keep original for reference
+      normalized_phone: normalizedPhone,
+    },
+  };
+
+  // Log the payload for debugging
+  console.log(`[executeCallDirect] Making outbound call:`, {
+    to: normalizedPhone,
+    from: DEFAULT_CALLER_ID,
+    assistantId,
+    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    lead_id: lead.id,
+    original_phone: lead.phone,
+  });
+
   try {
     const response = await fetch("https://api.vapi.ai/call/phone", {
       method: "POST",
@@ -236,20 +294,7 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
         "Authorization": `Bearer ${VAPI_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        assistantId: assistantId,
-        phoneNumberId: VAPI_PHONE_NUMBER_ID,
-        customer: {
-          number: lead.phone,
-          name: lead.full_name,
-        },
-        metadata: {
-          lead_id: lead.id,
-          user_id: user_id,  // Include user_id for webhook to save call
-          direct_call: true,
-          language: lead.language || "tr",
-        },
-      }),
+      body: JSON.stringify(vapiPayload),
     });
 
     if (!response.ok) {
@@ -312,6 +357,60 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
     };
   }
 
+  // Normalize and validate phone number to E.164 format
+  let normalizedPhone: string;
+  try {
+    normalizedPhone = validateAndNormalize(lead.phone, lead.language === "en" ? "US" : "TR");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Invalid phone number format";
+    console.error(`[executeCall] Phone normalization failed for ${lead.phone}:`, errorMessage);
+    return {
+      success: false,
+      message: `Geçersiz telefon numarası formatı: ${lead.phone}. Lütfen E.164 formatında girin (örn: +903129114094, +33123456789)`,
+      error: errorMessage
+    };
+  }
+
+  // Validate caller ID is E.164
+  if (!isValidE164(DEFAULT_CALLER_ID)) {
+    console.error(`[executeCall] Invalid DEFAULT_CALLER_ID: ${DEFAULT_CALLER_ID}`);
+    return {
+      success: false,
+      message: "Sistem yapılandırma hatası: Geçersiz caller ID",
+      error: "Invalid DEFAULT_CALLER_ID configuration"
+    };
+  }
+
+  // Prepare VAPI call payload
+  const vapiPayload = {
+    assistantId: assistantId,
+    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    customer: {
+      number: normalizedPhone,
+      name: lead.full_name,
+    },
+    from: DEFAULT_CALLER_ID, // Explicitly set caller ID for international calls
+    metadata: {
+      lead_id: lead.id,
+      outreach_id: outreach_id,
+      user_id: user_id, // Include user_id for webhook to save call
+      language: lead.language || "tr",
+      original_phone: lead.phone, // Keep original for reference
+      normalized_phone: normalizedPhone,
+    },
+  };
+
+  // Log the payload for debugging
+  console.log(`[executeCall] Making outbound call:`, {
+    to: normalizedPhone,
+    from: DEFAULT_CALLER_ID,
+    assistantId,
+    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    lead_id: lead.id,
+    outreach_id,
+    original_phone: lead.phone,
+  });
+
   try {
     // Make VAPI call
     const response = await fetch("https://api.vapi.ai/call/phone", {
@@ -320,20 +419,7 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
         "Authorization": `Bearer ${VAPI_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        assistantId: assistantId,
-        phoneNumberId: VAPI_PHONE_NUMBER_ID,
-        customer: {
-          number: lead.phone,
-          name: lead.full_name,
-        },
-        metadata: {
-          lead_id: lead.id,
-          outreach_id: outreach_id,
-          user_id: user_id, // Include user_id for webhook to save call
-          language: lead.language || "tr",
-        },
-      }),
+      body: JSON.stringify(vapiPayload),
     });
 
     if (!response.ok) {

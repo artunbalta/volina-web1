@@ -1172,12 +1172,15 @@ export default function LeadsPage() {
               </div>
             
             <div>
-              <Label>Phone</Label>
+              <Label>Phone (E.164 format)</Label>
               <Input
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="+90 5XX XXX XX XX"
+                placeholder="+33768163591, +12125551234, +903129114094"
               />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                International format: +[country code][number] (e.g., +33 for France, +1 for US/Canada)
+              </p>
               </div>
             
             <div className="grid grid-cols-2 gap-4">
