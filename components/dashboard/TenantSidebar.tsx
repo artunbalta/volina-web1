@@ -11,8 +11,6 @@ import {
   LayoutDashboard,
   Phone,
   Users,
-  Bot,
-  Settings,
   LogOut,
   Menu,
   X,
@@ -41,8 +39,6 @@ export function TenantSidebar() {
     { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
     { href: `/${effectiveTenant}/leads`, icon: Users, label: "Leads" },
     { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Calls" },
-    { href: `/${effectiveTenant}/ai-settings`, icon: Bot, label: "AI Settings" },
-    { href: `/${effectiveTenant}/settings`, icon: Settings, label: "Settings" },
   ];
 
   const handleLogout = async () => {

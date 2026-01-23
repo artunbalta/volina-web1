@@ -5,8 +5,7 @@ import { KPICards } from "@/components/dashboard/KPICards";
 import { Charts } from "@/components/dashboard/Charts";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Cloud, Database } from "lucide-react";
-import { format } from "date-fns";
+import { RefreshCw } from "lucide-react";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { getCallStats, getDailyActivity, getRecentActivity } from "@/lib/supabase";
 
@@ -71,10 +70,10 @@ export default function InboundDashboard() {
     };
     
     const typeNames: Record<string, string> = {
-      appointment: "Randevu",
-      inquiry: "Bilgi",
-      follow_up: "Takip",
-      cancellation: "İptal",
+      appointment: "Appointment",
+      inquiry: "Information",
+      follow_up: "Follow-up",
+      cancellation: "Cancellation",
     };
 
     try {
@@ -124,7 +123,7 @@ export default function InboundDashboard() {
               }) => ({
                 id: call.id,
                 type: call.type as 'call' | 'appointment',
-                description: call.summary || `${call.type} arama`,
+                description: call.summary || `${call.type} call`,
                 timestamp: call.created_at,
                 sentiment: call.sentiment,
               }));
@@ -222,32 +221,10 @@ export default function InboundDashboard() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Hoş geldin{user?.full_name ? `, ${user.full_name}` : ""}! AI asistanının özeti burada.
+            Welcome{user?.full_name ? `, ${user.full_name}` : ""}! Here's your AI assistant summary.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {dataSource && (
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-              dataSource === "vapi" 
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
-                : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-            }`}>
-              {dataSource === "vapi" ? (
-                <>
-                  <Cloud className="w-3 h-3" />
-                  VAPI Live
-                </>
-              ) : (
-                <>
-                  <Database className="w-3 h-3" />
-                  Database
-                </>
-              )}
-            </span>
-          )}
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {format(lastUpdated, "HH:mm")}
-          </span>
           <Button
             variant="outline"
             size="sm"
@@ -256,7 +233,7 @@ export default function InboundDashboard() {
             className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-            Yenile
+            Refresh
           </Button>
         </div>
       </div>
@@ -280,12 +257,12 @@ export default function InboundDashboard() {
         
         {/* Quick Stats Card */}
         <div className="bg-gradient-to-br from-primary to-blue-700 rounded-xl p-5 text-white">
-          <h3 className="text-lg font-semibold mb-4">AI Performansı</h3>
+          <h3 className="text-lg font-semibold mb-4">AI Performance</h3>
           <div className="space-y-4">
             {[
-              { label: "Arama Tamamlama", value: kpiData.monthlyCalls > 0 ? "98.5%" : "N/A" },
-              { label: "Randevu Dönüşümü", value: `${kpiData.appointmentRate}%` },
-              { label: "Müşteri Memnuniyeti", value: kpiData.monthlyCalls > 0 ? "94%" : "N/A" },
+              { label: "Call Completion", value: kpiData.monthlyCalls > 0 ? "98.5%" : "N/A" },
+              { label: "Appointment Conversion", value: `${kpiData.appointmentRate}%` },
+              { label: "Customer Satisfaction", value: kpiData.monthlyCalls > 0 ? "94%" : "N/A" },
             ].map((stat) => (
               <div key={stat.label}>
                 <div className="flex justify-between text-sm mb-1">
@@ -304,9 +281,9 @@ export default function InboundDashboard() {
           <div className="mt-5 pt-4 border-t border-white/20">
             <p className="text-sm opacity-80">
               {kpiData.monthlyCalls > 0 ? (
-                <>AI&apos;ınız benzer işletmelere göre <span className="font-semibold text-white">ortalamanın üstünde</span> performans gösteriyor.</>
+                <>Your AI is performing <span className="font-semibold text-white">above average</span> compared to similar businesses.</>
               ) : (
-                <>AI performans metriklerini görmek için arama yapmaya başlayın.</>
+                <>Start making calls to see AI performance metrics.</>
               )}
             </p>
           </div>
