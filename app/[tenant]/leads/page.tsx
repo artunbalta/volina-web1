@@ -1365,18 +1365,6 @@ export default function LeadsPage() {
                 </div>
               </div>
 
-              {/* Contact Information */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm text-gray-500 dark:text-gray-400">Email</Label>
-                  <p className="mt-1 text-gray-900 dark:text-white">{selectedLead.email || "—"}</p>
-                </div>
-                <div>
-                  <Label className="text-sm text-gray-500 dark:text-gray-400">WhatsApp</Label>
-                  <p className="mt-1 text-gray-900 dark:text-white">{selectedLead.whatsapp || "—"}</p>
-                </div>
-              </div>
-
               {/* Status and Priority */}
               <div className="grid grid-cols-2 gap-4">
                 <div>

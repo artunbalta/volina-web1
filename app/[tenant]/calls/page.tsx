@@ -5,13 +5,6 @@ import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { Call } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { 
   Phone, 
   RefreshCw, 
@@ -21,11 +14,9 @@ import {
   Rewind,
   FastForward,
   Loader2,
-  Filter,
   X,
   ChevronDown,
   ChevronUp,
-  FileText,
 } from "lucide-react";
 import {
   Dialog,
@@ -37,23 +28,6 @@ import {
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-
-// Score Badge
-function ScoreBadge({ score }: { score: number | null }) {
-  if (score === null) return <span className="text-gray-400 dark:text-gray-500 text-sm">—</span>;
-  
-  const getColor = (s: number) => {
-    if (s >= 8) return "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400";
-    if (s >= 5) return "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400";
-    return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400";
-  };
-  
-  return (
-    <span className={cn("px-2 py-1 rounded-md text-sm font-medium", getColor(score))}>
-      {score}/10
-    </span>
-  );
-}
 
 // Audio Player Component
 function AudioPlayer({ 
@@ -110,26 +84,71 @@ function AudioPlayer({
     setCurrentTime(0);
     setDuration(0);
     
-    const audio = new Audio(call.recording_url);
+    // Create audio element and set crossOrigin BEFORE setting src
+    const audio = new Audio();
+    audio.crossOrigin = 'anonymous';
+    audio.src = call.recording_url;
     audioRef.current = audio;
     
     // Generate waveform heights
     waveformRefs.current = Array.from({ length: 60 }, () => Math.random() * 60 + 20);
     
+    let loadTimeout: NodeJS.Timeout | null = null;
+    let hasLoaded = false;
+    
     const handleLoadedMetadata = () => {
+      hasLoaded = true;
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
       if (audio.duration && isFinite(audio.duration)) {
         setDuration(audio.duration);
+        setIsLoading(false);
+      } else if (call.duration) {
+        // Use call duration as fallback
+        setDuration(call.duration);
         setIsLoading(false);
       }
     };
     
     const handleCanPlay = () => {
+      hasLoaded = true;
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
       setIsLoading(false);
     };
     
-    const handleError = (e: Event) => {
-      console.error("Audio loading error:", e);
-      setError("Unable to load audio recording");
+    const handleError = () => {
+      // Extract error details from MediaError
+      const mediaError = audio.error;
+      let errorMessage = "Unable to load audio recording.";
+      
+      if (mediaError) {
+        switch (mediaError.code) {
+          case MediaError.MEDIA_ERR_ABORTED:
+            errorMessage = "Audio loading was aborted.";
+            break;
+          case MediaError.MEDIA_ERR_NETWORK:
+            errorMessage = "Network error while loading audio. The recording URL may have expired.";
+            break;
+          case MediaError.MEDIA_ERR_DECODE:
+            errorMessage = "Audio decoding error. The file may be corrupted.";
+            break;
+          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+            errorMessage = "Audio format not supported or recording unavailable.";
+            break;
+        }
+        console.error("Audio loading error:", mediaError.code, mediaError.message);
+      }
+      
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
+      setError(errorMessage);
       setIsLoading(false);
       audioRef.current = null;
     };
@@ -162,7 +181,23 @@ function AudioPlayer({
     // Preload audio
     audio.load();
     
+    // Timeout fallback - if audio doesn't load in 10 seconds, show error
+    loadTimeout = setTimeout(() => {
+      if (!hasLoaded) {
+        console.error("Audio loading timeout");
+        setError("Audio loading timed out. The recording may be unavailable or expired.");
+        setIsLoading(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
+        }
+      }
+    }, 10000);
+    
     return () => {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+      }
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('error', handleError);
@@ -174,7 +209,8 @@ function AudioPlayer({
       audio.src = '';
       audioRef.current = null;
     };
-  }, [call?.recording_url, isOpen]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call?.recording_url, call?.duration, isOpen]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -417,11 +453,6 @@ function CallRow({
             </p>
           </div>
           
-          {/* Score */}
-          <div className="w-24 text-center">
-            <ScoreBadge score={call.evaluation_score} />
-          </div>
-          
           {/* Duration */}
           <div className="w-24 text-sm text-gray-600 dark:text-gray-300 text-center font-mono tabular-nums">
             {formatDuration(call.duration)}
@@ -499,7 +530,6 @@ export default function CallsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [scoreFilter, setScoreFilter] = useState<string>("all");
   const [selectedCall, setSelectedCall] = useState<Call | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
@@ -600,19 +630,8 @@ export default function CallsPage() {
       );
     }
     
-    // Score filter
-    if (scoreFilter !== "all") {
-      filtered = filtered.filter(call => {
-        const score = call.evaluation_score;
-        if (scoreFilter === "high") return score !== null && score >= 8;
-        if (scoreFilter === "medium") return score !== null && score >= 5 && score < 8;
-        if (scoreFilter === "low") return score !== null && score < 5;
-        return true;
-      });
-    }
-    
     setFilteredCalls(filtered);
-  }, [calls, searchQuery, scoreFilter]);
+  }, [calls, searchQuery]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -708,18 +727,6 @@ export default function CallsPage() {
         />
       </div>
 
-              <Select value={scoreFilter} onValueChange={setScoreFilter}>
-          <SelectTrigger className="w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-            <Filter className="w-4 h-4 mr-2 text-gray-400 dark:text-gray-500" />
-            <SelectValue placeholder="Filter" />
-                </SelectTrigger>
-                <SelectContent>
-            <SelectItem value="all">All Scores</SelectItem>
-            <SelectItem value="high">High (8+)</SelectItem>
-            <SelectItem value="medium">Medium (5-7)</SelectItem>
-            <SelectItem value="low">Low (&lt;5)</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
       {/* Calls Table */}
@@ -729,7 +736,6 @@ export default function CallsPage() {
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
             <div className="w-8 text-center">#</div>
             <div className="w-64">Customer</div>
-            <div className="w-24 text-center">Score</div>
             <div className="w-24 text-center">Duration</div>
             <div className="w-32 text-center">Date</div>
             <div className="w-20"></div>

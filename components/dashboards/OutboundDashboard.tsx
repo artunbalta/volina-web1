@@ -1,19 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter, useParams } from "next/navigation";
 import { 
   Phone, 
   RefreshCw,
-  ArrowRight,
   Loader2,
   ArrowUpRight,
-  ArrowDownRight,
-  MessageSquare
+  ArrowDownRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/SupabaseProvider";
-import type { Lead } from "@/lib/types-outbound";
 import type { Call } from "@/lib/types";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -56,9 +52,6 @@ function KPICard({
 }
 
 export default function OutboundDashboard() {
-  const router = useRouter();
-  const params = useParams();
-  const tenant = params?.tenant as string;
   const { user, isLoading: authLoading } = useAuth();
   
   const [isLoading, setIsLoading] = useState(true);
@@ -93,14 +86,6 @@ export default function OutboundDashboard() {
     calls: number;
     appointments: number;
   }[]>([]);
-  
-  // Recent Activity
-  const [recentCalls, setRecentCalls] = useState<Call[]>([]);
-  
-  // AI Performance
-  const [callCompletion, setCallCompletion] = useState<number>(0);
-  const [appointmentConversion, setAppointmentConversion] = useState<number>(0);
-  const [customerSatisfaction, setCustomerSatisfaction] = useState<number>(0);
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
@@ -282,40 +267,6 @@ export default function OutboundDashboard() {
             });
           }
           setWeeklyActivity(weeklyData);
-          
-          // Recent Calls (last 10, sorted by created_at desc)
-          const recent = [...calls]
-            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-            .slice(0, 10);
-          setRecentCalls(recent);
-          
-          // AI Performance Metrics
-          // Call Completion: % of calls that completed (not failed/cancelled)
-          const completedCalls = calls.filter(c => {
-            const status = c.metadata?.status || c.type;
-            return status !== 'cancellation' && status !== 'cancel' && status !== 'failed';
-          }).length;
-          const completionRate = calls.length > 0
-            ? Math.round((completedCalls / calls.length) * 100 * 10) / 10 // Round to 1 decimal
-            : 0;
-          setCallCompletion(completionRate);
-          
-          // Appointment Conversion: % of calls that resulted in appointments
-          const appointmentCalls = calls.filter(c => 
-            c.type === 'appointment' || c.metadata?.appointmentBooked
-          ).length;
-          const appointmentRate = calls.length > 0
-            ? Math.round((appointmentCalls / calls.length) * 100)
-            : 0;
-          setAppointmentConversion(appointmentRate);
-          
-          // Customer Satisfaction: Average evaluation score as percentage
-          const callsWithScore = calls.filter(c => c.evaluation_score !== null);
-          const avgScore = callsWithScore.length > 0
-            ? callsWithScore.reduce((sum, c) => sum + (c.evaluation_score || 0), 0) / callsWithScore.length
-            : 0;
-          const satisfactionRate = Math.round((avgScore / 10) * 100);
-          setCustomerSatisfaction(satisfactionRate);
         } else {
           // No calls data, reset all to 0
           setMonthlyCalls(0);
@@ -324,7 +275,6 @@ export default function OutboundDashboard() {
           setConversionRate(0);
           setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
           setWeeklyActivity([]);
-          setRecentCalls([]);
         }
       } else {
         console.error("Failed to load calls:", callsResponse.statusText);
@@ -335,7 +285,6 @@ export default function OutboundDashboard() {
         setConversionRate(0);
         setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
         setWeeklyActivity([]);
-        setRecentCalls([]);
       }
       
       // Handle leads response (if needed for future features)
@@ -352,7 +301,6 @@ export default function OutboundDashboard() {
       setConversionRate(0);
       setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
       setWeeklyActivity([]);
-      setRecentCalls([]);
     } finally {
       setIsLoading(false);
     }
@@ -376,8 +324,6 @@ export default function OutboundDashboard() {
     await loadData();
     setIsRefreshing(false);
   };
-
-  const basePath = tenant ? `/${tenant}` : '/dashboard/outbound';
 
   if (isLoading) {
     return (
@@ -567,22 +513,37 @@ export default function OutboundDashboard() {
                 <span className="text-xs text-gray-600 dark:text-gray-400">Appointments</span>
               </div>
             </div>
-            <div className="flex items-end justify-between gap-2 h-36">
+            <div className="flex items-end justify-around">
               {weeklyActivity.map((item, idx) => (
-                <div key={idx} className="flex-1 flex flex-col items-center gap-2">
-                  <div className="flex-1 flex items-end justify-center gap-1 w-full">
+                <div key={idx} className="flex flex-col items-center gap-2">
+                  {/* Bar container with fixed height */}
+                  <div className="flex items-end justify-center gap-1 h-32 w-10">
                     {/* Calls bar */}
                     <div
-                      className="bg-blue-600 dark:bg-blue-400 rounded-t w-full"
-                      style={{ height: `${(item.calls / maxWeeklyValue) * 100}%`, minHeight: item.calls > 0 ? '4px' : '0' }}
-                    />
+                      className="bg-blue-600 dark:bg-blue-400 rounded-t w-3 transition-all duration-300 cursor-pointer hover:bg-blue-700 dark:hover:bg-blue-300 relative group"
+                      style={{ 
+                        height: maxWeeklyValue > 0 ? `${Math.max((item.calls / maxWeeklyValue) * 100, item.calls > 0 ? 8 : 0)}%` : '0%'
+                      }}
+                    >
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        {item.calls} calls
+                      </div>
+                    </div>
                     {/* Appointments bar */}
                     <div
-                      className="bg-green-600 dark:bg-green-400 rounded-t w-full"
-                      style={{ height: `${(item.appointments / maxWeeklyValue) * 100}%`, minHeight: item.appointments > 0 ? '4px' : '0' }}
-                    />
+                      className="bg-green-600 dark:bg-green-400 rounded-t w-3 transition-all duration-300 cursor-pointer hover:bg-green-700 dark:hover:bg-green-300 relative group"
+                      style={{ 
+                        height: maxWeeklyValue > 0 ? `${Math.max((item.appointments / maxWeeklyValue) * 100, item.appointments > 0 ? 8 : 0)}%` : '0%'
+                      }}
+                    >
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        {item.appointments} appts
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">{item.date}</span>
+                  <span className="text-xs text-gray-600 dark:text-gray-400 font-medium text-center">{item.date}</span>
                 </div>
               ))}
             </div>
@@ -590,93 +551,6 @@ export default function OutboundDashboard() {
         </div>
       </div>
 
-      {/* Recent Activity & AI Performance Row */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Recent Activity */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => router.push(`${basePath}/calls`)}
-              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-            >
-              View all
-              <ArrowRight className="w-4 h-4 ml-1" />
-            </Button>
-          </div>
-          <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            {recentCalls.length === 0 ? (
-              <div className="px-6 py-12 text-center">
-                <MessageSquare className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-500 dark:text-gray-400 text-sm">No recent activity</p>
-              </div>
-            ) : (
-              recentCalls.map((call) => {
-                const timeAgo = (() => {
-                  const now = new Date();
-                  const callTime = new Date(call.created_at);
-                  const diffMs = now.getTime() - callTime.getTime();
-                  const diffMins = Math.floor(diffMs / 60000);
-                  if (diffMins < 1) return "Just now";
-                  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-                  const diffHours = Math.floor(diffMins / 60);
-                  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-                  const diffDays = Math.floor(diffHours / 24);
-                  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-                })();
-
-                return (
-                  <div 
-                    key={call.id} 
-                    className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
-                    onClick={() => router.push(`${basePath}/calls`)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <MessageSquare className="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-900 dark:text-white">Inquiry call</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{timeAgo}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* AI Performance */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-6">AI Performance</h3>
-          <div className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Call Completion</span>
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">{callCompletion}%</span>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Appointment Conversion</span>
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">{appointmentConversion}%</span>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Customer Satisfaction</span>
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">{customerSatisfaction}%</span>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-sm text-gray-600 dark:text-gray-400 italic">
-                Your AI is performing above average compared to similar businesses.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
