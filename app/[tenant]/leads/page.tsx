@@ -46,6 +46,9 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -76,10 +79,13 @@ export default function LeadsPage() {
   const [isLoading, setIsLoading] = useState(false); // Start as false, will be set to true when loading
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState(""); // Debounced search query
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
+  const [sortBy, setSortBy] = useState<"created_at" | "priority">("created_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -107,6 +113,14 @@ export default function LeadsPage() {
     language: "tr" as "tr" | "en",
   });
 
+  // Debounce search query - wait 500ms after user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // Load leads function - use useCallback to prevent infinite loops
   const loadLeads = useCallback(async () => {
     if (!user?.id) {
@@ -119,15 +133,27 @@ export default function LeadsPage() {
       const queryParams = new URLSearchParams({
         userId: user.id,
         page: currentPage.toString(),
+        sortBy: sortBy,
+        sortOrder: sortOrder,
         ...(statusFilter !== "all" && { status: statusFilter }),
-        ...(searchQuery && { search: searchQuery }),
+        ...(debouncedSearch && { search: debouncedSearch }),
       });
       
       const response = await fetch(`/api/dashboard/leads?${queryParams.toString()}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setLeads(data.data || []);
+          // If sorting by priority, sort client-side for correct order (high -> medium -> low)
+          let sortedLeads = data.data || [];
+          if (sortBy === "priority") {
+            const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+            sortedLeads = [...sortedLeads].sort((a: Lead, b: Lead) => {
+              const orderA = priorityOrder[a.priority] ?? 1;
+              const orderB = priorityOrder[b.priority] ?? 1;
+              return sortOrder === "asc" ? orderB - orderA : orderA - orderB;
+            });
+          }
+          setLeads(sortedLeads);
           if (data.pagination) {
             setTotalPages(data.pagination.totalPages || 1);
             setTotalLeads(data.pagination.total || 0);
@@ -150,7 +176,7 @@ export default function LeadsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id, currentPage, statusFilter, searchQuery]);
+  }, [user?.id, currentPage, statusFilter, debouncedSearch, sortBy, sortOrder]);
 
   // Separate effect for initial load and auth changes
   useEffect(() => {
@@ -176,13 +202,13 @@ export default function LeadsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, authLoading]); // Only depend on user and auth loading
 
-  // Separate effect for page and filter changes
+  // Separate effect for page, filter, search, and sort changes
   useEffect(() => {
     if (user?.id && !authLoading) {
       loadLeads();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, statusFilter]); // Reload when page or filter changes
+  }, [currentPage, statusFilter, debouncedSearch, sortBy, sortOrder]); // Reload when any of these change
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -191,22 +217,15 @@ export default function LeadsPage() {
   };
 
   // Filter leads (client-side filtering is now minimal since server handles it)
-  const filteredLeads = leads.filter(lead => {
-    // Server already filters by status and search, but keep minimal client-side for safety
-    const matchesSearch = !searchQuery || 
-      lead.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lead.phone?.includes(searchQuery) ||
-      lead.email?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return matchesSearch;
-  });
+  const filteredLeads = leads;
 
-  // When search or status filter changes, reset to page 1
+  // When search, status filter, or sort changes, reset to page 1
   useEffect(() => {
     if (user?.id && !authLoading && currentPage !== 1) {
       setCurrentPage(1);
     }
-  }, [searchQuery, statusFilter, user?.id, authLoading, currentPage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, statusFilter, sortBy, sortOrder]);
 
   // Reset form
   const resetForm = () => {
@@ -379,8 +398,10 @@ export default function LeadsPage() {
       const queryParams = new URLSearchParams({
         userId: user.id,
         idsOnly: "true", // Request only IDs, not full data
+        sortBy: sortBy,
+        sortOrder: sortOrder,
         ...(statusFilter !== "all" && { status: statusFilter }),
-        ...(searchQuery && { search: searchQuery }),
+        ...(debouncedSearch && { search: debouncedSearch }),
       });
       
       const response = await fetch(`/api/dashboard/leads?${queryParams.toString()}`);
@@ -869,84 +890,161 @@ export default function LeadsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
-                <Input
-            placeholder="Search leads..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
-                />
-              </div>
+      <div className="flex flex-col gap-4">
+        {/* First Row: Search and Main Filters */}
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+            <Input
+              placeholder="Search all leads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
+            />
+          </div>
         
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as LeadStatus | "all")}>
-          <SelectTrigger className="w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-            <Filter className="w-4 h-4 mr-2 text-gray-400 dark:text-gray-500" />
-            <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            {Object.entries(statusConfig).map(([key, config]) => (
-              <SelectItem key={key} value={key}>{config.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as LeadStatus | "all")}>
+            <SelectTrigger className="w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+              <Filter className="w-4 h-4 mr-2 text-gray-400 dark:text-gray-500" />
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              {Object.entries(statusConfig).map(([key, config]) => (
+                <SelectItem key={key} value={key}>{config.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         
-        {filteredLeads.length > 0 && (
+          {/* Sort by Priority Button */}
+          <Button 
+            variant={sortBy === "priority" ? "default" : "outline"}
+            onClick={() => {
+              if (sortBy === "priority") {
+                // Toggle sort order if already sorting by priority
+                setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+              } else {
+                // Switch to priority sort (high -> medium -> low)
+                setSortBy("priority");
+                setSortOrder("desc");
+              }
+            }}
+            className={cn(
+              "border-gray-200 dark:border-gray-700",
+              sortBy === "priority" && "bg-blue-600 hover:bg-blue-700 text-white"
+            )}
+          >
+            {sortBy === "priority" ? (
+              sortOrder === "desc" ? (
+                <ArrowDown className="w-4 h-4 mr-2" />
+              ) : (
+                <ArrowUp className="w-4 h-4 mr-2" />
+              )
+            ) : (
+              <ArrowUpDown className="w-4 h-4 mr-2" />
+            )}
+            Order by Priority
+          </Button>
+
+          {/* Sort by Date Button */}
+          {sortBy === "priority" && (
+            <Button 
+              variant="outline"
+              onClick={() => {
+                setSortBy("created_at");
+                setSortOrder("desc");
+              }}
+              className="border-gray-200 dark:border-gray-700"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Clear Sort
+            </Button>
+          )}
+        
           <Button 
             variant="outline" 
-            onClick={toggleSelectAll}
+            onClick={handleRefresh} 
+            disabled={isRefreshing}
             className="border-gray-200 dark:border-gray-700"
-            disabled={isLoading || !user?.id}
           >
-            {(() => {
-              // Check if all filtered leads on current page are selected
-              const currentPageSelected = filteredLeads.filter(lead => selectedLeadIds.has(lead.id)).length;
-              const allCurrentPageSelected = currentPageSelected === filteredLeads.length && filteredLeads.length > 0;
-              
-              // Check if all total leads are selected (approximate check)
-              const allSelected = selectedLeadIds.size > 0 && selectedLeadIds.size >= totalLeads && totalLeads > 0;
-              
-              if (allSelected) {
-                return (
-                  <>
-                    <X className="w-4 h-4 mr-2" />
-                    Deselect All ({totalLeads})
-                  </>
-                );
-              } else {
-                return (
-                  <>
-                    <Users className="w-4 h-4 mr-2" />
-                    Select All ({totalLeads})
-                  </>
-                );
-              }
-            })()}
+            <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
           </Button>
-        )}
-        {selectedLeadIds.size > 0 && (
-          <Button 
-            variant="destructive" 
-            onClick={() => setShowBulkDeleteDialog(true)}
-            disabled={isSaving}
-            className="bg-red-600 hover:bg-red-700"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete Selected ({selectedLeadIds.size})
-          </Button>
-        )}
-        
-        <Button 
-          variant="outline" 
-          onClick={handleRefresh} 
-          disabled={isRefreshing}
-          className="border-gray-200 dark:border-gray-700"
-        >
-          <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
-        </Button>
-            </div>
+        </div>
+
+        {/* Second Row: Quick Filters and Selection */}
+        <div className="flex items-center gap-3">
+          {/* Quick Filter Buttons */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500 dark:text-gray-400">Quick filters:</span>
+            <Button 
+              variant={statusFilter === "new" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter(statusFilter === "new" ? "all" : "new")}
+              className={cn(
+                "border-gray-200 dark:border-gray-700",
+                statusFilter === "new" && "bg-blue-600 hover:bg-blue-700 text-white"
+              )}
+            >
+              New
+            </Button>
+            <Button 
+              variant={statusFilter === "contacted" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter(statusFilter === "contacted" ? "all" : "contacted")}
+              className={cn(
+                "border-gray-200 dark:border-gray-700",
+                statusFilter === "contacted" && "bg-purple-600 hover:bg-purple-700 text-white"
+              )}
+            >
+              Contacted
+            </Button>
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Selection Controls */}
+          {filteredLeads.length > 0 && (
+            <Button 
+              variant="outline" 
+              onClick={toggleSelectAll}
+              className="border-gray-200 dark:border-gray-700"
+              disabled={isLoading || !user?.id}
+            >
+              {(() => {
+                // Check if all total leads are selected (approximate check)
+                const allSelected = selectedLeadIds.size > 0 && selectedLeadIds.size >= totalLeads && totalLeads > 0;
+                
+                if (allSelected) {
+                  return (
+                    <>
+                      <X className="w-4 h-4 mr-2" />
+                      Deselect All ({totalLeads})
+                    </>
+                  );
+                } else {
+                  return (
+                    <>
+                      <Users className="w-4 h-4 mr-2" />
+                      Select All ({totalLeads})
+                    </>
+                  );
+                }
+              })()}
+            </Button>
+          )}
+          {selectedLeadIds.size > 0 && (
+            <Button 
+              variant="destructive" 
+              onClick={() => setShowBulkDeleteDialog(true)}
+              disabled={isSaving}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Selected ({selectedLeadIds.size})
+            </Button>
+          )}
+        </div>
+      </div>
 
       {/* Leads Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

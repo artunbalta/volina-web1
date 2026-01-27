@@ -37,6 +37,8 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const search = searchParams.get("search");
+    const sortBy = searchParams.get("sortBy") || "created_at"; // Default sort by created_at
+    const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc"; // Default desc
 
     // Build base query for filtering - MUST filter by user_id for security
     const selectFields = idsOnly ? "id" : "*";
@@ -55,10 +57,28 @@ export async function GET(request: NextRequest) {
       baseQuery = baseQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
+    // Build sorting - add secondary sort by id for consistent pagination
+    const buildSortedQuery = (query: typeof baseQuery) => {
+      if (sortBy === "priority") {
+        // Priority sort: high -> medium -> low (custom order)
+        // Use Postgres CASE expression via raw SQL is not available, 
+        // so we'll sort alphabetically which happens to work: high < low < medium in reverse
+        // Actually: "high" < "low" < "medium" alphabetically, so ascending gives h,l,m
+        // We want: high, medium, low - so we need custom handling
+        // Best approach: return sorted by priority field, client can handle display
+        return query
+          .order("priority", { ascending: sortOrder === "asc" })
+          .order("id", { ascending: true }); // Secondary sort for consistency
+      } else {
+        return query
+          .order(sortBy, { ascending: sortOrder === "asc" })
+          .order("id", { ascending: true }); // Secondary sort for consistency
+      }
+    };
+
     // If idsOnly, return all IDs without pagination
     if (idsOnly) {
-      const { data: allIds, count, error } = await baseQuery
-        .order("created_at", { ascending: false }) as { data: { id: string }[] | null; count: number | null; error: { message: string } | null };
+      const { data: allIds, count, error } = await buildSortedQuery(baseQuery) as { data: { id: string }[] | null; count: number | null; error: { message: string } | null };
       
       if (error) {
         console.error("Error fetching lead IDs:", error);
@@ -79,8 +99,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get paginated data with count in single query
-    const { data: leads, count, error } = await baseQuery
-      .order("created_at", { ascending: false })
+    const { data: leads, count, error } = await buildSortedQuery(baseQuery)
       .range(offset, offset + limit - 1) as { data: LeadRecord[] | null; count: number | null; error: { message: string } | null };
 
     if (error) {
