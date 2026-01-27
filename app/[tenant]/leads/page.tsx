@@ -143,17 +143,8 @@ export default function LeadsPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          // If sorting by priority, sort client-side for correct order (high -> medium -> low)
-          let sortedLeads = data.data || [];
-          if (sortBy === "priority") {
-            const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
-            sortedLeads = [...sortedLeads].sort((a: Lead, b: Lead) => {
-              const orderA = priorityOrder[a.priority] ?? 1;
-              const orderB = priorityOrder[b.priority] ?? 1;
-              return sortOrder === "asc" ? orderB - orderA : orderA - orderB;
-            });
-          }
-          setLeads(sortedLeads);
+          // Server handles priority sorting correctly (high -> medium -> low)
+          setLeads(data.data || []);
           if (data.pagination) {
             setTotalPages(data.pagination.totalPages || 1);
             setTotalLeads(data.pagination.total || 0);

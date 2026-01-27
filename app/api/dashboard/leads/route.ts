@@ -58,21 +58,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Build sorting - add secondary sort by id for consistent pagination
+    // Note: For priority sorting, we use a workaround since Supabase doesn't support CASE in ORDER BY
+    // We'll handle priority sorting specially by fetching and sorting in memory
+    const isPrioritySorting = sortBy === "priority";
+    
     const buildSortedQuery = (query: typeof baseQuery) => {
-      if (sortBy === "priority") {
-        // Priority sort: high -> medium -> low (custom order)
-        // Use Postgres CASE expression via raw SQL is not available, 
-        // so we'll sort alphabetically which happens to work: high < low < medium in reverse
-        // Actually: "high" < "low" < "medium" alphabetically, so ascending gives h,l,m
-        // We want: high, medium, low - so we need custom handling
-        // Best approach: return sorted by priority field, client can handle display
+      if (isPrioritySorting) {
+        // For priority sorting, we'll sort by created_at first, then re-sort in memory
         return query
-          .order("priority", { ascending: sortOrder === "asc" })
-          .order("id", { ascending: true }); // Secondary sort for consistency
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true });
       } else {
         return query
           .order(sortBy, { ascending: sortOrder === "asc" })
-          .order("id", { ascending: true }); // Secondary sort for consistency
+          .order("id", { ascending: true });
       }
     };
 
@@ -98,19 +97,57 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get paginated data with count in single query
-    const { data: leads, count, error } = await buildSortedQuery(baseQuery)
-      .range(offset, offset + limit - 1) as { data: LeadRecord[] | null; count: number | null; error: { message: string } | null };
+    // Priority order mapping: high = 0, medium = 1, low = 2
+    const priorityOrderMap: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    
+    let leads: LeadRecord[] | null = null;
+    let total = 0;
+    
+    if (isPrioritySorting) {
+      // For priority sorting, fetch ALL matching leads, sort in memory, then paginate
+      const { data: allLeads, count, error } = await buildSortedQuery(baseQuery) as { 
+        data: LeadRecord[] | null; 
+        count: number | null; 
+        error: { message: string } | null 
+      };
+      
+      if (error) {
+        console.error("Error fetching leads:", error);
+        return NextResponse.json(
+          { success: false, error: "Failed to fetch leads", details: error.message },
+          { status: 500 }
+        );
+      }
+      
+      total = count || 0;
+      
+      // Sort by priority in memory (high -> medium -> low for desc, reverse for asc)
+      const sortedLeads = (allLeads || []).sort((a, b) => {
+        const orderA = priorityOrderMap[a.priority || 'medium'] ?? 1;
+        const orderB = priorityOrderMap[b.priority || 'medium'] ?? 1;
+        // desc means high first (0 < 1 < 2), asc means low first
+        return sortOrder === "asc" ? orderB - orderA : orderA - orderB;
+      });
+      
+      // Apply pagination manually
+      leads = sortedLeads.slice(offset, offset + limit);
+    } else {
+      // Normal sorting - use database pagination
+      const { data, count, error } = await buildSortedQuery(baseQuery)
+        .range(offset, offset + limit - 1) as { data: LeadRecord[] | null; count: number | null; error: { message: string } | null };
 
-    if (error) {
-      console.error("Error fetching leads:", error);
-      return NextResponse.json(
-        { success: false, error: "Failed to fetch leads", details: error.message },
-        { status: 500 }
-      );
+      if (error) {
+        console.error("Error fetching leads:", error);
+        return NextResponse.json(
+          { success: false, error: "Failed to fetch leads", details: error.message },
+          { status: 500 }
+        );
+      }
+      
+      leads = data;
+      total = count || 0;
     }
 
-    const total = count || 0;
     const totalPages = Math.ceil(total / pageSize);
     
     // Get all leads for stats (not just current page) - use a separate query
