@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import { parseVapiEvaluation } from "@/lib/vapi-evaluation-parser";
 
 // Vapi webhook types - supporting multiple message types
 interface VapiWebhookPayload {
@@ -195,8 +196,9 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     endedReason: call.endedReason,
   });
 
-  // Find user - multiple sources
+  // Find user and lead name - multiple sources
   let userId: string | null = null;
+  let leadName: string | null = null;
 
   // 1. First check if user_id is directly in metadata (direct calls)
   if (directCallUserId) {
@@ -218,17 +220,49 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     }
   }
 
-  // 3. Try to get from lead record
-  if (!userId && leadId) {
+  // 3. Get lead data (for user_id and full_name)
+  if (leadId) {
     const { data: lead } = await supabase
       .from("leads")
-      .select("user_id")
+      .select("user_id, full_name")
       .eq("id", leadId)
-      .single() as { data: { user_id: string } | null };
+      .single() as { data: { user_id: string; full_name: string | null } | null };
     
     if (lead) {
-      userId = lead.user_id;
-      console.log("Using user_id from lead:", userId);
+      if (!userId) {
+        userId = lead.user_id;
+        console.log("Using user_id from lead:", userId);
+      }
+      leadName = lead.full_name;
+      console.log("Using lead name from lead_id:", leadName);
+    }
+  }
+
+  // 4. If no lead name yet, try to match by phone number
+  if (!leadName && call.customer?.number) {
+    const callerPhone = call.customer.number;
+    // Try different phone formats (with/without country code, etc.)
+    const phoneVariants = [
+      callerPhone,
+      callerPhone.replace(/^\+/, ''),  // Remove leading +
+      callerPhone.replace(/^\+90/, '0'),  // +90... -> 0...
+      callerPhone.replace(/^90/, '0'),  // 90... -> 0...
+      '+' + callerPhone,  // Add + prefix
+    ];
+    
+    const { data: matchedLead } = await supabase
+      .from("leads")
+      .select("full_name, user_id")
+      .or(phoneVariants.map(p => `phone.eq.${p}`).join(','))
+      .limit(1)
+      .single() as { data: { full_name: string | null; user_id: string } | null };
+    
+    if (matchedLead) {
+      leadName = matchedLead.full_name;
+      if (!userId) {
+        userId = matchedLead.user_id;
+      }
+      console.log("Matched lead by phone number:", leadName);
     }
   }
 
@@ -263,16 +297,23 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     );
   }
 
-  // Determine sentiment
-  let sentiment: "positive" | "neutral" | "negative" = "neutral";
-  if (analysis?.successEvaluation) {
-    const evaluation = analysis.successEvaluation.toLowerCase();
-    if (evaluation.includes("positive") || evaluation.includes("success")) {
-      sentiment = "positive";
-    } else if (evaluation.includes("negative") || evaluation.includes("fail")) {
-      sentiment = "negative";
-    }
-  }
+  // Parse VAPI's success evaluation to get score, tags, and sentiment
+  const parsedEvaluation = parseVapiEvaluation(
+    analysis?.successEvaluation,
+    call.endedReason
+  );
+  
+  const sentiment = parsedEvaluation.sentiment;
+  const evaluationScore = parsedEvaluation.score;
+  const evaluationSummary = parsedEvaluation.summary || analysis?.successEvaluation || null;
+  const tags = parsedEvaluation.tags;
+
+  console.log("Parsed evaluation:", {
+    score: evaluationScore,
+    tags,
+    sentiment,
+    summary: evaluationSummary?.substring(0, 100),
+  });
 
   // Determine call type
   let callType: "appointment" | "inquiry" | "follow_up" | "cancellation" | "outbound" = "outbound";
@@ -357,6 +398,10 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       duration,
       type: callType,
       caller_phone: call.customer?.number || null,
+      caller_name: leadName || call.customer?.name || null,
+      evaluation_score: evaluationScore,
+      evaluation_summary: evaluationSummary,
+      tags: tags,
       metadata: {
         orgId: call.orgId,
         status: call.status,

@@ -84,6 +84,12 @@ export interface VapiCall {
     name: string;
   };
   assistantId?: string;
+  metadata?: {
+    lead_id?: string;
+    outreach_id?: string;
+    user_id?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface VapiMessage {

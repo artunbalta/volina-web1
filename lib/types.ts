@@ -57,6 +57,7 @@ export interface Call {
   caller_name: string | null;
   evaluation_summary: string | null;
   evaluation_score: number | null;
+  tags: string[];
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;

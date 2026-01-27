@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { getVapiCalls, transformVapiCallToLocal, isVapiConfigured } from "@/lib/vapi-api";
+import { parseVapiEvaluation } from "@/lib/vapi-evaluation-parser";
 
 // POST - Sync VAPI calls to Supabase
 export async function POST(request: NextRequest) {
@@ -73,16 +74,67 @@ export async function POST(request: NextRequest) {
       // Use original VAPI timestamp for created_at
       const originalTimestamp = vapiCall.startedAt || vapiCall.createdAt || new Date().toISOString();
 
+      // Try to get lead name from database
+      let callerName: string | null = vapiCall.customer?.name || null;
+      
+      // 1. First try by lead_id from metadata
+      const leadId = vapiCall.metadata?.lead_id;
+      if (leadId && !callerName) {
+        const { data: lead } = await supabase
+          .from("leads")
+          .select("full_name")
+          .eq("id", leadId)
+          .single() as { data: { full_name: string | null } | null };
+        
+        if (lead?.full_name) {
+          callerName = lead.full_name;
+        }
+      }
+      
+      // 2. If no name yet, try to match by phone number
+      if (!callerName && vapiCall.customer?.number) {
+        const callerPhone = vapiCall.customer.number;
+        // Try different phone formats (with/without country code, etc.)
+        const phoneVariants = [
+          callerPhone,
+          callerPhone.replace(/^\+/, ''),  // Remove leading +
+          callerPhone.replace(/^\+90/, '0'),  // +90... -> 0...
+          callerPhone.replace(/^90/, '0'),  // 90... -> 0...
+          '+' + callerPhone,  // Add + prefix
+        ];
+        
+        const { data: matchedLead } = await supabase
+          .from("leads")
+          .select("full_name")
+          .or(phoneVariants.map(p => `phone.eq.${p}`).join(','))
+          .limit(1)
+          .single() as { data: { full_name: string | null } | null };
+        
+        if (matchedLead?.full_name) {
+          callerName = matchedLead.full_name;
+        }
+      }
+
+      // Parse VAPI's success evaluation to get score, tags, and sentiment
+      const parsedEvaluation = parseVapiEvaluation(
+        vapiCall.analysis?.successEvaluation,
+        vapiCall.endedReason
+      );
+
       const insertData = {
         user_id: userId,
         vapi_call_id: vapiCall.id,
         recording_url: vapiCall.recordingUrl || vapiCall.stereoRecordingUrl || null,
         transcript: vapiCall.transcript || null,
         summary: vapiCall.analysis?.summary || vapiCall.summary || null,
-        sentiment: localCall.sentiment,
+        sentiment: parsedEvaluation.sentiment || localCall.sentiment,
         duration,
         type: localCall.type,
         caller_phone: vapiCall.customer?.number || null,
+        caller_name: callerName,
+        evaluation_score: parsedEvaluation.score,
+        evaluation_summary: parsedEvaluation.summary || vapiCall.analysis?.successEvaluation || null,
+        tags: parsedEvaluation.tags,
         created_at: originalTimestamp, // Use original VAPI call time
         metadata: {
           orgId: vapiCall.orgId,

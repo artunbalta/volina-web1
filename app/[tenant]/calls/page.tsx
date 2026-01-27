@@ -453,13 +453,31 @@ function CallRow({
             </p>
           </div>
           
+          {/* Score */}
+          <div className="w-16 flex justify-center">
+            {call.evaluation_score !== null ? (
+              <span className={cn(
+                "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
+                call.evaluation_score >= 7 
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : call.evaluation_score >= 4
+                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              )}>
+                {call.evaluation_score}
+              </span>
+            ) : (
+              <span className="text-gray-400 dark:text-gray-500">—</span>
+            )}
+          </div>
+          
           {/* Duration */}
-          <div className="w-24 text-sm text-gray-600 dark:text-gray-300 text-center font-mono tabular-nums">
+          <div className="w-20 text-sm text-gray-600 dark:text-gray-300 text-center font-mono tabular-nums">
             {formatDuration(call.duration)}
           </div>
           
           {/* Date */}
-          <div className="w-32 text-sm text-gray-500 dark:text-gray-400 text-center">
+          <div className="w-28 text-sm text-gray-500 dark:text-gray-400 text-center">
             {format(new Date(call.created_at), "MMM d, HH:mm")}
           </div>
           
@@ -500,10 +518,36 @@ function CallRow({
             )}
             
             {/* Evaluation */}
-            {call.evaluation_summary && (
+            {(call.evaluation_summary || call.evaluation_score !== null) && (
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">AI Evaluation</p>
-                <p className="text-sm text-gray-700 dark:text-gray-300">{call.evaluation_summary}</p>
+                <div className="flex items-start gap-3">
+                  {call.evaluation_score !== null && (
+                    <div className={cn(
+                      "flex-shrink-0 flex flex-col items-center justify-center w-14 h-14 rounded-lg",
+                      call.evaluation_score >= 7 
+                        ? "bg-green-100 dark:bg-green-900/30"
+                        : call.evaluation_score >= 4
+                        ? "bg-yellow-100 dark:bg-yellow-900/30"
+                        : "bg-red-100 dark:bg-red-900/30"
+                    )}>
+                      <span className={cn(
+                        "text-xl font-bold",
+                        call.evaluation_score >= 7 
+                          ? "text-green-700 dark:text-green-400"
+                          : call.evaluation_score >= 4
+                          ? "text-yellow-700 dark:text-yellow-400"
+                          : "text-red-700 dark:text-red-400"
+                      )}>
+                        {call.evaluation_score}
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">/10</span>
+                    </div>
+                  )}
+                  {call.evaluation_summary && (
+                    <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">{call.evaluation_summary}</p>
+                  )}
+                </div>
               </div>
             )}
             
@@ -736,8 +780,9 @@ export default function CallsPage() {
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
             <div className="w-8 text-center">#</div>
             <div className="w-64">Customer</div>
-            <div className="w-24 text-center">Duration</div>
-            <div className="w-32 text-center">Date</div>
+            <div className="w-16 text-center">Score</div>
+            <div className="w-20 text-center">Duration</div>
+            <div className="w-28 text-center">Date</div>
             <div className="w-20"></div>
           </div>
       </div>
