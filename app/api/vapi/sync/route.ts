@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
         vapiCall.endedReason
       );
 
-      const insertData = {
+      const insertData: Record<string, unknown> = {
         user_id: userId,
         vapi_call_id: vapiCall.id,
         recording_url: vapiCall.recordingUrl || vapiCall.stereoRecordingUrl || null,
@@ -134,7 +134,6 @@ export async function POST(request: NextRequest) {
         caller_name: callerName,
         evaluation_score: parsedEvaluation.score,
         evaluation_summary: parsedEvaluation.summary || vapiCall.analysis?.successEvaluation || null,
-        tags: parsedEvaluation.tags,
         created_at: originalTimestamp, // Use original VAPI call time
         metadata: {
           orgId: vapiCall.orgId,
@@ -144,6 +143,7 @@ export async function POST(request: NextRequest) {
           callType: vapiCall.type,
           originalStartedAt: vapiCall.startedAt,
           originalEndedAt: vapiCall.endedAt,
+          tags: parsedEvaluation.tags, // Store tags in metadata as fallback
         },
       };
 

@@ -69,7 +69,13 @@ export function parseVapiEvaluation(
     sentiment: 'neutral',
   };
 
-  if (!successEvaluation) {
+  // Handle missing, empty, or invalid evaluation values
+  // Vapi sometimes returns "false" as a string when no evaluation was performed
+  if (!successEvaluation || 
+      successEvaluation === 'false' || 
+      successEvaluation === 'true' ||
+      successEvaluation.toLowerCase().trim() === 'false' ||
+      successEvaluation.toLowerCase().trim() === 'true') {
     // If no evaluation but we have ended reason, try to infer
     if (endedReason) {
       return inferFromEndedReason(endedReason);

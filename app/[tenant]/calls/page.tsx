@@ -518,38 +518,49 @@ function CallRow({
             )}
             
             {/* Evaluation */}
-            {(call.evaluation_summary || call.evaluation_score !== null) && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">AI Evaluation</p>
-                <div className="flex items-start gap-3">
-                  {call.evaluation_score !== null && (
-                    <div className={cn(
-                      "flex-shrink-0 flex flex-col items-center justify-center w-14 h-14 rounded-lg",
-                      call.evaluation_score >= 7 
-                        ? "bg-green-100 dark:bg-green-900/30"
-                        : call.evaluation_score >= 4
-                        ? "bg-yellow-100 dark:bg-yellow-900/30"
-                        : "bg-red-100 dark:bg-red-900/30"
-                    )}>
-                      <span className={cn(
-                        "text-xl font-bold",
+            {(() => {
+              // Filter out invalid evaluation summaries like "false", "true"
+              const validSummary = call.evaluation_summary && 
+                call.evaluation_summary.toLowerCase().trim() !== 'false' && 
+                call.evaluation_summary.toLowerCase().trim() !== 'true'
+                ? call.evaluation_summary 
+                : null;
+              
+              if (!validSummary && call.evaluation_score === null) return null;
+              
+              return (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">AI Evaluation</p>
+                  <div className="flex items-start gap-3">
+                    {call.evaluation_score !== null && (
+                      <div className={cn(
+                        "flex-shrink-0 flex flex-col items-center justify-center w-14 h-14 rounded-lg",
                         call.evaluation_score >= 7 
-                          ? "text-green-700 dark:text-green-400"
+                          ? "bg-green-100 dark:bg-green-900/30"
                           : call.evaluation_score >= 4
-                          ? "text-yellow-700 dark:text-yellow-400"
-                          : "text-red-700 dark:text-red-400"
+                          ? "bg-yellow-100 dark:bg-yellow-900/30"
+                          : "bg-red-100 dark:bg-red-900/30"
                       )}>
-                        {call.evaluation_score}
-                      </span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400">/10</span>
-                    </div>
-                  )}
-                  {call.evaluation_summary && (
-                    <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">{call.evaluation_summary}</p>
-                  )}
+                        <span className={cn(
+                          "text-xl font-bold",
+                          call.evaluation_score >= 7 
+                            ? "text-green-700 dark:text-green-400"
+                            : call.evaluation_score >= 4
+                            ? "text-yellow-700 dark:text-yellow-400"
+                            : "text-red-700 dark:text-red-400"
+                        )}>
+                          {call.evaluation_score}
+                        </span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">/10</span>
+                      </div>
+                    )}
+                    {validSummary && (
+                      <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">{validSummary}</p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             
             {/* Transcript */}
             {call.transcript && (
@@ -645,6 +656,28 @@ export default function CallsPage() {
     }
   }, [user?.id]);
 
+  // Sync calls from Vapi in the background (returns true if new calls were synced)
+  const syncCallsFromVapi = useCallback(async (): Promise<boolean> => {
+    if (!user?.id) return false;
+    
+    try {
+      const syncResponse = await fetch(`/api/vapi/sync?days=14&userId=${user.id}`, {
+        method: 'POST',
+      });
+      
+      if (syncResponse.ok) {
+        const syncData = await syncResponse.json();
+        if (syncData.synced > 0) {
+          console.log(`Synced ${syncData.synced} new calls from Vapi`);
+          return true;
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing from Vapi:", error);
+    }
+    return false;
+  }, [user?.id]);
+
   useEffect(() => {
     if (authLoading) {
       setIsLoading(true);
@@ -652,13 +685,22 @@ export default function CallsPage() {
     }
     
     if (user?.id) {
-      loadCalls();
+      // Load cached calls immediately, then sync in background
+      loadCalls().then(() => {
+        // After showing cached data, sync from Vapi in background
+        syncCallsFromVapi().then((hasNewCalls) => {
+          if (hasNewCalls) {
+            // Reload to show new calls
+            loadCalls();
+          }
+        });
+      });
     } else {
       setIsLoading(false);
       setCalls([]);
       setFilteredCalls([]);
     }
-  }, [user?.id, authLoading, loadCalls]);
+  }, [user?.id, authLoading, loadCalls, syncCallsFromVapi]);
 
   // Filter calls
   useEffect(() => {
@@ -678,9 +720,22 @@ export default function CallsPage() {
   }, [calls, searchQuery]);
 
   const handleRefresh = async () => {
+    if (!user?.id) return;
+    
     setIsRefreshing(true);
-    await loadCalls();
-    setIsRefreshing(false);
+    try {
+      // Sync from Vapi and reload
+      const hasNewCalls = await syncCallsFromVapi();
+      await loadCalls();
+      
+      if (hasNewCalls) {
+        console.log("New calls synced from Vapi");
+      }
+    } catch (error) {
+      console.error("Error during refresh:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handleClearAll = async () => {
