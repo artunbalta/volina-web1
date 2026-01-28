@@ -852,12 +852,12 @@ export default function LeadsPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Leads</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage your customer leads</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Leads</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage your customer leads</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <input
             ref={fileInputRef}
             type="file"
@@ -868,111 +868,109 @@ export default function LeadsPage() {
               <Button 
                 variant="outline" 
                 onClick={() => fileInputRef.current?.click()}
-            className="border-gray-200 dark:border-gray-700"
+            className="border-gray-200 dark:border-gray-700 flex-1 sm:flex-none"
+            size="sm"
               >
-                <Upload className="w-4 h-4 mr-2" />
-            Import CSV/XLSX
+                <Upload className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Import CSV/XLSX</span>
               </Button>
-          <Button onClick={() => { resetForm(); setShowAddDialog(true); }}>
-                <Plus className="w-4 h-4 mr-2" />
-            Add Lead
+          <Button onClick={() => { resetForm(); setShowAddDialog(true); }} className="flex-1 sm:flex-none" size="sm">
+                <Plus className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Add Lead</span>
               </Button>
             </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:gap-4">
         {/* First Row: Search and Main Filters */}
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <Input
-              placeholder="Search all leads..."
+              placeholder="Search leads..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
             />
           </div>
-        
-          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as LeadStatus | "all")}>
-            <SelectTrigger className="w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
-              <Filter className="w-4 h-4 mr-2 text-gray-400 dark:text-gray-500" />
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              {Object.entries(statusConfig).map(([key, config]) => (
-                <SelectItem key={key} value={key}>{config.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        
-          {/* Sort by Priority Button */}
-          <Button 
-            variant={sortBy === "priority" ? "default" : "outline"}
-            onClick={() => {
-              if (sortBy === "priority") {
-                // Toggle sort order if already sorting by priority
-                setSortOrder(sortOrder === "desc" ? "asc" : "desc");
-              } else {
-                // Switch to priority sort (high -> medium -> low)
-                setSortBy("priority");
-                setSortOrder("desc");
-              }
-            }}
-            className={cn(
-              "border-gray-200 dark:border-gray-700",
-              sortBy === "priority" && "bg-blue-600 hover:bg-blue-700 text-white"
-            )}
-          >
-            {sortBy === "priority" ? (
-              sortOrder === "desc" ? (
-                <ArrowDown className="w-4 h-4 mr-2" />
-              ) : (
-                <ArrowUp className="w-4 h-4 mr-2" />
-              )
-            ) : (
-              <ArrowUpDown className="w-4 h-4 mr-2" />
-            )}
-            Order by Priority
-          </Button>
-
-          {/* Sort by Date Button */}
-          {sortBy === "priority" && (
+          
+          <div className="flex items-center gap-2">
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as LeadStatus | "all")}>
+              <SelectTrigger className="w-32 sm:w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                <Filter className="w-4 h-4 mr-1 sm:mr-2 text-gray-400 dark:text-gray-500" />
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                {Object.entries(statusConfig).map(([key, config]) => (
+                  <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          
+            {/* Sort by Priority Button */}
             <Button 
-              variant="outline"
+              variant={sortBy === "priority" ? "default" : "outline"}
+              size="sm"
               onClick={() => {
-                setSortBy("created_at");
-                setSortOrder("desc");
+                if (sortBy === "priority") {
+                  setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+                } else {
+                  setSortBy("priority");
+                  setSortOrder("desc");
+                }
               }}
+              className={cn(
+                "border-gray-200 dark:border-gray-700",
+                sortBy === "priority" && "bg-blue-600 hover:bg-blue-700 text-white"
+              )}
+            >
+              {sortBy === "priority" ? (
+                sortOrder === "desc" ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />
+              ) : (
+                <ArrowUpDown className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline ml-2">Priority</span>
+            </Button>
+
+            {sortBy === "priority" && (
+              <Button 
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSortBy("created_at");
+                  setSortOrder("desc");
+                }}
+                className="border-gray-200 dark:border-gray-700"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+          
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleRefresh} 
+              disabled={isRefreshing}
               className="border-gray-200 dark:border-gray-700"
             >
-              <X className="w-4 h-4 mr-2" />
-              Clear Sort
+              <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
             </Button>
-          )}
-        
-          <Button 
-            variant="outline" 
-            onClick={handleRefresh} 
-            disabled={isRefreshing}
-            className="border-gray-200 dark:border-gray-700"
-          >
-            <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
-          </Button>
+          </div>
         </div>
 
         {/* Second Row: Quick Filters and Selection */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           {/* Quick Filter Buttons */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500 dark:text-gray-400">Quick filters:</span>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+            <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">Quick:</span>
             <Button 
               variant={statusFilter === "new" ? "default" : "outline"}
               size="sm"
               onClick={() => setStatusFilter(statusFilter === "new" ? "all" : "new")}
               className={cn(
-                "border-gray-200 dark:border-gray-700",
+                "border-gray-200 dark:border-gray-700 text-xs sm:text-sm",
                 statusFilter === "new" && "bg-blue-600 hover:bg-blue-700 text-white"
               )}
             >
@@ -983,7 +981,7 @@ export default function LeadsPage() {
               size="sm"
               onClick={() => setStatusFilter(statusFilter === "contacted" ? "all" : "contacted")}
               className={cn(
-                "border-gray-200 dark:border-gray-700",
+                "border-gray-200 dark:border-gray-700 text-xs sm:text-sm",
                 statusFilter === "contacted" && "bg-purple-600 hover:bg-purple-700 text-white"
               )}
             >
@@ -994,53 +992,49 @@ export default function LeadsPage() {
           <div className="flex-1" />
 
           {/* Selection Controls */}
-          {filteredLeads.length > 0 && (
-            <Button 
-              variant="outline" 
-              onClick={toggleSelectAll}
-              className="border-gray-200 dark:border-gray-700"
-              disabled={isLoading || !user?.id}
-            >
-              {(() => {
-                // Check if all total leads are selected (approximate check)
-                const allSelected = selectedLeadIds.size > 0 && selectedLeadIds.size >= totalLeads && totalLeads > 0;
-                
-                if (allSelected) {
-                  return (
-                    <>
-                      <X className="w-4 h-4 mr-2" />
-                      Deselect All ({totalLeads})
-                    </>
-                  );
-                } else {
-                  return (
-                    <>
-                      <Users className="w-4 h-4 mr-2" />
-                      Select All ({totalLeads})
-                    </>
-                  );
-                }
-              })()}
-            </Button>
-          )}
-          {selectedLeadIds.size > 0 && (
-            <Button 
-              variant="destructive" 
-              onClick={() => setShowBulkDeleteDialog(true)}
-              disabled={isSaving}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Selected ({selectedLeadIds.size})
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {filteredLeads.length > 0 && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={toggleSelectAll}
+                className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
+                disabled={isLoading || !user?.id}
+              >
+                {selectedLeadIds.size > 0 && selectedLeadIds.size >= totalLeads && totalLeads > 0 ? (
+                  <>
+                    <X className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Deselect ({totalLeads})</span>
+                  </>
+                ) : (
+                  <>
+                    <Users className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Select All ({totalLeads})</span>
+                  </>
+                )}
+              </Button>
+            )}
+            {selectedLeadIds.size > 0 && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => setShowBulkDeleteDialog(true)}
+                disabled={isSaving}
+                className="bg-red-600 hover:bg-red-700 text-xs sm:text-sm"
+              >
+                <Trash2 className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Delete ({selectedLeadIds.size})</span>
+                <span className="sm:hidden">{selectedLeadIds.size}</span>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Leads Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {/* Table Header */}
-        <div className="px-6 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+        {/* Table Header - Hidden on mobile */}
+        <div className="hidden sm:block px-6 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
             <div className="w-8 text-center">#</div>
             <div className="flex-1">Customer</div>
@@ -1071,13 +1065,84 @@ export default function LeadsPage() {
             {filteredLeads.map((lead, index) => (
               <div 
                 key={lead.id}
-                className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                className="px-4 sm:px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
                 onClick={() => {
                   setSelectedLead(lead);
                   setShowLeadDetailDialog(true);
                 }}
               >
-                <div className="flex items-center gap-4">
+                {/* Mobile Layout */}
+                <div className="sm:hidden">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedLeadIds.has(lead.id)}
+                      onChange={() => toggleLeadSelection(lead.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-gray-900 dark:text-white truncate">{lead.full_name || "—"}</p>
+                        <div className="flex items-center gap-1">
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            statusConfig[lead.status].color
+                          )}>
+                            {statusConfig[lead.status].label}
+                          </span>
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            priorityConfig[lead.priority].color
+                          )}>
+                            {priorityConfig[lead.priority].label}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{lead.phone || "No phone"}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                          {format(new Date(lead.created_at), "MMM d, yyyy")}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {lead.phone && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={(e) => { e.stopPropagation(); handleCallLead(lead); }}
+                              className="h-7 w-7 p-0"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditDialog(lead); }}>
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-red-600"
+                                onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); setShowDeleteDialog(true); }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Desktop Layout */}
+                <div className="hidden sm:flex items-center gap-4">
                   <div className="w-8 flex items-center justify-center">
                     <input
                       type="checkbox"
@@ -1133,26 +1198,26 @@ export default function LeadsPage() {
                       <Button 
                         size="sm" 
                         variant="outline"
-                        onClick={() => handleCallLead(lead)}
+                        onClick={(e) => { e.stopPropagation(); handleCallLead(lead); }}
                         className="h-8 w-8 p-0"
                       >
                         <Phone className="w-4 h-4" />
                       </Button>
                     )}
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                         <MoreHorizontal className="w-4 h-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEditDialog(lead)}>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditDialog(lead); }}>
                           <Edit className="w-4 h-4 mr-2" />
                           Edit
                       </DropdownMenuItem>
                         <DropdownMenuItem 
                           className="text-red-600"
-                          onClick={() => { setSelectedLead(lead); setShowDeleteDialog(true); }}
+                          onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); setShowDeleteDialog(true); }}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete
@@ -1169,34 +1234,34 @@ export default function LeadsPage() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Showing {((currentPage - 1) * 100) + 1} to {Math.min(currentPage * 100, totalLeads)} of {totalLeads} leads
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+          <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 order-2 sm:order-1">
+            {((currentPage - 1) * 100) + 1}-{Math.min(currentPage * 100, totalLeads)} of {totalLeads}
               </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 order-1 sm:order-2">
                   <Button
               variant="outline"
               size="sm"
               onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
               disabled={currentPage === 1 || isLoading}
-              className="border-gray-200 dark:border-gray-700"
+              className="border-gray-200 dark:border-gray-700 h-8 px-2 sm:px-3"
             >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Previous
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden sm:inline ml-1">Prev</span>
                   </Button>
             
             <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
                 let pageNum: number;
-                if (totalPages <= 5) {
+                if (totalPages <= 3) {
                   pageNum = i + 1;
-                } else if (currentPage <= 3) {
+                } else if (currentPage <= 2) {
                   pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
+                } else if (currentPage >= totalPages - 1) {
+                  pageNum = totalPages - 2 + i;
                 } else {
-                  pageNum = currentPage - 2 + i;
+                  pageNum = currentPage - 1 + i;
                 }
                 
                 return (
@@ -1207,7 +1272,7 @@ export default function LeadsPage() {
                     onClick={() => setCurrentPage(pageNum)}
                     disabled={isLoading}
                     className={cn(
-                      "min-w-[40px]",
+                      "min-w-[32px] sm:min-w-[40px] h-8 px-2",
                       currentPage === pageNum
                         ? "bg-blue-600 hover:bg-blue-700 text-white"
                         : "border-gray-200 dark:border-gray-700"
@@ -1224,10 +1289,10 @@ export default function LeadsPage() {
               size="sm"
               onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
               disabled={currentPage === totalPages || isLoading}
-              className="border-gray-200 dark:border-gray-700"
+              className="border-gray-200 dark:border-gray-700 h-8 px-2 sm:px-3"
             >
-              Next
-              <ChevronRight className="w-4 h-4 ml-1" />
+              <span className="hidden sm:inline mr-1">Next</span>
+              <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
       </div>

@@ -54,17 +54,32 @@ export function TenantSidebar() {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setMobileOpen(!mobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
-      >
-        {mobileOpen ? (
-          <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-        ) : (
-          <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-        )}
-      </button>
+      {/* Mobile header bar */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4">
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          {mobileOpen ? (
+            <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+          ) : (
+            <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+          )}
+        </button>
+        <Link href={`/${effectiveTenant}`} className="flex items-center gap-2">
+          <Image
+            src="/VolinaLogo.png"
+            alt="Volina"
+            width={28}
+            height={28}
+            className="w-7 h-7"
+          />
+          <span className="text-lg font-semibold text-gray-900 dark:text-white">
+            Volina<span className="text-blue-600 dark:text-blue-400">AI</span>
+          </span>
+        </Link>
+        <div className="w-9" /> {/* Spacer for centering */}
+      </div>
 
       {/* Mobile overlay */}
       {mobileOpen && (

@@ -12,7 +12,7 @@ export default function TenantLayout({
       <TenantProvider>
         <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
           <TenantSidebar />
-          <main className="flex-1 p-8 lg:ml-64 overflow-auto">
+          <main className="flex-1 p-4 pt-16 lg:pt-8 lg:p-8 lg:ml-64 overflow-auto">
             {children}
           </main>
         </div>

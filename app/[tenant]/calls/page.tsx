@@ -414,7 +414,7 @@ function AudioPlayer({
   );
 }
 
-// Call Row Component with Expandable Detail
+// Call Row Component with Expandable Detail - Mobile Responsive
 function CallRow({ 
   call, 
   onPlay 
@@ -434,10 +434,62 @@ function CallRow({
   return (
     <div className="border-b border-gray-100 dark:border-gray-700 last:border-0">
       <div 
-        className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+        className="px-4 sm:px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="flex items-center gap-4">
+        {/* Mobile Layout */}
+        <div className="sm:hidden">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-gray-900 dark:text-white truncate">
+                {call.caller_name || "Unknown Caller"}
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                {call.caller_phone || "No phone"}
+              </p>
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {format(new Date(call.created_at), "MMM d, HH:mm")}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                  {formatDuration(call.duration)}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {call.evaluation_score !== null && (
+                <span className={cn(
+                  "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
+                  call.evaluation_score >= 7 
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : call.evaluation_score >= 4
+                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                )}>
+                  {call.evaluation_score}
+                </span>
+              )}
+              {call.recording_url && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPlay(call);
+                  }}
+                  className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                >
+                  <Play className="w-4 h-4" />
+                </button>
+              )}
+              <ChevronDown className={cn(
+                "w-4 h-4 text-gray-400 transition-transform",
+                expanded && "rotate-180"
+              )} />
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop Layout */}
+        <div className="hidden sm:flex items-center gap-4">
           {/* Index/Number */}
           <div className="w-8 text-center text-sm text-gray-400 dark:text-gray-500">
             #
@@ -507,8 +559,8 @@ function CallRow({
       
       {/* Expanded Content */}
       {expanded && (
-        <div className="px-6 pb-4 bg-gray-50 dark:bg-gray-800/50">
-          <div className="ml-12 space-y-4">
+        <div className="px-4 sm:px-6 pb-4 bg-gray-50 dark:bg-gray-800/50">
+          <div className="sm:ml-12 space-y-4">
             {/* Summary */}
             {call.summary && (
               <div>
@@ -534,7 +586,7 @@ function CallRow({
                   <div className="flex items-start gap-3">
                     {call.evaluation_score !== null && (
                       <div className={cn(
-                        "flex-shrink-0 flex flex-col items-center justify-center w-14 h-14 rounded-lg",
+                        "flex-shrink-0 flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-lg",
                         call.evaluation_score >= 7 
                           ? "bg-green-100 dark:bg-green-900/30"
                           : call.evaluation_score >= 4
@@ -542,7 +594,7 @@ function CallRow({
                           : "bg-red-100 dark:bg-red-900/30"
                       )}>
                         <span className={cn(
-                          "text-xl font-bold",
+                          "text-lg sm:text-xl font-bold",
                           call.evaluation_score >= 7 
                             ? "text-green-700 dark:text-green-400"
                             : call.evaluation_score >= 4
@@ -567,7 +619,7 @@ function CallRow({
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Transcript</p>
                 <div className="text-sm text-gray-700 dark:text-gray-300 max-h-48 overflow-y-auto bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                  <pre className="whitespace-pre-wrap font-sans">{call.transcript}</pre>
+                  <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm">{call.transcript}</pre>
                 </div>
               </div>
             )}
@@ -782,16 +834,16 @@ export default function CallsPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Calls</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">View and manage your call history</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Calls</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">View and manage your call history</p>
             </div>
               <Button 
                 variant="outline" 
                 onClick={handleRefresh} 
                 disabled={isRefreshing}
-          className="border-gray-200 dark:border-gray-700"
+          className="border-gray-200 dark:border-gray-700 w-full sm:w-auto"
               >
                 <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
           Refresh
@@ -799,18 +851,18 @@ export default function CallsPage() {
             </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">All</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalCalls}</p>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">All</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{totalCalls}</p>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Transferred</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">0</p>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Transferred</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">0</p>
           </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Successful</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{successfulCalls}</p>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Successful</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{successfulCalls}</p>
         </div>
       </div>
 
@@ -830,8 +882,8 @@ export default function CallsPage() {
 
       {/* Calls Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {/* Table Header */}
-        <div className="px-6 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+        {/* Table Header - Hidden on mobile */}
+        <div className="hidden sm:block px-6 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
             <div className="w-8 text-center">#</div>
             <div className="w-64">Customer</div>
