@@ -234,6 +234,75 @@ export function truncate(str: string, maxLength: number): string {
   return `${str.slice(0, maxLength - 3)}...`;
 }
 
+/**
+ * Cleans markdown-formatted call summaries from VAPI into plain text
+ * Removes bullet points, bold text, and formats into readable sentences
+ */
+export function cleanCallSummary(summary: string | null | undefined): string | null {
+  if (!summary) return null;
+  
+  let cleaned = summary;
+  
+  // Remove "Here's a summary of the call:" prefix
+  cleaned = cleaned.replace(/^Here'?s a summary of the call:?\s*/i, '');
+  
+  // Remove markdown bullet points and asterisks
+  cleaned = cleaned.replace(/\*\s+\*\*/g, ''); // "* **" at start of bullets
+  cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1'); // **bold text** -> bold text
+  cleaned = cleaned.replace(/^\s*[\*\-•]\s*/gm, ''); // Remove bullet markers at start of lines
+  cleaned = cleaned.replace(/\s*[\*\-•]\s+/g, ' '); // Remove inline bullet markers
+  
+  // Clean up field-style formatting (e.g., "Lead Status: value")
+  // Convert "Field Name:** value" to "Field Name: value"
+  cleaned = cleaned.replace(/:\*\*\s*/g, ': ');
+  
+  // Remove any remaining asterisks
+  cleaned = cleaned.replace(/\*/g, '');
+  
+  // Clean up excessive whitespace and newlines
+  cleaned = cleaned.replace(/\n+/g, ' ');
+  cleaned = cleaned.replace(/\s{2,}/g, ' ');
+  cleaned = cleaned.trim();
+  
+  // If still too long or messy, try to extract key info
+  if (cleaned.length > 300) {
+    // Extract just the essential parts - look for key phrases
+    const keyPhrases: string[] = [];
+    
+    // Lead/Customer status
+    const statusMatch = cleaned.match(/(?:Lead Status|Customer Status)[:\s]+([^.]+)/i);
+    if (statusMatch?.[1]) keyPhrases.push(statusMatch[1].trim());
+    
+    // Main concerns
+    const concernsMatch = cleaned.match(/(?:Main Concerns?|Issues?)[:\s]+([^.]+)/i);
+    if (concernsMatch?.[1] && !concernsMatch[1].toLowerCase().includes('none')) {
+      keyPhrases.push(concernsMatch[1].trim());
+    }
+    
+    // Next steps
+    const nextStepMatch = cleaned.match(/(?:Next Step|Action)[:\s]+([^.]+)/i);
+    if (nextStepMatch?.[1] && !nextStepMatch[1].toLowerCase().includes('none')) {
+      keyPhrases.push(nextStepMatch[1].trim());
+    }
+    
+    // Notable info
+    const notableMatch = cleaned.match(/(?:Notable Information?|Key Info)[:\s]+([^.]+)/i);
+    if (notableMatch?.[1]) keyPhrases.push(notableMatch[1].trim());
+    
+    if (keyPhrases.length > 0) {
+      cleaned = keyPhrases.join('. ');
+      if (!cleaned.endsWith('.')) cleaned += '.';
+    }
+  }
+  
+  // Final cleanup
+  cleaned = cleaned.replace(/\s+\./g, '.');
+  cleaned = cleaned.replace(/\.{2,}/g, '.');
+  cleaned = cleaned.replace(/\s{2,}/g, ' ');
+  
+  return cleaned || null;
+}
+
 export function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }

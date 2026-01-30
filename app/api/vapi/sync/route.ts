@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { getVapiCalls, transformVapiCallToLocal, isVapiConfigured } from "@/lib/vapi-api";
 import { parseVapiEvaluation } from "@/lib/vapi-evaluation-parser";
+import { cleanCallSummary } from "@/lib/utils";
 
 // POST - Sync VAPI calls to Supabase
 export async function POST(request: NextRequest) {
@@ -121,12 +122,16 @@ export async function POST(request: NextRequest) {
         vapiCall.endedReason
       );
 
+      // Clean the summary from markdown formatting
+      const rawSummary = vapiCall.analysis?.summary || vapiCall.summary || null;
+      const cleanedSummary = cleanCallSummary(rawSummary);
+
       const insertData: Record<string, unknown> = {
         user_id: userId,
         vapi_call_id: vapiCall.id,
         recording_url: vapiCall.recordingUrl || vapiCall.stereoRecordingUrl || null,
         transcript: vapiCall.transcript || null,
-        summary: vapiCall.analysis?.summary || vapiCall.summary || null,
+        summary: cleanedSummary,
         sentiment: parsedEvaluation.sentiment || localCall.sentiment,
         duration,
         type: localCall.type,

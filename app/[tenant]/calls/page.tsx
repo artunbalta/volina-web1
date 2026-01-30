@@ -27,7 +27,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, cleanCallSummary } from "@/lib/utils";
 
 // Audio Player Component
 function AudioPlayer({ 
@@ -403,15 +403,123 @@ function AudioPlayer({
           )}
 
           {/* Summary Bubble */}
-          {call.summary && (
+          {call.summary && cleanCallSummary(call.summary) && (
             <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 inline-block max-w-md">
-              <p className="text-sm text-gray-700 dark:text-gray-300">{call.summary}</p>
+              <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(call.summary)}</p>
             </div>
           )}
         </div>
       </DialogContent>
     </Dialog>
   );
+}
+
+// Helper function to parse and validate score - handles all edge cases
+function parseScore(score: unknown): number | null {
+  if (score === null || score === undefined) return null;
+  
+  // Handle string scores (from DB)
+  if (typeof score === 'string') {
+    const parsed = parseFloat(score);
+    if (!isNaN(parsed) && parsed >= 0 && parsed <= 10) {
+      return Math.round(parsed);
+    }
+    return null;
+  }
+  
+  // Handle number scores
+  if (typeof score === 'number' && !isNaN(score) && score >= 0 && score <= 10) {
+    return Math.round(score);
+  }
+  
+  return null;
+}
+
+// Estimate a score based on call properties when no score is available
+function estimateScore(call: Call): number {
+  const duration = call.duration || 0;
+  const sentiment = call.sentiment;
+  const hasTranscript = !!call.transcript;
+  const hasSummary = !!call.summary;
+  const metadata = call.metadata as Record<string, unknown> | undefined;
+  const endedReason = metadata?.endedReason as string | undefined;
+  
+  // Check ended reason for special cases - all failed connections get 1
+  if (endedReason) {
+    const reason = endedReason.toLowerCase();
+    if (reason.includes('no-answer') || reason.includes('customer-did-not-answer')) {
+      return 1;
+    }
+    if (reason.includes('voicemail')) {
+      return 1;
+    }
+    if (reason.includes('busy')) {
+      return 1;
+    }
+  }
+  
+  // No transcript and very short call = likely failed
+  if (!hasTranscript && duration < 10) {
+    return 2;
+  }
+  
+  // Base score starts at 5 (neutral)
+  let score = 5;
+  
+  // Adjust based on sentiment
+  if (sentiment === 'positive') {
+    score += 2;
+  } else if (sentiment === 'negative') {
+    score -= 2;
+  }
+  
+  // Adjust based on duration (longer calls are usually better)
+  if (duration > 180) { // > 3 minutes
+    score += 1;
+  } else if (duration > 60) { // > 1 minute
+    score += 0.5;
+  } else if (duration < 30) { // < 30 seconds
+    score -= 1;
+  }
+  
+  // Has transcript is a good sign
+  if (hasTranscript && hasSummary) {
+    score += 0.5;
+  }
+  
+  // Clamp between 1 and 10
+  return Math.max(1, Math.min(10, Math.round(score)));
+}
+
+// Helper function to get valid evaluation summary
+function getValidEvaluationSummary(summary: string | null | undefined): string | null {
+  if (!summary) return null;
+  const trimmed = summary.trim().toLowerCase();
+  // Filter out invalid values
+  if (trimmed === 'false' || trimmed === 'true' || trimmed === '' || trimmed === 'null' || trimmed === 'undefined') {
+    return null;
+  }
+  return summary;
+}
+
+// Helper to get score color classes
+function getScoreColor(score: number): { bg: string; text: string } {
+  if (score >= 7) {
+    return {
+      bg: "bg-green-100 dark:bg-green-900/30",
+      text: "text-green-700 dark:text-green-400"
+    };
+  } else if (score >= 4) {
+    return {
+      bg: "bg-yellow-100 dark:bg-yellow-900/30",
+      text: "text-yellow-700 dark:text-yellow-400"
+    };
+  } else {
+    return {
+      bg: "bg-red-100 dark:bg-red-900/30",
+      text: "text-red-700 dark:text-red-400"
+    };
+  }
 }
 
 // Call Row Component with Expandable Detail - Mobile Responsive
@@ -430,6 +538,24 @@ function CallRow({
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Pre-calculate valid score and summary
+  const metadata = call.metadata as Record<string, unknown> | undefined;
+  const endedReason = (metadata?.endedReason as string || '').toLowerCase();
+  
+  // Check if this is a failed connection (no-answer, voicemail, busy)
+  const isFailedConnection = endedReason.includes('no-answer') || 
+                             endedReason.includes('customer-did-not-answer') ||
+                             endedReason.includes('voicemail') || 
+                             endedReason.includes('busy');
+  
+  // For failed connections, always show 1 regardless of DB value
+  // For others, use DB value or estimate
+  const parsedScore = parseScore(call.evaluation_score);
+  const validScore = isFailedConnection ? 1 : (parsedScore !== null ? parsedScore : estimateScore(call));
+  const isEstimated = parsedScore === null && !isFailedConnection;
+  const validSummary = getValidEvaluationSummary(call.evaluation_summary);
+  const scoreColors = getScoreColor(validScore);
 
   return (
     <div className="border-b border-gray-100 dark:border-gray-700 last:border-0">
@@ -457,18 +583,15 @@ function CallRow({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {call.evaluation_score !== null && (
-                <span className={cn(
-                  "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
-                  call.evaluation_score >= 7 
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : call.evaluation_score >= 4
-                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                )}>
-                  {call.evaluation_score}
-                </span>
-              )}
+              {/* Score badge - always shows a score */}
+              <span className={cn(
+                "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
+                scoreColors.bg,
+                scoreColors.text,
+                isEstimated && "opacity-70" // Slightly dim estimated scores
+              )}>
+                {validScore}
+              </span>
               {call.recording_url && (
                 <button 
                   onClick={(e) => {
@@ -507,20 +630,14 @@ function CallRow({
           
           {/* Score */}
           <div className="w-16 flex justify-center">
-            {call.evaluation_score !== null ? (
-              <span className={cn(
-                "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
-                call.evaluation_score >= 7 
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : call.evaluation_score >= 4
-                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              )}>
-                {call.evaluation_score}
-              </span>
-            ) : (
-              <span className="text-gray-400 dark:text-gray-500">—</span>
-            )}
+            <span className={cn(
+              "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
+              scoreColors.bg,
+              scoreColors.text,
+              isEstimated && "opacity-70" // Slightly dim estimated scores
+            )}>
+              {validScore}
+            </span>
           </div>
           
           {/* Duration */}
@@ -562,57 +679,69 @@ function CallRow({
         <div className="px-4 sm:px-6 pb-4 bg-gray-50 dark:bg-gray-800/50">
           <div className="sm:ml-12 space-y-4">
             {/* Summary */}
-            {call.summary && (
+            {call.summary && cleanCallSummary(call.summary) && (
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Summary</p>
-                <p className="text-sm text-gray-700 dark:text-gray-300">{call.summary}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(call.summary)}</p>
               </div>
             )}
             
-            {/* Evaluation */}
-            {(() => {
-              // Filter out invalid evaluation summaries like "false", "true"
-              const validSummary = call.evaluation_summary && 
-                call.evaluation_summary.toLowerCase().trim() !== 'false' && 
-                call.evaluation_summary.toLowerCase().trim() !== 'true'
-                ? call.evaluation_summary 
-                : null;
-              
-              if (!validSummary && call.evaluation_score === null) return null;
-              
-              return (
-                <div>
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">AI Evaluation</p>
-                  <div className="flex items-start gap-3">
-                    {call.evaluation_score !== null && (
-                      <div className={cn(
-                        "flex-shrink-0 flex flex-col items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-lg",
-                        call.evaluation_score >= 7 
-                          ? "bg-green-100 dark:bg-green-900/30"
-                          : call.evaluation_score >= 4
-                          ? "bg-yellow-100 dark:bg-yellow-900/30"
-                          : "bg-red-100 dark:bg-red-900/30"
-                      )}>
-                        <span className={cn(
-                          "text-lg sm:text-xl font-bold",
-                          call.evaluation_score >= 7 
-                            ? "text-green-700 dark:text-green-400"
-                            : call.evaluation_score >= 4
-                            ? "text-yellow-700 dark:text-yellow-400"
-                            : "text-red-700 dark:text-red-400"
-                        )}>
-                          {call.evaluation_score}
-                        </span>
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400">/10</span>
-                      </div>
+            {/* AI Evaluation - Always show since we always have a score now */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">AI Evaluation</p>
+              <div className="flex items-start gap-4">
+                {/* Score Display */}
+                <div className={cn(
+                  "flex-shrink-0 flex flex-col items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl",
+                  scoreColors.bg,
+                  isEstimated && "opacity-80"
+                )}>
+                  <span className={cn("text-xl sm:text-2xl font-bold", scoreColors.text)}>
+                    {validScore}
+                  </span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">/10</span>
+                </div>
+                
+                {/* Summary/Details */}
+                <div className="flex-1 space-y-2">
+                  {validSummary && (
+                    <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(validSummary)}</p>
+                  )}
+                  
+                  {/* Score interpretation */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn(
+                      "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                      validScore >= 7 
+                        ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                        : validScore >= 4
+                        ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
+                        : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                    )}>
+                      {validScore >= 8 ? "Excellent" : 
+                       validScore >= 7 ? "Good" :
+                       validScore >= 5 ? "Average" :
+                       validScore >= 3 ? "Below Average" : "Poor"}
+                    </span>
+                    {isEstimated && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                        Estimated
+                      </span>
                     )}
-                    {validSummary && (
-                      <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">{validSummary}</p>
+                    {call.sentiment && call.sentiment !== 'neutral' && (
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize",
+                        call.sentiment === 'positive' 
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                          : "bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400"
+                      )}>
+                        {call.sentiment}
+                      </span>
                     )}
                   </div>
                 </div>
-              );
-            })()}
+              </div>
+            </div>
             
             {/* Transcript */}
             {call.transcript && (
@@ -666,28 +795,33 @@ export default function CallsPage() {
             caller_phone: string | null;
             caller_name: string | null;
             evaluation_summary: string | null;
-            evaluation_score: number | null;
+            evaluation_score: number | string | null;
             created_at: string;
             updated_at: string;
-          }) => ({
-            id: call.id,
-            user_id: "",
-            vapi_call_id: call.vapi_call_id,
-            appointment_id: null,
-            recording_url: call.recording_url,
-            transcript: call.transcript,
-            summary: call.summary,
-            sentiment: call.sentiment as Call["sentiment"],
-            duration: call.duration,
-            type: call.type as Call["type"],
-            caller_phone: call.caller_phone,
-            caller_name: call.caller_name,
-            evaluation_summary: call.evaluation_summary,
-            evaluation_score: call.evaluation_score,
-            metadata: {},
-            created_at: call.created_at,
-            updated_at: call.updated_at,
-          }));
+          }) => {
+            // Use parseScore helper to handle all edge cases (string, number, null, undefined)
+            const parsedScore = parseScore(call.evaluation_score);
+
+            return {
+              id: call.id,
+              user_id: "",
+              vapi_call_id: call.vapi_call_id,
+              appointment_id: null,
+              recording_url: call.recording_url,
+              transcript: call.transcript,
+              summary: call.summary,
+              sentiment: call.sentiment as Call["sentiment"],
+              duration: call.duration,
+              type: call.type as Call["type"],
+              caller_phone: call.caller_phone,
+              caller_name: call.caller_name,
+              evaluation_summary: call.evaluation_summary, // Will be validated in CallRow
+              evaluation_score: parsedScore,
+              metadata: {},
+              created_at: call.created_at,
+              updated_at: call.updated_at,
+            };
+          });
           setCalls(transformedCalls);
           setFilteredCalls(transformedCalls);
         } else {

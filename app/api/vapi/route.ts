@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { parseVapiEvaluation } from "@/lib/vapi-evaluation-parser";
+import { cleanCallSummary } from "@/lib/utils";
 
 // Vapi webhook types - supporting multiple message types
 interface VapiWebhookPayload {
@@ -388,12 +389,16 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
 
   // Insert call record into calls table
   if (userId) {
+    // Clean the summary from markdown formatting
+    const rawSummary = analysis?.summary || summary || null;
+    const cleanedSummary = cleanCallSummary(rawSummary);
+
     const insertData = {
       user_id: userId,
       vapi_call_id: call.id,
       recording_url: recordingUrl || null,
       transcript: transcript || null,
-      summary: analysis?.summary || summary || null,
+      summary: cleanedSummary,
       sentiment,
       duration,
       type: callType,

@@ -27,6 +27,16 @@ async function checkTagsColumnExists(supabase: ReturnType<typeof createAdminClie
   return !error || !error.message.includes("tags");
 }
 
+// Helper to check if endedReason indicates a failed connection
+function isFailedConnection(endedReason: string | undefined): boolean {
+  if (!endedReason) return false;
+  const reason = endedReason.toLowerCase();
+  return reason.includes('no-answer') || 
+         reason.includes('customer-did-not-answer') ||
+         reason.includes('voicemail') || 
+         reason.includes('busy');
+}
+
 // POST - Backfill evaluation scores and tags for existing calls
 export async function POST(request: NextRequest) {
   try {
@@ -34,6 +44,7 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
     const forceAll = searchParams.get("forceAll") === "true";
+    const fixFailedOnly = searchParams.get("fixFailedOnly") === "true"; // New option
     
     // Check if tags column exists
     const tagsColumnExists = await checkTagsColumnExists(supabase);
@@ -49,8 +60,8 @@ export async function POST(request: NextRequest) {
       .from("calls")
       .select(selectColumns);
     
-    // By default, only process calls without evaluation score
-    if (!forceAll) {
+    // By default, only process calls without evaluation score (unless forceAll or fixFailedOnly)
+    if (!forceAll && !fixFailedOnly) {
       query = query.is("evaluation_score", null);
     }
     
@@ -85,6 +96,7 @@ export async function POST(request: NextRequest) {
     
     let updated = 0;
     let skipped = 0;
+    let failedConnectionsFixed = 0;
     const results: Array<{ 
       call_id: string; 
       score: number | null; 
@@ -93,9 +105,57 @@ export async function POST(request: NextRequest) {
     }> = [];
     
     for (const call of calls) {
+      const endedReason = call.metadata?.endedReason as string | undefined;
+      
+      // PRIORITY 1: Fix failed connections (no-answer, voicemail, busy) to score 1
+      if (isFailedConnection(endedReason)) {
+        // Always set to 1 for failed connections, regardless of current value
+        if (call.evaluation_score !== 1) {
+          const { error: updateError } = await supabase
+            .from("calls")
+            .update({ 
+              evaluation_score: 1, 
+              sentiment: 'negative' 
+            } as never)
+            .eq("id", call.id);
+          
+          if (!updateError) {
+            updated++;
+            failedConnectionsFixed++;
+            results.push({ 
+              call_id: call.id, 
+              score: 1, 
+              tags: ['failed_connection'], 
+              status: `fixed_failed_connection (was ${call.evaluation_score})` 
+            });
+          } else {
+            results.push({ 
+              call_id: call.id, 
+              score: null, 
+              tags: [], 
+              status: "error: " + updateError.message 
+            });
+          }
+        } else {
+          skipped++;
+          results.push({ 
+            call_id: call.id, 
+            score: 1, 
+            tags: [], 
+            status: "already_correct" 
+          });
+        }
+        continue;
+      }
+      
+      // If fixFailedOnly mode, skip non-failed calls
+      if (fixFailedOnly) {
+        skipped++;
+        continue;
+      }
+      
       // Try to get successEvaluation from metadata
       const successEvaluation = call.metadata?.successEvaluation as string | undefined;
-      const endedReason = call.metadata?.endedReason as string | undefined;
       
       // Parse the evaluation
       const parsed = parseVapiEvaluation(successEvaluation, endedReason);
@@ -130,9 +190,6 @@ export async function POST(request: NextRequest) {
                    lowerContent.includes("istemiyorum")) {
           parsed.score = 3;
           parsed.tags.push("not_interested");
-        } else if (lowerContent.includes("meşgul") || lowerContent.includes("busy")) {
-          parsed.score = 2;
-          parsed.tags.push("timing_concern");
         } else if (call.transcript && call.transcript.length > 100) {
           // Has substantial transcript, assume moderate score
           parsed.score = 5;
@@ -205,12 +262,13 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    console.log(`Evaluation backfill complete: ${updated} updated, ${skipped} skipped`);
+    console.log(`Evaluation backfill complete: ${updated} updated (${failedConnectionsFixed} failed connections fixed), ${skipped} skipped`);
     
     return NextResponse.json({
       success: true,
-      message: `Backfilled ${updated} calls with evaluation data`,
+      message: `Backfilled ${updated} calls with evaluation data (${failedConnectionsFixed} failed connections fixed to score 1)`,
       updated,
+      failedConnectionsFixed,
       skipped,
       total: calls.length,
       tagsColumnExists,

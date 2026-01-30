@@ -19,7 +19,8 @@ import {
   formatDuration, 
   getSentimentColor, 
   getCallTypeColor, 
-  getCallTypeLabel 
+  getCallTypeLabel,
+  cleanCallSummary 
 } from "@/lib/utils";
 import type { Call } from "@/lib/types";
 
@@ -141,7 +142,7 @@ export function CallsTable({ calls }: CallsTableProps) {
                     {/* Summary */}
                     <td className="px-5 py-4 max-w-xs">
                       <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                        {call.summary || "No summary available"}
+                        {cleanCallSummary(call.summary) || "No summary available"}
                       </p>
                     </td>
 

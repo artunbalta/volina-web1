@@ -52,8 +52,70 @@ const SCORE_INDICATORS: Array<{ keywords: string[]; scoreRange: [number, number]
   { keywords: ['moderate', 'orta', 'okay', 'acceptable', 'kabul edilebilir'], scoreRange: [5, 7] },
   { keywords: ['poor', 'kötü', 'negative', 'olumsuz', 'unsuccessful'], scoreRange: [3, 5] },
   { keywords: ['very poor', 'çok kötü', 'failed', 'başarısız', 'terrible'], scoreRange: [1, 3] },
-  { keywords: ['no answer', 'cevap yok', 'voicemail', 'unreachable'], scoreRange: [0, 2] },
+  { keywords: ['no answer', 'cevap yok', 'voicemail', 'unreachable', 'busy', 'meşgul'], scoreRange: [1, 1] },
 ];
+
+/**
+ * Try to parse JSON evaluation from VAPI
+ */
+function tryParseJsonEvaluation(text: string): ParsedEvaluation | null {
+  try {
+    // Try to extract JSON from the text (might have extra text around it)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    
+    const json = JSON.parse(jsonMatch[0]);
+    
+    // Validate required fields
+    if (typeof json.score !== 'number' || json.score < 1 || json.score > 10) {
+      return null;
+    }
+    
+    const result: ParsedEvaluation = {
+      score: Math.round(json.score),
+      tags: [],
+      summary: json.summary || null,
+      sentiment: 'neutral',
+    };
+    
+    // Map outcome to tags
+    if (json.outcome) {
+      const outcome = json.outcome.toLowerCase();
+      if (outcome === 'appointment_set') {
+        result.tags.push('appointment_set');
+        result.sentiment = 'positive';
+      } else if (outcome === 'interested') {
+        result.tags.push('interested');
+        result.sentiment = 'positive';
+      } else if (outcome === 'callback_requested') {
+        result.tags.push('callback_requested');
+        result.sentiment = 'positive';
+      } else if (outcome === 'not_interested') {
+        result.tags.push('not_interested');
+        result.sentiment = 'negative';
+      } else if (outcome === 'no_answer') {
+        result.tags.push('no_answer');
+        result.sentiment = 'negative';
+      } else if (outcome === 'voicemail') {
+        result.tags.push('voicemail');
+        result.sentiment = 'negative';
+      } else if (outcome === 'busy') {
+        result.tags.push('timing_concern');
+        result.sentiment = 'negative';
+      }
+    }
+    
+    // Set sentiment from score if not already set
+    if (result.sentiment === 'neutral' && result.score !== null) {
+      if (result.score >= 7) result.sentiment = 'positive';
+      else if (result.score <= 3) result.sentiment = 'negative';
+    }
+    
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Parse VAPI's successEvaluation string to extract structured data
@@ -69,8 +131,18 @@ export function parseVapiEvaluation(
     sentiment: 'neutral',
   };
 
+  // First, check ended reason for failed connections - these always get score 1
+  if (endedReason) {
+    const reason = endedReason.toLowerCase();
+    if (reason.includes('no-answer') || 
+        reason.includes('customer-did-not-answer') ||
+        reason.includes('voicemail') ||
+        reason.includes('busy')) {
+      return inferFromEndedReason(endedReason);
+    }
+  }
+
   // Handle missing, empty, or invalid evaluation values
-  // Vapi sometimes returns "false" as a string when no evaluation was performed
   if (!successEvaluation || 
       successEvaluation === 'false' || 
       successEvaluation === 'true' ||
@@ -83,6 +155,13 @@ export function parseVapiEvaluation(
     return result;
   }
 
+  // Try to parse as JSON first (new format)
+  const jsonResult = tryParseJsonEvaluation(successEvaluation);
+  if (jsonResult) {
+    return jsonResult;
+  }
+
+  // Fall back to legacy text parsing
   const lowerEval = successEvaluation.toLowerCase();
   
   // Extract score
@@ -205,6 +284,16 @@ function cleanSummary(text: string): string {
     .replace(/rating[:\s]+\d+/gi, '')
     .trim();
 
+  // Remove markdown formatting
+  cleaned = cleaned
+    .replace(/\*\*([^*]+)\*\*/g, '$1')  // **bold** -> bold
+    .replace(/\*([^*]+)\*/g, '$1')       // *italic* -> italic
+    .replace(/^\s*[\*\-•]\s*/gm, '')     // Remove bullet points at start of lines
+    .replace(/\s*[\*\-•]\s+/g, ' ')      // Remove inline bullet markers
+    .replace(/\n+/g, ' ')                // Replace newlines with spaces
+    .replace(/\s{2,}/g, ' ')             // Multiple spaces to single
+    .trim();
+
   // Limit length
   if (cleaned.length > 500) {
     cleaned = cleaned.substring(0, 497) + '...';
@@ -230,7 +319,7 @@ function inferFromEndedReason(endedReason: string): ParsedEvaluation {
 
   if (reason.includes('voicemail')) {
     return {
-      score: 2,
+      score: 1,
       tags: ['voicemail'],
       summary: 'Sesli mesaja düştü',
       sentiment: 'negative',
@@ -239,7 +328,7 @@ function inferFromEndedReason(endedReason: string): ParsedEvaluation {
 
   if (reason.includes('busy')) {
     return {
-      score: 2,
+      score: 1,
       tags: ['timing_concern'],
       summary: 'Hat meşgul',
       sentiment: 'negative',
