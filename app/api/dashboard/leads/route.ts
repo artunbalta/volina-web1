@@ -28,6 +28,59 @@ export async function GET(request: NextRequest) {
       );
     }
     
+    // Check if requesting a single lead by ID
+    const leadId = searchParams.get("id");
+    if (leadId) {
+      const { data: lead, error } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("id", leadId)
+        .eq("user_id", userId)
+        .single();
+
+      if (error) {
+        console.error("Error fetching lead:", error);
+        return NextResponse.json(
+          { success: false, error: "Lead not found" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: lead,
+      });
+    }
+
+    // Check if only count is requested
+    const countOnly = searchParams.get("countOnly") === "true";
+    if (countOnly) {
+      const status = searchParams.get("status");
+      let countQuery = supabase
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId);
+      
+      if (status && status !== "all") {
+        countQuery = countQuery.eq("status", status);
+      }
+
+      const { count, error } = await countQuery;
+
+      if (error) {
+        console.error("Error counting leads:", error);
+        return NextResponse.json(
+          { success: false, error: "Failed to count leads" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        count: count || 0,
+      });
+    }
+    
     const idsOnly = searchParams.get("idsOnly") === "true";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
     const pageSize = 100;

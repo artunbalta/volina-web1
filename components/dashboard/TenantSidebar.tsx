@@ -16,6 +16,7 @@ import {
   X,
   Moon,
   Sun,
+  Target,
 } from "lucide-react";
 import { useTheme } from "@/components/providers/ThemeProvider";
 
@@ -39,6 +40,7 @@ export function TenantSidebar() {
     { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
     { href: `/${effectiveTenant}/leads`, icon: Users, label: "Leads" },
     { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Calls" },
+    { href: `/${effectiveTenant}/campaigns`, icon: Target, label: "Campaigns" },
   ];
 
   const handleLogout = async () => {

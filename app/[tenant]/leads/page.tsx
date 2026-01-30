@@ -92,16 +92,19 @@ export default function LeadsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCsvDialog, setShowCsvDialog] = useState(false);
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [showBulkCallDialog, setShowBulkCallDialog] = useState(false);
   const [showLeadDetailDialog, setShowLeadDetailDialog] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [isBulkCalling, setIsBulkCalling] = useState(false);
+  const [bulkCallProgress, setBulkCallProgress] = useState({ current: 0, total: 0, currentName: "" });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [csvData, setCsvData] = useState<Partial<Lead>[]>([]);
   const [csvFileName, setCsvFileName] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [callSuccess, setCallSuccess] = useState<{ show: boolean; leadName?: string }>({ show: false });
+  const [callSuccess, setCallSuccess] = useState<{ show: boolean; leadName?: string; count?: number }>({ show: false });
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -371,6 +374,91 @@ export default function LeadsPage() {
       alert("An error occurred while deleting leads. Please try again.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Handle bulk call leads - calls selected leads one by one with 3 second delay
+  const handleBulkCallLeads = async () => {
+    if (selectedLeadIds.size === 0 || !user?.id) return;
+    
+    setIsBulkCalling(true);
+    setShowBulkCallDialog(false);
+    
+    const ids = Array.from(selectedLeadIds);
+    const totalLeadsToCall = ids.length;
+    let successCount = 0;
+    
+    setBulkCallProgress({ current: 0, total: totalLeadsToCall, currentName: "" });
+
+    try {
+      // Get lead details for all selected IDs
+      const leadsToCall = leads.filter(lead => ids.includes(lead.id) && lead.phone);
+      
+      if (leadsToCall.length === 0) {
+        alert("No leads with phone numbers found in selection.");
+        setIsBulkCalling(false);
+        return;
+      }
+
+      for (let i = 0; i < leadsToCall.length; i++) {
+        const lead = leadsToCall[i];
+        if (!lead) continue;
+        
+        setBulkCallProgress({ 
+          current: i + 1, 
+          total: leadsToCall.length, 
+          currentName: lead.full_name || lead.phone || "Unknown" 
+        });
+
+        try {
+          const response = await fetch("/api/outreach/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lead_id: lead.id,
+              channel: "call",
+              direct_call: true,
+            }),
+          });
+
+          const data = await response.json();
+          
+          if (response.ok && data.success) {
+            successCount++;
+            console.log(`Successfully initiated call ${i + 1}/${leadsToCall.length} to ${lead.full_name}`);
+          } else {
+            console.error(`Call ${i + 1} failed:`, data.message || "Unknown error");
+          }
+        } catch (error) {
+          console.error(`Error calling lead ${lead.full_name}:`, error);
+        }
+
+        // Wait 3 seconds between calls (except for the last one)
+        if (i < leadsToCall.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+
+      // Show success notification
+      setCallSuccess({ 
+        show: true, 
+        leadName: `${successCount} leads`, 
+        count: successCount 
+      });
+      setTimeout(() => {
+        setCallSuccess({ show: false });
+      }, 5000);
+
+      // Refresh leads and clear selection
+      await loadLeads();
+      setSelectedLeadIds(new Set());
+      
+    } catch (error) {
+      console.error("Error in bulk call:", error);
+      alert("An error occurred during bulk calling. Some calls may have been made.");
+    } finally {
+      setIsBulkCalling(false);
+      setBulkCallProgress({ current: 0, total: 0, currentName: "" });
     }
   };
 
@@ -1015,17 +1103,30 @@ export default function LeadsPage() {
               </Button>
             )}
             {selectedLeadIds.size > 0 && (
-              <Button 
-                variant="destructive" 
-                size="sm"
-                onClick={() => setShowBulkDeleteDialog(true)}
-                disabled={isSaving}
-                className="bg-red-600 hover:bg-red-700 text-xs sm:text-sm"
-              >
-                <Trash2 className="w-4 h-4 sm:mr-1" />
-                <span className="hidden sm:inline">Delete ({selectedLeadIds.size})</span>
-                <span className="sm:hidden">{selectedLeadIds.size}</span>
-              </Button>
+              <>
+                <Button 
+                  variant="default" 
+                  size="sm"
+                  onClick={() => setShowBulkCallDialog(true)}
+                  disabled={isSaving || isBulkCalling}
+                  className="bg-green-600 hover:bg-green-700 text-xs sm:text-sm"
+                >
+                  <Phone className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Call ({selectedLeadIds.size})</span>
+                  <span className="sm:hidden">{selectedLeadIds.size}</span>
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => setShowBulkDeleteDialog(true)}
+                  disabled={isSaving}
+                  className="bg-red-600 hover:bg-red-700 text-xs sm:text-sm"
+                >
+                  <Trash2 className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Delete ({selectedLeadIds.size})</span>
+                  <span className="sm:hidden">{selectedLeadIds.size}</span>
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -1439,6 +1540,69 @@ export default function LeadsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Call Confirmation Dialog */}
+      <Dialog open={showBulkCallDialog} onOpenChange={setShowBulkCallDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Phone className="w-5 h-5 text-green-600" />
+              Call Selected Leads
+            </DialogTitle>
+            <DialogDescription>
+              You are about to call {selectedLeadIds.size} lead(s). Calls will be made one by one with a 3 second delay between each call.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                <strong>Note:</strong> This will initiate actual phone calls to the selected leads. 
+                Make sure your assistant is properly configured and you have enough credits.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkCallDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBulkCallLeads} 
+              disabled={isSaving || isBulkCalling}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isBulkCalling && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Start Calling ({selectedLeadIds.size})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Call Progress Indicator */}
+      {isBulkCalling && (
+        <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-5 duration-300">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-blue-200 dark:border-blue-800 p-4 min-w-[320px]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                <Loader2 className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-gray-900 dark:text-white">
+                  Calling {bulkCallProgress.current}/{bulkCallProgress.total}
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                  Currently calling: {bulkCallProgress.currentName}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${(bulkCallProgress.current / bulkCallProgress.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CSV Preview Dialog */}
       <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
