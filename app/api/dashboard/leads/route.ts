@@ -111,15 +111,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Build sorting - add secondary sort by id for consistent pagination
-    // Note: For priority sorting, we use a workaround since Supabase doesn't support CASE in ORDER BY
-    // We'll handle priority sorting specially by fetching and sorting in memory
-    const isPrioritySorting = sortBy === "priority";
+    // Priority and status sorting need in-memory sort
+    const needsMemorySort = sortBy === "priority" || sortBy === "status";
     
     const buildSortedQuery = (query: typeof baseQuery) => {
-      if (isPrioritySorting) {
-        // For priority sorting, we'll sort by created_at first, then re-sort in memory
+      if (needsMemorySort) {
         return query
           .order("created_at", { ascending: false })
+          .order("id", { ascending: true });
+      } else if (sortBy === "last_contact_date") {
+        // Sort by last_contact_date, with nulls last
+        return query
+          .order("last_contact_date", { ascending: sortOrder === "asc", nullsFirst: false })
           .order("id", { ascending: true });
       } else {
         return query
@@ -156,8 +159,19 @@ export async function GET(request: NextRequest) {
     let leads: LeadRecord[] | null = null;
     let total = 0;
     
-    if (isPrioritySorting) {
-      // For priority sorting, fetch ALL matching leads, sort in memory, then paginate
+    // Status order: interested/appointment first (urgent), then new, contacted, etc.
+    const statusOrderMap: Record<string, number> = {
+      interested: 0,
+      appointment_set: 1,
+      new: 2,
+      contacted: 3,
+      converted: 4,
+      unreachable: 5,
+      lost: 6,
+    };
+
+    if (needsMemorySort) {
+      // For priority/status sorting, fetch ALL matching leads, sort in memory, then paginate
       const { data: allLeads, count, error } = await buildSortedQuery(baseQuery) as { 
         data: LeadRecord[] | null; 
         count: number | null; 
@@ -174,12 +188,17 @@ export async function GET(request: NextRequest) {
       
       total = count || 0;
       
-      // Sort by priority in memory (high -> medium -> low for desc, reverse for asc)
       const sortedLeads = (allLeads || []).sort((a, b) => {
-        const orderA = priorityOrderMap[a.priority || 'medium'] ?? 1;
-        const orderB = priorityOrderMap[b.priority || 'medium'] ?? 1;
-        // desc means high first (0 < 1 < 2), asc means low first
-        return sortOrder === "asc" ? orderB - orderA : orderA - orderB;
+        if (sortBy === "priority") {
+          const orderA = priorityOrderMap[a.priority || 'medium'] ?? 1;
+          const orderB = priorityOrderMap[b.priority || 'medium'] ?? 1;
+          return sortOrder === "asc" ? orderB - orderA : orderA - orderB;
+        } else {
+          // status sorting
+          const orderA = statusOrderMap[a.status || 'new'] ?? 3;
+          const orderB = statusOrderMap[b.status || 'new'] ?? 3;
+          return sortOrder === "asc" ? orderA - orderB : orderB - orderA;
+        }
       });
       
       // Apply pagination manually

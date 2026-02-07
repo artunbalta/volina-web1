@@ -49,6 +49,10 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Download,
+  Tag,
+  AlertTriangle,
+  Clock,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -84,7 +88,7 @@ export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
-  const [sortBy, setSortBy] = useState<"created_at" | "priority">("created_at");
+  const [sortBy, setSortBy] = useState<"created_at" | "priority" | "last_contact_date" | "status">("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -105,6 +109,10 @@ export default function LeadsPage() {
   const [csvFileName, setCsvFileName] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [callSuccess, setCallSuccess] = useState<{ show: boolean; leadName?: string; count?: number }>({ show: false });
+  const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
+  const [bulkStatusValue, setBulkStatusValue] = useState<LeadStatus>("contacted");
+  const [duplicateWarnings, setDuplicateWarnings] = useState<{ phone: string; count: number; names: string[] }[]>([]);
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -461,6 +469,87 @@ export default function LeadsPage() {
       setBulkCallProgress({ current: 0, total: 0, currentName: "" });
     }
   };
+
+  // Handle bulk status update
+  const handleBulkStatusUpdate = async () => {
+    if (selectedLeadIds.size === 0 || !user?.id) return;
+    setIsSaving(true);
+    try {
+      const ids = Array.from(selectedLeadIds);
+      let successCount = 0;
+      // Update in batches of 20
+      for (let i = 0; i < ids.length; i += 20) {
+        const batch = ids.slice(i, i + 20);
+        const promises = batch.map((id) =>
+          fetch(`/api/dashboard/leads?id=${id}&userId=${user!.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: bulkStatusValue }),
+          })
+        );
+        const results = await Promise.all(promises);
+        successCount += results.filter((r) => r.ok).length;
+      }
+      await loadLeads();
+      setShowBulkStatusDialog(false);
+      setSelectedLeadIds(new Set());
+      alert(`Successfully updated ${successCount} lead(s) to "${statusConfig[bulkStatusValue].label}"`);
+    } catch (error) {
+      console.error("Error bulk updating status:", error);
+      alert("An error occurred while updating leads.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Export leads to CSV
+  const handleExportCSV = () => {
+    if (leads.length === 0) return;
+    const headers = ["Name", "Phone", "Email", "Status", "Priority", "Contact Attempts", "Last Contact", "Notes", "Created"];
+    const rows = leads.map((lead) => [
+      lead.full_name || "",
+      lead.phone || "",
+      lead.email || "",
+      statusConfig[lead.status]?.label || lead.status,
+      priorityConfig[lead.priority]?.label || lead.priority,
+      (lead.contact_attempts || 0).toString(),
+      lead.last_contact_date ? format(new Date(lead.last_contact_date), "yyyy-MM-dd HH:mm") : "",
+      (lead.notes || "").replace(/\n/g, " "),
+      format(new Date(lead.created_at), "yyyy-MM-dd"),
+    ]);
+    const csvContent = [headers, ...rows].map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `leads_export_${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Check for duplicate phone numbers
+  const checkDuplicates = useCallback(() => {
+    const phoneMap = new Map<string, { count: number; names: string[] }>();
+    for (const lead of leads) {
+      if (!lead.phone) continue;
+      const normalized = lead.phone.replace(/\s/g, "");
+      const existing = phoneMap.get(normalized);
+      if (existing) {
+        existing.count++;
+        existing.names.push(lead.full_name || "Unknown");
+      } else {
+        phoneMap.set(normalized, { count: 1, names: [lead.full_name || "Unknown"] });
+      }
+    }
+    const dupes = Array.from(phoneMap.entries())
+      .filter(([, v]) => v.count > 1)
+      .map(([phone, v]) => ({ phone, count: v.count, names: v.names }));
+    setDuplicateWarnings(dupes);
+  }, [leads]);
+
+  useEffect(() => {
+    checkDuplicates();
+  }, [checkDuplicates]);
 
   // Toggle select all - fetches ALL lead IDs from API, not just current page
   const toggleSelectAll = async () => {
@@ -953,6 +1042,27 @@ export default function LeadsPage() {
             onChange={handleFileUpload}
             className="hidden"
           />
+          {duplicateWarnings.length > 0 && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowDuplicateWarning(true)}
+              className="border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 flex-shrink-0"
+            >
+              <AlertTriangle className="w-4 h-4 sm:mr-1" />
+              <span className="hidden sm:inline">{duplicateWarnings.length} Duplicate{duplicateWarnings.length > 1 ? "s" : ""}</span>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            disabled={leads.length === 0}
+            className="border-gray-200 dark:border-gray-700 flex-shrink-0"
+          >
+            <Download className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">Export</span>
+          </Button>
               <Button 
                 variant="outline" 
                 onClick={() => fileInputRef.current?.click()}
@@ -960,7 +1070,7 @@ export default function LeadsPage() {
             size="sm"
               >
                 <Upload className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Import CSV/XLSX</span>
+            <span className="hidden sm:inline">Import</span>
               </Button>
           <Button onClick={() => { resetForm(); setShowAddDialog(true); }} className="flex-1 sm:flex-none" size="sm">
                 <Plus className="w-4 h-4 sm:mr-2" />
@@ -997,44 +1107,28 @@ export default function LeadsPage() {
               </SelectContent>
             </Select>
           
-            {/* Sort by Priority Button */}
-            <Button 
-              variant={sortBy === "priority" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                if (sortBy === "priority") {
-                  setSortOrder(sortOrder === "desc" ? "asc" : "desc");
-                } else {
-                  setSortBy("priority");
-                  setSortOrder("desc");
-                }
+            {/* Sort Options */}
+            <Select
+              value={`${sortBy}|${sortOrder}`}
+              onValueChange={(v) => {
+                const [field, order] = v.split("|") as [string, string];
+                setSortBy(field as typeof sortBy);
+                setSortOrder(order as "asc" | "desc");
               }}
-              className={cn(
-                "border-gray-200 dark:border-gray-700",
-                sortBy === "priority" && "bg-blue-600 hover:bg-blue-700 text-white"
-              )}
             >
-              {sortBy === "priority" ? (
-                sortOrder === "desc" ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />
-              ) : (
-                <ArrowUpDown className="w-4 h-4" />
-              )}
-              <span className="hidden sm:inline ml-2">Priority</span>
-            </Button>
-
-            {sortBy === "priority" && (
-              <Button 
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSortBy("created_at");
-                  setSortOrder("desc");
-                }}
-                className="border-gray-200 dark:border-gray-700"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            )}
+              <SelectTrigger className="w-36 sm:w-44 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                <ArrowUpDown className="w-4 h-4 mr-1 text-gray-400" />
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at|desc">Newest First</SelectItem>
+                <SelectItem value="created_at|asc">Oldest First</SelectItem>
+                <SelectItem value="priority|desc">Priority: High→Low</SelectItem>
+                <SelectItem value="priority|asc">Priority: Low→High</SelectItem>
+                <SelectItem value="last_contact_date|desc">Last Activity</SelectItem>
+                <SelectItem value="status|asc">Status Priority</SelectItem>
+              </SelectContent>
+            </Select>
           
             <Button 
               variant="outline" 
@@ -1105,6 +1199,17 @@ export default function LeadsPage() {
             {selectedLeadIds.size > 0 && (
               <>
                 <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowBulkStatusDialog(true)}
+                  disabled={isSaving}
+                  className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
+                >
+                  <Tag className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Status ({selectedLeadIds.size})</span>
+                  <span className="sm:hidden">{selectedLeadIds.size}</span>
+                </Button>
+                <Button 
                   variant="default" 
                   size="sm"
                   onClick={() => setShowBulkCallDialog(true)}
@@ -1141,8 +1246,9 @@ export default function LeadsPage() {
             <div className="flex-1">Customer</div>
             <div className="w-32">Phone</div>
             <div className="w-24">Status</div>
+            <div className="w-16 text-center">Calls</div>
             <div className="w-24">Priority</div>
-            <div className="w-24 text-right">Created</div>
+            <div className="w-32">Last Contact</div>
             <div className="w-24"></div>
             </div>
           </div>
@@ -1201,6 +1307,21 @@ export default function LeadsPage() {
                         </div>
                       </div>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{lead.phone || "No phone"}</p>
+                      {(lead.last_contact_date || (lead.contact_attempts && lead.contact_attempts > 0)) && (
+                        <div className="flex items-center gap-2 mt-1">
+                          {lead.contact_attempts > 0 && (
+                            <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                              {lead.contact_attempts}x called
+                            </span>
+                          )}
+                          {lead.last_contact_date && (
+                            <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {format(new Date(lead.last_contact_date), "MMM d, HH:mm")}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-gray-400 dark:text-gray-500">
                           {format(new Date(lead.created_at), "MMM d, yyyy")}
@@ -1280,6 +1401,16 @@ export default function LeadsPage() {
                       {statusConfig[lead.status].label}
                     </span>
                   </div>
+
+                  <div className="w-16 text-center">
+                    {lead.contact_attempts > 0 ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">
+                        {lead.contact_attempts}x
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                    )}
+                  </div>
                   
                   <div className="w-24">
                     <span className={cn(
@@ -1290,8 +1421,15 @@ export default function LeadsPage() {
                     </span>
                   </div>
                   
-                  <div className="w-24 text-sm text-gray-500 dark:text-gray-400 text-right">
-                    {format(new Date(lead.created_at), "MMM d")}
+                  <div className="w-32 text-xs text-gray-500 dark:text-gray-400">
+                    {lead.last_contact_date ? (
+                      <div>
+                        <div>{format(new Date(lead.last_contact_date), "MMM d, yyyy")}</div>
+                        <div className="text-gray-400 dark:text-gray-500">{format(new Date(lead.last_contact_date), "HH:mm")}</div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 dark:text-gray-500">—</span>
+                    )}
                   </div>
                   
                   <div className="w-24 flex items-center justify-end gap-2">
@@ -1646,6 +1784,71 @@ export default function LeadsPage() {
               {isUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Import {csvData.length} Leads
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Status Update Dialog */}
+      <Dialog open={showBulkStatusDialog} onOpenChange={setShowBulkStatusDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="w-5 h-5 text-blue-600" />
+              Update Status
+            </DialogTitle>
+            <DialogDescription>
+              Change status for {selectedLeadIds.size} selected lead(s).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <Label>New Status</Label>
+              <Select value={bulkStatusValue} onValueChange={(v) => setBulkStatusValue(v as LeadStatus)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(statusConfig).map(([key, config]) => (
+                    <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkStatusDialog(false)}>Cancel</Button>
+            <Button onClick={handleBulkStatusUpdate} disabled={isSaving}>
+              {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Update {selectedLeadIds.size} Lead(s)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate Phone Warning Dialog */}
+      <Dialog open={showDuplicateWarning} onOpenChange={setShowDuplicateWarning}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-5 h-5" />
+              Duplicate Phone Numbers
+            </DialogTitle>
+            <DialogDescription>
+              The following phone numbers appear more than once in your leads.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 max-h-64 overflow-y-auto space-y-3">
+            {duplicateWarnings.map((dup, i) => (
+              <div key={i} className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <p className="font-medium text-amber-800 dark:text-amber-300 text-sm">{dup.phone} ({dup.count}x)</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                  {dup.names.join(", ")}
+                </p>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDuplicateWarning(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

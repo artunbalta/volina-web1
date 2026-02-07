@@ -17,7 +17,16 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Calendar,
+  ArrowUpDown,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +35,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { format } from "date-fns";
+import { format, startOfDay, endOfDay, isWithinInterval, parseISO } from "date-fns";
 import { cn, cleanCallSummary } from "@/lib/utils";
 
 // Audio Player Component
@@ -70,10 +79,13 @@ function AudioPlayer({
     if (!call?.recording_url || !isOpen) {
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.removeAttribute('src');
+        audioRef.current.load();
         audioRef.current = null;
       }
       setDuration(0);
       setCurrentTime(0);
+      setIsPlaying(false);
       setIsLoading(false);
       setError(null);
       return;
@@ -83,11 +95,15 @@ function AudioPlayer({
     setError(null);
     setCurrentTime(0);
     setDuration(0);
+    setIsPlaying(false);
     
     // Create audio element and set crossOrigin BEFORE setting src
+    // Add cache-busting parameter to prevent browser caching issues
     const audio = new Audio();
     audio.crossOrigin = 'anonymous';
-    audio.src = call.recording_url;
+    audio.preload = 'auto';
+    const cacheBuster = `${call.recording_url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+    audio.src = call.recording_url + cacheBuster;
     audioRef.current = audio;
     
     // Generate waveform heights
@@ -168,6 +184,10 @@ function AudioPlayer({
     const handleEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
+      // Reset audio position for replay
+      if (audio) {
+        audio.currentTime = 0;
+      }
     };
     
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -206,7 +226,8 @@ function AudioPlayer({
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('ended', handleEnded);
       audio.pause();
-      audio.src = '';
+      audio.removeAttribute('src');
+      audio.load(); // Release resources properly
       audioRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,7 +240,14 @@ function AudioPlayer({
     if (isPlaying) {
       audio.pause();
     } else {
-      audio.play();
+      // If audio ended, reset before playing
+      if (audio.ended) {
+        audio.currentTime = 0;
+      }
+      audio.play().catch((err) => {
+        console.error("Audio play error:", err);
+        setError("Failed to play audio. Try reopening the player.");
+      });
     }
   };
 
@@ -759,6 +787,8 @@ function CallRow({
   );
 }
 
+type SortOption = "latest" | "earliest" | "score_high" | "score_low";
+
 export default function CallsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const [calls, setCalls] = useState<Call[]>([]);
@@ -770,6 +800,8 @@ export default function CallsPage() {
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [sortBy, setSortBy] = useState<SortOption>("latest");
 
   const loadCalls = useCallback(async () => {
     if (!user?.id) {
@@ -888,7 +920,7 @@ export default function CallsPage() {
     }
   }, [user?.id, authLoading, loadCalls, syncCallsFromVapi]);
 
-  // Filter calls
+  // Filter and sort calls
   useEffect(() => {
     let filtered = [...calls];
     
@@ -901,9 +933,36 @@ export default function CallsPage() {
         call.summary?.toLowerCase().includes(query)
       );
     }
+
+    // Date filter
+    if (selectedDate) {
+      const filterDate = parseISO(selectedDate);
+      const dayStart = startOfDay(filterDate);
+      const dayEnd = endOfDay(filterDate);
+      filtered = filtered.filter(call => {
+        const callDate = new Date(call.created_at);
+        return isWithinInterval(callDate, { start: dayStart, end: dayEnd });
+      });
+    }
+
+    // Sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case "latest":
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case "earliest":
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case "score_high":
+          return (b.evaluation_score ?? -1) - (a.evaluation_score ?? -1);
+        case "score_low":
+          return (a.evaluation_score ?? 11) - (b.evaluation_score ?? 11);
+        default:
+          return 0;
+      }
+    });
     
     setFilteredCalls(filtered);
-  }, [calls, searchQuery]);
+  }, [calls, searchQuery, selectedDate, sortBy]);
 
   const handleRefresh = async () => {
     if (!user?.id) return;
@@ -1001,18 +1060,52 @@ export default function CallsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="relative flex-1 w-full sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
           <Input
             placeholder="Search calls..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
-        />
-      </div>
+          />
+        </div>
 
-            </div>
+        {/* Date Picker */}
+        <div className="relative w-full sm:w-auto">
+          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none z-10" />
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="pl-10 pr-3 w-full sm:w-44 border-gray-200 dark:border-gray-700 dark:bg-gray-800 [&::-webkit-calendar-picker-indicator]:dark:invert"
+          />
+          {selectedDate && (
+            <button
+              onClick={() => setSelectedDate("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <X className="w-3 h-3 text-gray-400" />
+            </button>
+          )}
+        </div>
+
+        {/* Sort Dropdown */}
+        <div className="w-full sm:w-auto">
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+            <SelectTrigger className="w-full sm:w-52 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+              <ArrowUpDown className="w-4 h-4 mr-2 text-gray-400" />
+              <SelectValue placeholder="Sort by..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="latest">Latest First</SelectItem>
+              <SelectItem value="earliest">Earliest First</SelectItem>
+              <SelectItem value="score_high">Highest Score</SelectItem>
+              <SelectItem value="score_low">Lowest Score</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {/* Calls Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

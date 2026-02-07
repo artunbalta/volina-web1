@@ -6,12 +6,28 @@ import {
   RefreshCw,
   Loader2,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Star,
+  Clock,
+  Target,
+  Users,
+  Calendar,
+  Megaphone,
+  PhoneCall,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { Call } from "@/lib/types";
-import { format } from "date-fns";
+import { format, subDays, isAfter, startOfMonth, endOfMonth, subMonths, startOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
 
 // KPI Card Component (with trend) - Mobile Responsive
@@ -87,6 +103,60 @@ export default function OutboundDashboard() {
     appointments: number;
   }[]>([]);
 
+  // Important recent leads (7+ score in last 7 days)
+  const [importantLeads, setImportantLeads] = useState<{
+    id: string;
+    name: string;
+    phone: string;
+    score: number;
+    date: string;
+    summary: string;
+  }[]>([]);
+
+  // Date range filter
+  const [dateRange, setDateRange] = useState<"7days" | "this_month" | "last_month">("7days");
+
+  // Monthly target
+  const [monthlyTarget, setMonthlyTarget] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("dashboard_monthly_target");
+      return saved ? parseInt(saved) : 100;
+    }
+    return 100;
+  });
+  const [editingTarget, setEditingTarget] = useState(false);
+  const [targetInput, setTargetInput] = useState("");
+
+  // Lead pipeline counts
+  const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({
+    new: 0,
+    contacted: 0,
+    interested: 0,
+    appointment_set: 0,
+    converted: 0,
+    unreachable: 0,
+    lost: 0,
+  });
+
+  // Today's actions
+  const [todayActions, setTodayActions] = useState<{
+    id: string;
+    name: string;
+    phone: string;
+    status: string;
+    nextContactDate?: string;
+  }[]>([]);
+
+  // Campaign status
+  const [campaignSummary, setCampaignSummary] = useState<{
+    active: number;
+    totalCalls: number;
+    totalMessages: number;
+  }>({ active: 0, totalCalls: 0, totalMessages: 0 });
+
+  // All calls stored for date range filtering
+  const [allCalls, setAllCalls] = useState<Call[]>([]);
+
   const loadData = useCallback(async () => {
     if (!user?.id) {
       setIsLoading(false);
@@ -95,10 +165,11 @@ export default function OutboundDashboard() {
 
     setIsLoading(true);
     try {
-      // Fetch calls and leads in parallel
-      const [callsResponse, leadsResponse] = await Promise.all([
+      // Fetch calls, leads, and campaigns in parallel
+      const [callsResponse, leadsResponse, campaignsResponse] = await Promise.all([
         fetch(`/api/dashboard/calls?days=365&userId=${user.id}`),
-        fetch(`/api/dashboard/leads?userId=${user.id}&page=1`)
+        fetch(`/api/dashboard/leads?userId=${user.id}&page=1&pageSize=1000`),
+        fetch(`/api/campaigns/auto-call?userId=${user.id}`).catch(() => null),
       ]);
       
       if (callsResponse.ok) {
@@ -124,20 +195,18 @@ export default function OutboundDashboard() {
             updated_at: call.updated_at,
           }));
           
+          setAllCalls(calls);
+          
           const now = new Date();
-          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-          const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-          const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-          const yesterday = new Date(startOfDay);
+          const monthStart = startOfMonth(now);
+          const todayStart = startOfDay(now);
+          const lastMonthStart = startOfMonth(subMonths(now, 1));
+          const lastMonthEnd = endOfMonth(subMonths(now, 1));
+          const yesterday = new Date(todayStart);
           yesterday.setDate(yesterday.getDate() - 1);
-          yesterday.setHours(0, 0, 0, 0);
-          const twoDaysAgo = new Date(yesterday);
-          twoDaysAgo.setDate(twoDaysAgo.getDate() - 1);
-          twoDaysAgo.setHours(0, 0, 0, 0);
           
           // Monthly Calls & Trend
-          const monthlyCallsCount = calls.filter(c => new Date(c.created_at) >= startOfMonth).length;
+          const monthlyCallsCount = calls.filter(c => new Date(c.created_at) >= monthStart).length;
           const lastMonthCalls = calls.filter(c => {
             const callDate = new Date(c.created_at);
             return callDate >= lastMonthStart && callDate <= lastMonthEnd;
@@ -152,10 +221,10 @@ export default function OutboundDashboard() {
           });
           
           // Daily Calls & Trend
-          const dailyCallsCount = calls.filter(c => new Date(c.created_at) >= startOfDay).length;
+          const dailyCallsCount = calls.filter(c => new Date(c.created_at) >= todayStart).length;
           const yesterdayCalls = calls.filter(c => {
             const callDate = new Date(c.created_at);
-            return callDate >= yesterday && callDate < startOfDay;
+            return callDate >= yesterday && callDate < todayStart;
           }).length;
           const dailyChange = yesterdayCalls > 0
             ? Math.round(((dailyCallsCount - yesterdayCalls) / yesterdayCalls) * 100)
@@ -173,10 +242,9 @@ export default function OutboundDashboard() {
             : 0;
           setAvgDuration(avgDurationSeconds);
           
-          // Calculate average duration for last month vs this month
           const thisMonthCallsWithDuration = calls.filter(c => {
             const callDate = new Date(c.created_at);
-            return callDate >= startOfMonth && c.duration && c.duration > 0;
+            return callDate >= monthStart && c.duration && c.duration > 0;
           });
           const lastMonthCallsWithDuration = calls.filter(c => {
             const callDate = new Date(c.created_at);
@@ -207,11 +275,10 @@ export default function OutboundDashboard() {
             : 0;
           setConversionRate(conversionRateValue);
           
-          // Calculate conversion rate trend (this month vs last month)
-          const thisMonthTotal = calls.filter(c => new Date(c.created_at) >= startOfMonth).length;
+          const thisMonthTotal = calls.filter(c => new Date(c.created_at) >= monthStart).length;
           const thisMonthSuccessful = calls.filter(c => {
             const callDate = new Date(c.created_at);
-            return callDate >= startOfMonth && c.evaluation_score !== null && c.evaluation_score >= 7;
+            return callDate >= monthStart && c.evaluation_score !== null && c.evaluation_score >= 7;
           }).length;
           const lastMonthTotal = calls.filter(c => {
             const callDate = new Date(c.created_at);
@@ -267,6 +334,27 @@ export default function OutboundDashboard() {
             });
           }
           setWeeklyActivity(weeklyData);
+
+          // Important Recent Leads: 7+ score from last 7 days
+          const oneWeekAgo = subDays(now, 7);
+          const highScoreCalls = calls
+            .filter(c => {
+              const callDate = new Date(c.created_at);
+              return isAfter(callDate, oneWeekAgo) &&
+                c.evaluation_score !== null &&
+                c.evaluation_score >= 7;
+            })
+            .sort((a, b) => (b.evaluation_score || 0) - (a.evaluation_score || 0))
+            .slice(0, 10)
+            .map(c => ({
+              id: c.id,
+              name: c.caller_name || "Unknown",
+              phone: c.caller_phone || "—",
+              score: c.evaluation_score || 0,
+              date: c.created_at,
+              summary: c.summary || "No summary available",
+            }));
+          setImportantLeads(highScoreCalls);
         } else {
           // No calls data, reset all to 0
           setMonthlyCalls(0);
@@ -275,6 +363,7 @@ export default function OutboundDashboard() {
           setConversionRate(0);
           setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
           setWeeklyActivity([]);
+          setImportantLeads([]);
         }
       } else {
         console.error("Failed to load calls:", callsResponse.statusText);
@@ -285,12 +374,73 @@ export default function OutboundDashboard() {
         setConversionRate(0);
         setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
         setWeeklyActivity([]);
+        setImportantLeads([]);
       }
       
-      // Handle leads response (if needed for future features)
+      // Handle leads response - pipeline counts + today's actions
       if (leadsResponse.ok) {
         const leadsData = await leadsResponse.json();
-        // Leads data can be used for future features
+        if (leadsData.success && leadsData.data) {
+          const allLeads = leadsData.data as any[];
+          // Pipeline counts
+          const counts: Record<string, number> = {
+            new: 0, contacted: 0, interested: 0, appointment_set: 0,
+            converted: 0, unreachable: 0, lost: 0,
+          };
+          for (const lead of allLeads) {
+            const s = lead.status as string;
+            if (s in counts) {
+              counts[s] = (counts[s] || 0) + 1;
+            }
+          }
+          setPipelineCounts(counts);
+
+          // Today's actions: leads that need follow-up today or are "interested"/"appointment_set"
+          const now = new Date();
+          const todayStr = format(now, "yyyy-MM-dd");
+          const actions = allLeads
+            .filter((lead: any) => {
+              // Include leads with next_contact_date of today
+              if (lead.next_contact_date) {
+                const nextDate = format(new Date(lead.next_contact_date), "yyyy-MM-dd");
+                if (nextDate === todayStr) return true;
+              }
+              // Include recently interested/appointment leads that haven't been contacted today
+              if (lead.status === "interested" || lead.status === "appointment_set") {
+                return true;
+              }
+              return false;
+            })
+            .slice(0, 10)
+            .map((lead: any) => ({
+              id: lead.id,
+              name: lead.full_name || "Unknown",
+              phone: lead.phone || "—",
+              status: lead.status,
+              nextContactDate: lead.next_contact_date,
+            }));
+          setTodayActions(actions);
+        }
+      }
+
+      // Handle campaigns response
+      if (campaignsResponse && campaignsResponse.ok) {
+        try {
+          const campaignsData = await campaignsResponse.json();
+          if (campaignsData.success && campaignsData.data) {
+            const campaigns = campaignsData.data as any[];
+            const activeCampaigns = campaigns.filter((c: any) => c.status === "running" || c.is_active);
+            const totalCalls = campaigns.reduce((sum: number, c: any) => sum + (c.progress?.total_calls || 0), 0);
+            const totalMessages = campaigns.reduce((sum: number, c: any) => sum + (c.progress?.total_messages || 0), 0);
+            setCampaignSummary({
+              active: activeCampaigns.length,
+              totalCalls,
+              totalMessages,
+            });
+          }
+        } catch {
+          // Campaign API might not exist yet
+        }
       }
     } catch (error) {
       console.error("Error loading data:", error);
@@ -301,6 +451,7 @@ export default function OutboundDashboard() {
       setConversionRate(0);
       setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
       setWeeklyActivity([]);
+      setImportantLeads([]);
     } finally {
       setIsLoading(false);
     }
@@ -333,6 +484,52 @@ export default function OutboundDashboard() {
     );
   }
 
+  // Compute KPIs based on date range filter
+  const filteredCalls = (() => {
+    const now = new Date();
+    let rangeStart: Date;
+    let rangeEnd: Date = now;
+    
+    switch (dateRange) {
+      case "7days":
+        rangeStart = subDays(now, 7);
+        break;
+      case "this_month":
+        rangeStart = startOfMonth(now);
+        break;
+      case "last_month":
+        rangeStart = startOfMonth(subMonths(now, 1));
+        rangeEnd = endOfMonth(subMonths(now, 1));
+        break;
+      default:
+        rangeStart = subDays(now, 7);
+    }
+    
+    return allCalls.filter(c => {
+      const d = new Date(c.created_at);
+      return d >= rangeStart && d <= rangeEnd;
+    });
+  })();
+
+  const filteredCallsCount = filteredCalls.length;
+  const filteredAvgDuration = (() => {
+    const withDuration = filteredCalls.filter(c => c.duration && c.duration > 0);
+    return withDuration.length > 0
+      ? Math.round(withDuration.reduce((s, c) => s + (c.duration || 0), 0) / withDuration.length)
+      : 0;
+  })();
+  const filteredConversionRate = (() => {
+    const successful = filteredCalls.filter(c => c.evaluation_score !== null && c.evaluation_score >= 7).length;
+    return filteredCallsCount > 0 ? Math.round((successful / filteredCallsCount) * 100) : 0;
+  })();
+
+  // Target progress
+  const targetProgress = monthlyTarget > 0 ? Math.min(Math.round((monthlyCalls / monthlyTarget) * 100), 100) : 0;
+  const targetRemaining = Math.max(monthlyTarget - monthlyCalls, 0);
+
+  // Pipeline total
+  const pipelineTotal = Object.values(pipelineCounts).reduce((s, v) => s + v, 0);
+
   // Calculate call distribution percentages for donut chart
   const totalDistribution = callDistribution.appointment + callDistribution.information + 
     callDistribution.followup + callDistribution.cancellation;
@@ -359,17 +556,27 @@ export default function OutboundDashboard() {
             Welcome{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ""}! Here's your AI summary.
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          {/* Refresh Button */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Select value={dateRange} onValueChange={(v) => setDateRange(v as typeof dateRange)}>
+            <SelectTrigger className="w-32 sm:w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+              <Calendar className="w-4 h-4 mr-1 text-gray-400" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7days">Last 7 Days</SelectItem>
+              <SelectItem value="this_month">This Month</SelectItem>
+              <SelectItem value="last_month">Last Month</SelectItem>
+            </SelectContent>
+          </Select>
           <Button 
             variant="outline" 
             size="sm"
             onClick={handleRefresh} 
             disabled={isRefreshing}
-            className="border-gray-200 dark:border-gray-700 w-full sm:w-auto"
+            className="border-gray-200 dark:border-gray-700"
           >
-            <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
-            Refresh
+            <RefreshCw className={cn("w-4 h-4 sm:mr-2", isRefreshing && "animate-spin")} />
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
         </div>
       </div>
@@ -402,6 +609,193 @@ export default function OutboundDashboard() {
           trendValue={`${conversionRateTrend.value}%`}
         />
       </div>
+
+      {/* Date Range Stats */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+        <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-3">
+          {dateRange === "7days" ? "Last 7 Days" : dateRange === "this_month" ? "This Month" : "Last Month"} Overview
+        </h3>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="text-center">
+            <p className="text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400">{filteredCallsCount}</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Calls</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+              {Math.floor(filteredAvgDuration / 60)}:{(filteredAvgDuration % 60).toString().padStart(2, '0')}
+            </p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Duration</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400">{filteredConversionRate}%</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Conversion</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Pipeline + Target Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* Lead Pipeline Summary */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Users className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Lead Pipeline</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{pipelineTotal} total</span>
+          </div>
+          <div className="space-y-3">
+            {[
+              { key: "new", label: "New", color: "bg-blue-500" },
+              { key: "contacted", label: "Contacted", color: "bg-purple-500" },
+              { key: "interested", label: "Interested", color: "bg-amber-500" },
+              { key: "appointment_set", label: "Appointment", color: "bg-green-500" },
+              { key: "converted", label: "Converted", color: "bg-emerald-500" },
+              { key: "unreachable", label: "Unreachable", color: "bg-red-500" },
+              { key: "lost", label: "Lost", color: "bg-gray-400" },
+            ].map(({ key, label, color }) => {
+              const count = pipelineCounts[key] || 0;
+              const pct = pipelineTotal > 0 ? (count / pipelineTotal) * 100 : 0;
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 w-24 sm:w-28">{label}</span>
+                  <div className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full h-2">
+                    <div className={cn("h-2 rounded-full transition-all duration-300", color)} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white w-10 text-right">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Monthly Target */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Target className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Monthly Target</h3>
+            {!editingTarget ? (
+              <button
+                onClick={() => { setEditingTarget(true); setTargetInput(monthlyTarget.toString()); }}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-auto"
+              >
+                Edit
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 ml-auto">
+                <Input
+                  type="number"
+                  value={targetInput}
+                  onChange={(e) => setTargetInput(e.target.value)}
+                  className="w-20 h-7 text-xs"
+                  min={1}
+                />
+                <Button
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    const val = parseInt(targetInput) || 100;
+                    setMonthlyTarget(val);
+                    localStorage.setItem("dashboard_monthly_target", val.toString());
+                    setEditingTarget(false);
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          {/* Large progress ring */}
+          <div className="flex flex-col items-center justify-center py-4">
+            <div className="relative w-32 h-32 sm:w-40 sm:h-40">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" strokeWidth="8"
+                  className="text-gray-200 dark:text-gray-700" />
+                <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" strokeWidth="8"
+                  strokeDasharray={`${2 * Math.PI * 40 * (targetProgress / 100)} ${2 * Math.PI * 40}`}
+                  className={cn(
+                    targetProgress >= 100 ? "text-green-500" : targetProgress >= 50 ? "text-blue-500" : "text-amber-500"
+                  )}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{targetProgress}%</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">of target</span>
+              </div>
+            </div>
+            <div className="mt-4 text-center">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="font-semibold text-gray-900 dark:text-white">{monthlyCalls}</span> / {monthlyTarget} calls
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {targetRemaining > 0 ? `${targetRemaining} remaining` : "Target reached!"}
+              </p>
+            </div>
+          </div>
+
+          {/* Campaign Status */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Megaphone className="w-4 h-4 text-gray-400" />
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white">Campaign Status</h4>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{campaignSummary.active}</p>
+                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Active</p>
+              </div>
+              <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <p className="text-lg font-bold text-green-600 dark:text-green-400">{campaignSummary.totalCalls}</p>
+                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Calls</p>
+              </div>
+              <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <p className="text-lg font-bold text-purple-600 dark:text-purple-400">{campaignSummary.totalMessages}</p>
+                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Messages</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Today's Actions */}
+      {todayActions.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <PhoneCall className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
+            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Today&apos;s Actions</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{todayActions.length} lead(s)</span>
+          </div>
+          <div className="space-y-2">
+            {todayActions.map((action) => (
+              <div key={action.id} className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30">
+                <div className={cn(
+                  "w-2 h-2 rounded-full flex-shrink-0",
+                  action.status === "interested" ? "bg-amber-500" :
+                  action.status === "appointment_set" ? "bg-green-500" : "bg-blue-500"
+                )} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{action.name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{action.phone}</p>
+                </div>
+                <span className={cn(
+                  "px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium flex-shrink-0",
+                  action.status === "interested" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                  action.status === "appointment_set" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                  "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                )}>
+                  {action.status === "interested" ? "Interested" :
+                   action.status === "appointment_set" ? "Appointment" : action.status}
+                </span>
+                {action.nextContactDate && (
+                  <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
+                    {format(new Date(action.nextContactDate), "HH:mm")}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
@@ -549,6 +943,58 @@ export default function OutboundDashboard() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Important Recent Leads */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+        <div className="flex items-center gap-2 mb-4 sm:mb-6">
+          <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
+          <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Important Recent Leads</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">Score 7+ (last 7 days)</span>
+        </div>
+
+        {importantLeads.length === 0 ? (
+          <div className="text-center py-8">
+            <Star className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">No high-scoring leads in the last 7 days</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {importantLeads.map((lead) => (
+              <div
+                key={lead.id}
+                className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 sm:p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                {/* Score Badge */}
+                <div className={cn(
+                  "flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold",
+                  lead.score >= 9
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                )}>
+                  {lead.score}
+                </div>
+
+                {/* Lead Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-gray-900 dark:text-white truncate">{lead.name}</p>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{lead.phone}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mt-0.5">
+                    {lead.summary}
+                  </p>
+                </div>
+
+                {/* Date */}
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                  <Clock className="w-3 h-3" />
+                  <span>{format(new Date(lead.date), "MMM d, HH:mm")}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>
