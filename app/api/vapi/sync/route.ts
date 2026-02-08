@@ -126,9 +126,13 @@ export async function POST(request: NextRequest) {
       const rawSummary = vapiCall.analysis?.summary || vapiCall.summary || null;
       const cleanedSummary = cleanCallSummary(rawSummary);
 
+      // Get assistant_id from VAPI call
+      const assistantId = vapiCall.assistantId || vapiCall.assistant?.id || null;
+
       const insertData: Record<string, unknown> = {
         user_id: userId,
         vapi_call_id: vapiCall.id,
+        assistant_id: assistantId,
         recording_url: vapiCall.recordingUrl || vapiCall.stereoRecordingUrl || null,
         transcript: vapiCall.transcript || null,
         summary: cleanedSummary,
@@ -148,7 +152,8 @@ export async function POST(request: NextRequest) {
           callType: vapiCall.type,
           originalStartedAt: vapiCall.startedAt,
           originalEndedAt: vapiCall.endedAt,
-          tags: parsedEvaluation.tags, // Store tags in metadata as fallback
+          tags: parsedEvaluation.tags,
+          assistantId: assistantId,
         },
       };
 

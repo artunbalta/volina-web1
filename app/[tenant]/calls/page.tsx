@@ -282,7 +282,7 @@ function AudioPlayer({
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-semibold text-gray-900 dark:text-white">
-              {call.caller_name || "Unknown Caller"}
+              {getCallerDisplay(call).name}
             </DialogTitle>
             <button
               onClick={onClose}
@@ -306,7 +306,7 @@ function AudioPlayer({
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gray-800 dark:bg-gray-900 flex items-center justify-center">
                 <span className="text-white font-bold text-sm">
-                  {call.caller_name?.charAt(0).toUpperCase() || "U"}
+                  {getCallerDisplay(call).name.charAt(0).toUpperCase()}
                 </span>
               </div>
               <div>
@@ -442,6 +442,44 @@ function AudioPlayer({
   );
 }
 
+// Helper to check if a string looks like a phone number
+function looksLikePhoneNumber(str: string | null | undefined): boolean {
+  if (!str) return false;
+  // Remove spaces, dashes, parentheses
+  const cleaned = str.replace(/[\s\-\(\)]/g, '');
+  // Check if it starts with + or is mostly digits (7+ digits)
+  return cleaned.startsWith('+') || /^\d{7,}$/.test(cleaned);
+}
+
+// Helper to get proper display values for name and phone
+// Handles cases where phone number ends up in name field
+function getCallerDisplay(call: Call): { name: string; phone: string } {
+  const callerName = call.caller_name;
+  const callerPhone = call.caller_phone;
+  
+  // If name looks like a phone number and phone is empty, swap them
+  if (looksLikePhoneNumber(callerName) && !callerPhone) {
+    return {
+      name: "Unknown Caller",
+      phone: callerName || "No phone"
+    };
+  }
+  
+  // If both are empty
+  if (!callerName && !callerPhone) {
+    return {
+      name: "Unknown Caller",
+      phone: "No phone"
+    };
+  }
+  
+  // Normal case
+  return {
+    name: callerName || "Unknown Caller",
+    phone: callerPhone || "No phone"
+  };
+}
+
 // Helper function to parse and validate score - handles all edge cases
 function parseScore(score: unknown): number | null {
   if (score === null || score === undefined) return null;
@@ -449,26 +487,25 @@ function parseScore(score: unknown): number | null {
   // Handle string scores (from DB)
   if (typeof score === 'string') {
     const parsed = parseFloat(score);
-    if (!isNaN(parsed) && parsed >= 0 && parsed <= 10) {
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= 5) {
       return Math.round(parsed);
     }
     return null;
   }
   
-  // Handle number scores
-  if (typeof score === 'number' && !isNaN(score) && score >= 0 && score <= 10) {
+  // Handle number scores (1-5 scale)
+  if (typeof score === 'number' && !isNaN(score) && score >= 1 && score <= 5) {
     return Math.round(score);
   }
   
   return null;
 }
 
-// Estimate a score based on call properties when no score is available
+// Estimate a score based on call properties when no score is available (1-5 scale)
 function estimateScore(call: Call): number {
   const duration = call.duration || 0;
   const sentiment = call.sentiment;
   const hasTranscript = !!call.transcript;
-  const hasSummary = !!call.summary;
   const metadata = call.metadata as Record<string, unknown> | undefined;
   const endedReason = metadata?.endedReason as string | undefined;
   
@@ -488,35 +525,154 @@ function estimateScore(call: Call): number {
   
   // No transcript and very short call = likely failed
   if (!hasTranscript && duration < 10) {
-    return 2;
+    return 1;
   }
   
-  // Base score starts at 5 (neutral)
-  let score = 5;
+  // Base score starts at 3 (neutral conversation)
+  let score = 3;
   
   // Adjust based on sentiment
   if (sentiment === 'positive') {
-    score += 2;
+    score += 1;
   } else if (sentiment === 'negative') {
-    score -= 2;
+    score -= 1;
   }
   
   // Adjust based on duration (longer calls are usually better)
   if (duration > 180) { // > 3 minutes
-    score += 1;
-  } else if (duration > 60) { // > 1 minute
     score += 0.5;
   } else if (duration < 30) { // < 30 seconds
-    score -= 1;
+    score -= 0.5;
   }
   
-  // Has transcript is a good sign
-  if (hasTranscript && hasSummary) {
-    score += 0.5;
+  // Clamp between 1 and 5
+  return Math.max(1, Math.min(5, Math.round(score)));
+}
+
+// Helper function to get sort key for calls - MUST match display logic exactly
+// Returns: 1 = V (voicemail), 2 = F (failed), 3 = N (neutral), 4 = L (lead)
+function getCallSortKey(call: Call): number {
+  const metadata = call.metadata as Record<string, unknown> | undefined;
+  const endedReason = (metadata?.endedReason as string || '').toLowerCase();
+  const evalSummary = (call.evaluation_summary || '').toLowerCase();
+  const callSummary = (call.summary || '').toLowerCase();
+  const transcript = (call.transcript || '').toLowerCase();
+  
+  // MUST match display logic patterns exactly
+  const voicemailSystemPhrases = [
+    'voicemail', 'sesli mesaj',
+    'record your message', 'leave a message', 'leave your message',
+    'unable to take your call', 'can\'t take your call', 'can t take your call', 'cannot take your call',
+    'after the tone', 'after the beep', 'at the tone', 'mailbox',
+    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done'
+  ];
+  
+  const failedPatterns = [
+    'no-answer', 'customer-did-not-answer', 'busy', 'customer-busy', 'failed',
+    // Turkish failed phrases  
+    'ulaşılamadı', 'meşgul', 'cevap yok', 'hat meşgul',
+    'bağlantı kurulamadı', 'bağlanamadı', 'aranılamadı', 'cevaplanmadı'
+  ];
+  
+  const meaningfulUserPatterns = [
+    'who is this', 'who are you', 'which company', 'what do you want',
+    'call me', 'call back', 'another time', 'not interested', 'no thanks',
+    'yes', 'no', 'okay', 'sure', 'hello', 'hi', 'what', 'why', 'how much',
+    'i\'m', 'i am', 'i don\'t', 'i cant', 'i can\'t',
+    // Turkish - MUST match display logic
+    'kimsiniz', 'ne istiyorsunuz', 'sonra ara', 'ilgilenmiyorum', 'hayır', 'evet'
+  ];
+  
+  const positiveIndicators = [
+    // Interest signals - affirmative responses
+    'interested', 'yes please', 'sure', 'okay', 'sounds good', 'yes i am',
+    'yep', 'yeah', 'yea', 'yes', 'alright',  // Common affirmatives
+    'tell me more', 'how much', 'when can', 'i want', 'i need', 'i would like',
+    // Callback/contact requests
+    'call me', 'call back', 'reach me', 'contact me', 'get back to me',
+    'send me', 'email me', 'whatsapp', 'message me', 'text me',
+    // Appointment
+    'book', 'schedule', 'appointment', 'available', 'free time',
+    // Turkish - MUST match display logic
+    'ilgili', 'randevu', 'evet', 'tamam', 'olur', 'istiyorum', 'ara beni',
+    'geri ara', 'iletişime geç', 'bilgi gönder'
+  ];
+  
+  const textToCheck = `${endedReason} ${evalSummary} ${callSummary}`;
+  
+  // Count user responses
+  const userResponses = (transcript.match(/user:/gi) || []).length;
+  const userParts = transcript.split(/ai:/i).filter(part => part.includes('user:'));
+  const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
+  const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' '); // Normalize punctuation
+  const userSaidMeaningful = meaningfulUserPatterns.some(p => userText.includes(p));
+  const userOnlyVoicemailPhrases = voicemailSystemPhrases.some(p => userText.includes(p)) && !userSaidMeaningful;
+  
+  const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
+  // Key change: even if userResponses >= 2, if user ONLY said voicemail phrases, it's still voicemail
+  const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
+  
+  // Voicemail detection - MUST match display logic
+  const isVoicemail = (hasVoicemailPhrases && !isRealConversation) || 
+                      (userOnlyVoicemailPhrases);
+  const isSilenceTimeout = endedReason === 'silence-timed-out';
+  const isShortCall = (call.duration || 0) < 30;
+  const likelyVoicemailByBehavior = isSilenceTimeout && isShortCall && !isRealConversation;
+  const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior;
+  
+  // If voicemail → V (sort key 1)
+  if (isVoicemailFinal) {
+    return 1;
   }
   
-  // Clamp between 1 and 10
-  return Math.max(1, Math.min(10, Math.round(score)));
+  // Get effective score for failed check
+  const parsedScore = parseScore(call.evaluation_score);
+  const effectiveScore = parsedScore !== null ? parsedScore : estimateScore(call);
+  
+  const isFailedByText = failedPatterns.some(p => textToCheck.includes(p));
+  const isVeryShortCall = (call.duration || 0) < 15;
+  const aiOnlySpoke = transcript.includes('ai:') && userResponses === 0;
+  const customerHungUpQuickly = endedReason === 'customer-ended-call' && isVeryShortCall;
+  
+  const isFailedCall = isFailedByText || 
+    effectiveScore === 1 ||  // Explicitly scored as failed
+    (customerHungUpQuickly && !isRealConversation) ||
+    (aiOnlySpoke && isVeryShortCall);
+  
+  // If failed → F (sort key 2)
+  if (isFailedCall) {
+    return 2;
+  }
+  
+  // Check if Lead - MUST match display logic
+  // Negative indicators - avoid short words that match inside other words
+  const negativeIndicators = [
+    'not interested', 'no thanks', 'no thank you', 'don\'t call', 'stop calling',
+    'remove me', 'wrong number', 'can\'t talk', 'not now', 'not for me',
+    'i\'m busy', 'too busy', 'leave me alone',
+    'hayır', 'ilgilenmiyorum', 'aramayın', 'meşgulüm', 'istemiyorum'
+  ];
+  
+  // Check positive/negative ONLY in USER's speech
+  const hasPositiveFromUser = positiveIndicators.some(p => userText.includes(p));
+  const hasNegativeFromUser = negativeIndicators.some(p => userText.includes(p));
+  
+  // Special case: if user ONLY said "no" (very short response)
+  const userWords = userText.trim().split(/\s+/).filter(w => w.length > 0);
+  const onlySaidNo = userWords.length <= 2 && /\bno\b/i.test(userText) && !hasPositiveFromUser;
+  
+  const hasMinimumEngagement = isRealConversation && !isVeryShortCall;
+  
+  const isLead = hasMinimumEngagement && 
+    hasPositiveFromUser && !hasNegativeFromUser && !onlySaidNo && call.sentiment !== 'negative';
+  
+  // If lead → L (sort key 4)
+  if (isLead) {
+    return 4;
+  }
+  
+  // Otherwise → N (neutral, sort key 3)
+  return 3;
 }
 
 // Helper function to get valid evaluation summary
@@ -530,24 +686,74 @@ function getValidEvaluationSummary(summary: string | null | undefined): string |
   return summary;
 }
 
-// Helper to get score color classes
-function getScoreColor(score: number): { bg: string; text: string } {
-  if (score >= 7) {
-    return {
-      bg: "bg-green-100 dark:bg-green-900/30",
-      text: "text-green-700 dark:text-green-400"
-    };
-  } else if (score >= 4) {
-    return {
-      bg: "bg-yellow-100 dark:bg-yellow-900/30",
-      text: "text-yellow-700 dark:text-yellow-400"
-    };
-  } else {
-    return {
-      bg: "bg-red-100 dark:bg-red-900/30",
-      text: "text-red-700 dark:text-red-400"
-    };
+// Generate actionable summary for salespeople based on call category
+function getSalesAdvice(
+  category: 'V' | 'F' | 'L' | 'N',
+  transcript: string,
+  userText: string
+): string {
+  // For voicemail and failed - simple messages
+  if (category === 'V') {
+    return "Sesli mesaja düşüldü. Farklı bir saatte tekrar arayın.";
   }
+  if (category === 'F') {
+    return "Ulaşılamadı. Daha sonra tekrar deneyin.";
+  }
+  
+  // For leads and neutral - analyze conversation for actionable advice
+  const lowerTranscript = transcript.toLowerCase();
+  const lowerUserText = userText.toLowerCase();
+  
+  // Check for specific patterns and generate advice
+  const advice: string[] = [];
+  
+  // Lead - positive engagement
+  if (category === 'L') {
+    advice.push("İlgili müşteri!");
+    
+    // Check what they agreed to
+    if (lowerTranscript.includes('zoom') || lowerTranscript.includes('q and a')) {
+      advice.push("Zoom görüşmesi planlanacak.");
+    }
+    if (lowerUserText.includes('call me') || lowerUserText.includes('call back') || lowerUserText.includes('ara')) {
+      advice.push("Geri arama istedi.");
+    }
+    if (lowerUserText.includes('send') || lowerUserText.includes('email') || lowerUserText.includes('whatsapp')) {
+      advice.push("Bilgi gönderilmesini istedi.");
+    }
+    if (lowerUserText.includes('monday') || lowerUserText.includes('tuesday') || lowerUserText.includes('wednesday') || 
+        lowerUserText.includes('thursday') || lowerUserText.includes('friday') || lowerUserText.includes('saturday') ||
+        lowerUserText.includes('pazartesi') || lowerUserText.includes('salı') || lowerUserText.includes('çarşamba')) {
+      advice.push("Belirli gün tercih etti - takvimi kontrol edin.");
+    }
+    if (lowerUserText.includes('morning') || lowerUserText.includes('afternoon') || lowerUserText.includes('evening') ||
+        lowerUserText.includes('sabah') || lowerUserText.includes('öğleden') || lowerUserText.includes('akşam')) {
+      advice.push("Saat tercihi belirtti.");
+    }
+    
+    // If no specific action found
+    if (advice.length === 1) {
+      advice.push("Hızlıca takip edin ve randevu alın.");
+    }
+  }
+  
+  // Neutral - some engagement but unclear
+  if (category === 'N') {
+    // Check for specific situations
+    if (lowerUserText.includes('busy') || lowerUserText.includes('meşgul') || lowerUserText.includes('not now')) {
+      advice.push("Müşteri meşguldü. Daha sonra tekrar arayın.");
+    } else if (lowerUserText.includes('who') || lowerUserText.includes('kim') || lowerUserText.includes('which company')) {
+      advice.push("Müşteri şirketi sorguladı. Güven oluşturmak için detaylı bilgi verin.");
+    } else if (lowerUserText.includes('another time') || lowerUserText.includes('later') || lowerUserText.includes('sonra')) {
+      advice.push("Başka zaman aramak istedi. 1-2 gün sonra tekrar deneyin.");
+    } else if (lowerUserText.includes('think') || lowerUserText.includes('düşün')) {
+      advice.push("Düşünmek istiyor. 2-3 gün sonra takip edin.");
+    } else {
+      advice.push("Görüşme yapıldı ama net sonuç yok. Takip araması yapın.");
+    }
+  }
+  
+  return advice.join(" ");
 }
 
 // Call Row Component with Expandable Detail - Mobile Responsive
@@ -567,23 +773,167 @@ function CallRow({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Get proper caller name and phone display (handles swapped data)
+  const callerDisplay = getCallerDisplay(call);
+
   // Pre-calculate valid score and summary
   const metadata = call.metadata as Record<string, unknown> | undefined;
   const endedReason = (metadata?.endedReason as string || '').toLowerCase();
+  const evalSummary = (call.evaluation_summary || '').toLowerCase();
+  const callSummary = (call.summary || '').toLowerCase();
+  const transcript = (call.transcript || '').toLowerCase();
   
-  // Check if this is a failed connection (no-answer, voicemail, busy)
-  const isFailedConnection = endedReason.includes('no-answer') || 
-                             endedReason.includes('customer-did-not-answer') ||
-                             endedReason.includes('voicemail') || 
-                             endedReason.includes('busy');
-  
-  // For failed connections, always show 1 regardless of DB value
-  // For others, use DB value or estimate
+  // Get the score first (either from evaluation or estimated)
   const parsedScore = parseScore(call.evaluation_score);
-  const validScore = isFailedConnection ? 1 : (parsedScore !== null ? parsedScore : estimateScore(call));
-  const isEstimated = parsedScore === null && !isFailedConnection;
+  const estimatedScoreValue = estimateScore(call);
+  const effectiveScore = parsedScore !== null ? parsedScore : estimatedScoreValue;
+  
+  // === SMART CALL CLASSIFICATION ALGORITHM ===
+  
+  // Voicemail system phrases (these appear in automated voicemail greetings)
+  const voicemailSystemPhrases = [
+    'voicemail', 'sesli mesaj',
+    'record your message', 'leave a message', 'leave your message',
+    'unable to take your call', 'can\'t take your call', 'can t take your call', 'cannot take your call',
+    'after the tone', 'after the beep', 'at the tone', 'mailbox',
+    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done'
+  ];
+  
+  // Hold/wait phrases (can appear in both voicemail AND real calls)
+  const holdPhrases = ['please stay on the line', 'please hold', 'not available'];
+  
+  // Failed call patterns (in endedReason or summary)
+  const failedPatterns = [
+    'no-answer', 'customer-did-not-answer', 'busy', 'customer-busy', 'failed',
+    // Turkish failed phrases  
+    'ulaşılamadı', 'meşgul', 'cevap yok', 'hat meşgul',
+    'bağlantı kurulamadı', 'bağlanamadı', 'aranılamadı', 'cevaplanmadı'
+  ];
+  
+  // Meaningful user responses (indicates real conversation, not voicemail)
+  const meaningfulUserPatterns = [
+    'who is this', 'who are you', 'which company', 'what do you want',
+    'call me', 'call back', 'another time', 'not interested', 'no thanks',
+    'yes', 'no', 'okay', 'sure', 'hello', 'hi', 'what', 'why', 'how much',
+    'i\'m', 'i am', 'i don\'t', 'i cant', 'i can\'t',
+    // Turkish
+    'kimsiniz', 'ne istiyorsunuz', 'sonra ara', 'ilgilenmiyorum', 'hayır', 'evet'
+  ];
+  
+  const textToCheck = `${endedReason} ${evalSummary} ${callSummary}`;
+  
+  // Count user responses in transcript
+  const userResponses = (transcript.match(/user:/gi) || []).length;
+  
+  // Extract what the user actually said (not the AI parts)
+  // Normalize: remove punctuation for better matching
+  const userParts = transcript.split(/ai:/i).filter(part => part.includes('user:'));
+  const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
+  const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' ');
+  
+  // Check if user said something meaningful (not just voicemail system)
+  const userSaidMeaningful = meaningfulUserPatterns.some(p => userText.includes(p));
+  const userOnlyVoicemailPhrases = voicemailSystemPhrases.some(p => userText.includes(p)) && !userSaidMeaningful;
+  
+  // Determine if this is a voicemail
+  // It's voicemail if: voicemail phrases exist AND user didn't say anything meaningful
+  const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
+  const hasOnlyHoldPhrases = holdPhrases.some(p => transcript.includes(p)) && !hasVoicemailPhrases;
+  
+  // Key insight: Even if user responded multiple times, if they ONLY said voicemail phrases, it's still voicemail
+  const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
+  
+  const isVoicemail = (hasVoicemailPhrases && !isRealConversation) || 
+                      (userOnlyVoicemailPhrases);
+  
+  // Silence timeout with short call = likely voicemail
+  const isSilenceTimeout = endedReason === 'silence-timed-out';
+  const isShortCall = (call.duration || 0) < 30;
+  const likelyVoicemailByBehavior = isSilenceTimeout && isShortCall && !isRealConversation;
+  
+  // Check for explicit failed patterns
+  const isFailedByText = failedPatterns.some(p => textToCheck.includes(p));
+  
+  // Very short call where customer hung up without engaging
+  const isVeryShortCall = (call.duration || 0) < 15;
+  const aiOnlySpoke = transcript.includes('ai:') && userResponses === 0;
+  const customerHungUpQuickly = endedReason === 'customer-ended-call' && isVeryShortCall;
+  
+  // Determine call category
+  const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior;
+  
+  // Failed call: explicit failure patterns OR no real engagement
+  const isFailedCall = isFailedByText || 
+    effectiveScore === 1 ||  // Explicitly scored as failed
+    (customerHungUpQuickly && !isRealConversation) ||
+    (aiOnlySpoke && isVeryShortCall);
+  
+  // Lead detection: Real conversation with positive indicators FROM USER (not AI!)
+  const positiveIndicators = [
+    // Interest signals - affirmative responses
+    'interested', 'yes please', 'sure', 'okay', 'sounds good', 'yes i am',
+    'yep', 'yeah', 'yea', 'yes', 'alright',  // Common affirmatives
+    'tell me more', 'how much', 'when can', 'i want', 'i need', 'i would like',
+    // Callback/contact requests
+    'call me', 'call back', 'reach me', 'contact me', 'get back to me',
+    'send me', 'email me', 'whatsapp', 'message me', 'text me',
+    // Appointment
+    'book', 'schedule', 'appointment', 'available', 'free time',
+    // Turkish
+    'ilgili', 'randevu', 'evet', 'tamam', 'olur', 'istiyorum', 'ara beni',
+    'geri ara', 'iletişime geç', 'bilgi gönder'
+  ];
+  
+  // Negative indicators - these should NOT be leads
+  // Avoid short words that could match inside other words
+  const negativeIndicators = [
+    'not interested', 'no thanks', 'no thank you', 'don\'t call', 'stop calling',
+    'remove me', 'wrong number', 'can\'t talk', 'not now', 'not for me',
+    'i\'m busy', 'too busy', 'leave me alone',
+    // Turkish
+    'hayır', 'ilgilenmiyorum', 'aramayın', 'meşgulüm', 'istemiyorum'
+  ];
+  
+  // Check positive/negative ONLY in USER's speech, not AI's
+  const hasPositiveFromUser = positiveIndicators.some(p => userText.includes(p));
+  const hasNegativeFromUser = negativeIndicators.some(p => userText.includes(p));
+  
+  // Special case: if user ONLY said "no" (very short response), it's negative
+  const userWords = userText.trim().split(/\s+/).filter(w => w.length > 0);
+  const onlySaidNo = userWords.length <= 2 && /\bno\b/i.test(userText) && !hasPositiveFromUser;
+  const hasMinimumEngagement = isRealConversation && !isVeryShortCall;
+  
+  // Lead requires: engagement + positive indicators from user + NO negative indicators
+  const isLead = !isVoicemailFinal && !isFailedCall && hasMinimumEngagement && 
+    hasPositiveFromUser && !hasNegativeFromUser && !onlySaidNo && call.sentiment !== 'negative';
+  
+  // Determine what to display in score badge
+  // V = Voicemail (red), F = Failed (red), L = Lead (green), N = Neutral (yellow)
+  let scoreDisplay: string;
+  let badgeColor: { bg: string; text: string };
+  
+  if (isVoicemailFinal) {
+    scoreDisplay = "V";
+    badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
+  } else if (isFailedCall) {
+    scoreDisplay = "F";
+    badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
+  } else if (isLead) {
+    scoreDisplay = "L";
+    badgeColor = { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" };
+  } else {
+    scoreDisplay = "N";
+    badgeColor = { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" };
+  }
+  
   const validSummary = getValidEvaluationSummary(call.evaluation_summary);
-  const scoreColors = getScoreColor(validScore);
+  
+  // Generate actionable sales advice based on category
+  const salesAdvice = getSalesAdvice(
+    scoreDisplay as 'V' | 'F' | 'L' | 'N',
+    call.transcript || '',
+    userText
+  );
 
   return (
     <div className="border-b border-gray-100 dark:border-gray-700 last:border-0">
@@ -596,10 +946,10 @@ function CallRow({
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-900 dark:text-white truncate">
-                {call.caller_name || "Unknown Caller"}
+                {callerDisplay.name}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                {call.caller_phone || "No phone"}
+                {callerDisplay.phone}
               </p>
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -611,14 +961,13 @@ function CallRow({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Score badge - always shows a score */}
+              {/* Score badge - V (voicemail), F (failed), L (lead), N (neutral) */}
               <span className={cn(
                 "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
-                scoreColors.bg,
-                scoreColors.text,
-                isEstimated && "opacity-70" // Slightly dim estimated scores
+                badgeColor.bg,
+                badgeColor.text
               )}>
-                {validScore}
+                {scoreDisplay}
               </span>
               {call.recording_url && (
                 <button 
@@ -649,22 +998,21 @@ function CallRow({
           {/* Customer Info */}
           <div className="w-64">
             <p className="font-medium text-gray-900 dark:text-white truncate">
-              {call.caller_name || "Unknown Caller"}
+              {callerDisplay.name}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-              {call.caller_phone || "No phone"}
+              {callerDisplay.phone}
             </p>
           </div>
           
-          {/* Score */}
+          {/* Score - V (voicemail), F (failed), L (lead), N (neutral) */}
           <div className="w-16 flex justify-center">
             <span className={cn(
               "inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
-              scoreColors.bg,
-              scoreColors.text,
-              isEstimated && "opacity-70" // Slightly dim estimated scores
+              badgeColor.bg,
+              badgeColor.text
             )}>
-              {validScore}
+              {scoreDisplay}
             </span>
           </div>
           
@@ -716,46 +1064,38 @@ function CallRow({
             
             {/* AI Evaluation - Always show since we always have a score now */}
             <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">AI Evaluation</p>
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Call Status</p>
               <div className="flex items-start gap-4">
-                {/* Score Display */}
+                {/* Status Display - V (voicemail), F (failed), L (lead), N (neutral) */}
                 <div className={cn(
                   "flex-shrink-0 flex flex-col items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl",
-                  scoreColors.bg,
-                  isEstimated && "opacity-80"
+                  badgeColor.bg
                 )}>
-                  <span className={cn("text-xl sm:text-2xl font-bold", scoreColors.text)}>
-                    {validScore}
+                  <span className={cn("text-xl sm:text-2xl font-bold", badgeColor.text)}>
+                    {scoreDisplay}
                   </span>
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">/10</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                    {scoreDisplay === 'V' ? "oicemail" :
+                     scoreDisplay === 'F' ? "ailed" :
+                     scoreDisplay === 'L' ? "ead" : "eutral"}
+                  </span>
                 </div>
                 
-                {/* Summary/Details */}
+                {/* Sales Advice */}
                 <div className="flex-1 space-y-2">
-                  {validSummary && (
-                    <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(validSummary)}</p>
-                  )}
+                  <p className="text-sm text-gray-700 dark:text-gray-300">{salesAdvice}</p>
                   
-                  {/* Score interpretation */}
+                  {/* Status label */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={cn(
                       "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
-                      validScore >= 7 
-                        ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
-                        : validScore >= 4
-                        ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
-                        : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                      badgeColor.bg,
+                      badgeColor.text
                     )}>
-                      {validScore >= 8 ? "Excellent" : 
-                       validScore >= 7 ? "Good" :
-                       validScore >= 5 ? "Average" :
-                       validScore >= 3 ? "Below Average" : "Poor"}
+                      {scoreDisplay === 'V' ? "Voicemail" :
+                       scoreDisplay === 'F' ? "Not Reached" :
+                       scoreDisplay === 'L' ? "Lead" : "Neutral"}
                     </span>
-                    {isEstimated && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
-                        Estimated
-                      </span>
-                    )}
                     {call.sentiment && call.sentiment !== 'neutral' && (
                       <span className={cn(
                         "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize",
@@ -828,6 +1168,7 @@ export default function CallsPage() {
             caller_name: string | null;
             evaluation_summary: string | null;
             evaluation_score: number | string | null;
+            metadata: Record<string, unknown> | null;
             created_at: string;
             updated_at: string;
           }) => {
@@ -847,9 +1188,10 @@ export default function CallsPage() {
               type: call.type as Call["type"],
               caller_phone: call.caller_phone,
               caller_name: call.caller_name,
-              evaluation_summary: call.evaluation_summary, // Will be validated in CallRow
+              evaluation_summary: call.evaluation_summary,
               evaluation_score: parsedScore,
-              metadata: {},
+              tags: [],
+              metadata: call.metadata || {},
               created_at: call.created_at,
               updated_at: call.updated_at,
             };
@@ -953,9 +1295,11 @@ export default function CallsPage() {
         case "earliest":
           return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         case "score_high":
-          return (b.evaluation_score ?? -1) - (a.evaluation_score ?? -1);
+          // Sort by status: L (leads) first, then N, F, V
+          return getCallSortKey(b) - getCallSortKey(a);
         case "score_low":
-          return (a.evaluation_score ?? 11) - (b.evaluation_score ?? 11);
+          // Sort by status: V (voicemail) first, then F, N, L
+          return getCallSortKey(a) - getCallSortKey(b);
         default:
           return 0;
       }

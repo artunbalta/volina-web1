@@ -17,6 +17,11 @@ interface VapiWebhookPayload {
       status: string;
       endedReason?: string;
       phoneNumberId?: string;
+      assistantId?: string;
+      assistant?: {
+        id: string;
+        name?: string;
+      };
       customer?: {
         number: string;
         name?: string;
@@ -393,9 +398,13 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     const rawSummary = analysis?.summary || summary || null;
     const cleanedSummary = cleanCallSummary(rawSummary);
 
+    // Get assistant_id from call
+    const assistantId = call.assistantId || call.assistant?.id || null;
+
     const insertData = {
       user_id: userId,
       vapi_call_id: call.id,
+      assistant_id: assistantId,
       recording_url: recordingUrl || null,
       transcript: transcript || null,
       summary: cleanedSummary,
@@ -414,6 +423,7 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
         structuredData: analysis?.structuredData,
         outreach_id: outreachId,
         lead_id: leadId,
+        assistantId: assistantId,
       },
     };
 

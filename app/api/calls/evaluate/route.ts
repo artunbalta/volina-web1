@@ -36,22 +36,24 @@ async function evaluateCallWithAI(transcript: string, existingSummary?: string |
 Görevin:
 1. Aramanın kısa bir özetini çıkar (maksimum 2 cümle)
 2. Aramanın kalitesini ve müşteri ilgisini değerlendir
-3. 1-10 arası bir puan ver:
-   - 9-10: Mükemmel - Randevu alındı veya satış yapıldı
-   - 7-8: Çok iyi - Güçlü ilgi, takip gerekli
-   - 5-6: Orta - Potansiyel var ama belirsiz
-   - 3-4: Zayıf - Düşük ilgi
-   - 1-2: Kötü - İlgi yok veya olumsuz
+3. 1-5 arası bir puan ver:
+   - 1: Bağlantı kurulamadı (sesli mesaj, cevap yok, meşgul, yanlış numara)
+   - 2: Bağlantı kuruldu ama olumsuz (hemen kapattı, ilgisiz, kaba)
+   - 3: Nötr görüşme (dinledi ama kararsız, ilgi belirsiz)
+   - 4: Olumlu ilgi (sorular sordu, bilgi istedi, takip istedi)
+   - 5: Başarılı (randevu alındı, satış yapıldı, kesin taahhüt)
 4. Arama türünü belirle: appointment (randevu), inquiry (bilgi talebi), follow_up (takip), cancellation (iptal)
 5. Duygu durumunu belirle: positive, neutral, negative
+
+ÖNEMLİ: Gerçek bir görüşme olduysa (müşteri cevap verip konuştuysa) minimum puan 3'tür.
 
 JSON formatında yanıt ver:
 {
   "summary": "Aramanın kısa özeti",
   "evaluation": "Detaylı değerlendirme ve öneriler",
-  "score": 7,
+  "score": 3,
   "callType": "inquiry",
-  "sentiment": "positive"
+  "sentiment": "neutral"
 }`;
 
   const userMessage = existingSummary 
@@ -97,7 +99,7 @@ JSON formatında yanıt ver:
     return {
       summary: "Arama değerlendirildi",
       evaluation: content,
-      score: 5,
+      score: 3,
       callType: "inquiry",
       sentiment: "neutral",
     };

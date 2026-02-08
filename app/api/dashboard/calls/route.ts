@@ -38,6 +38,15 @@ export async function GET(request: NextRequest) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
+    // Get user's vapi_assistant_id from profile for filtering
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("vapi_assistant_id")
+      .eq("id", userId)
+      .single() as { data: { vapi_assistant_id?: string | null } | null };
+    
+    const userAssistantId = profile?.vapi_assistant_id;
+
     // Build query - MUST filter by user_id for security
     let query = supabase
       .from("calls")
@@ -47,6 +56,53 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false });
     
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
+    
+    // Filter by assistant_id if user has one set
+    // Include calls that match the assistantId OR have no assistantId (legacy calls)
+    let filteredCalls = allCalls || [];
+    if (userAssistantId && filteredCalls.length > 0) {
+      filteredCalls = filteredCalls.filter(call => {
+        const callAssistantId = (call as Record<string, unknown>).assistant_id as string | undefined;
+        const metadataAssistantId = call.metadata?.assistantId as string | undefined;
+        const hasAssistantId = callAssistantId || metadataAssistantId;
+        
+        // Include if: matches target assistant OR has no assistantId (older calls)
+        if (!hasAssistantId) return true; // Include legacy calls without assistantId
+        return callAssistantId === userAssistantId || metadataAssistantId === userAssistantId;
+      });
+    }
+    
+    // Filter out test calls (webCalls from VAPI dashboard)
+    // Only include outboundPhoneCall and inboundPhoneCall
+    filteredCalls = filteredCalls.filter(call => {
+      const callType = call.metadata?.callType as string | undefined;
+      // Exclude webCalls (test calls from VAPI dashboard)
+      // Include if: not a webCall, or if callType is not set (legacy calls)
+      return callType !== 'webCall';
+    });
+    
+    // Helper to check if string looks like a phone number
+    const looksLikePhone = (str: string | null | undefined): boolean => {
+      if (!str) return false;
+      const cleaned = str.replace(/[\s\-\(\)]/g, '');
+      return cleaned.startsWith('+') || /^\d{7,}$/.test(cleaned);
+    };
+    
+    // Filter out Unknown Callers:
+    // 1. No caller_name at all
+    // 2. caller_name is a phone number and no caller_phone (would display as "Unknown Caller")
+    filteredCalls = filteredCalls.filter(call => {
+      const hasName = call.caller_name !== null && call.caller_name !== undefined && call.caller_name !== '';
+      if (!hasName) return false;
+      
+      // If name looks like a phone number and there's no actual phone, it's effectively unknown
+      const callerPhone = (call as Record<string, unknown>).caller_phone as string | null | undefined;
+      if (looksLikePhone(call.caller_name) && !callerPhone) {
+        return false; // This would show as "Unknown Caller" in UI
+      }
+      
+      return true;
+    });
 
     if (error) {
       console.error("Error fetching calls:", error);
@@ -56,31 +112,31 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Return all calls (no limit)
-    const calls = allCalls || [];
+    // Use filtered calls for everything
+    const calls = filteredCalls;
 
-    // Calculate KPI stats from all fetched data
+    // Calculate KPI stats from filtered data
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-    const totalCalls = allCalls?.length || 0;
-    const monthlyCalls = allCalls?.filter(c => new Date(c.created_at) >= startOfMonth).length || 0;
-    const dailyCalls = allCalls?.filter(c => new Date(c.created_at) >= startOfDay).length || 0;
+    const totalCalls = calls.length;
+    const monthlyCalls = calls.filter(c => new Date(c.created_at) >= startOfMonth).length;
+    const dailyCalls = calls.filter(c => new Date(c.created_at) >= startOfDay).length;
     
     // Calculate average duration
-    const callsWithDuration = calls?.filter(c => c.duration && c.duration > 0) || [];
+    const callsWithDuration = calls.filter(c => c.duration && c.duration > 0);
     const avgDuration = callsWithDuration.length > 0
       ? Math.round(callsWithDuration.reduce((sum, c) => sum + (c.duration || 0), 0) / callsWithDuration.length)
       : 0;
 
     // Calculate appointment rate (based on sentiment or type)
-    const appointmentCalls = calls?.filter(c => 
+    const appointmentCalls = calls.filter(c => 
       c.type === 'appointment' || 
       c.sentiment === 'positive' ||
       (c.metadata && typeof c.metadata === 'object' && 
        (c.metadata as Record<string, unknown>).appointmentBooked === true)
-    ).length || 0;
+    ).length;
     const appointmentRate = totalCalls > 0 ? Math.round((appointmentCalls / totalCalls) * 100) : 0;
 
     return NextResponse.json({
