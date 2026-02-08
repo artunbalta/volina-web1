@@ -692,65 +692,47 @@ function getSalesAdvice(
   transcript: string,
   userText: string
 ): string {
-  // For voicemail and failed - simple messages
+  // For voicemail, failed, and neutral - simple messages
   if (category === 'V') {
-    return "Sesli mesaja düşüldü. Farklı bir saatte tekrar arayın.";
+    return "Voicemail";
   }
   if (category === 'F') {
-    return "Ulaşılamadı. Daha sonra tekrar deneyin.";
+    return "Failed";
+  }
+  if (category === 'N') {
+    return "Neutral";
   }
   
-  // For leads and neutral - analyze conversation for actionable advice
+  // Only L (Lead) gets detailed advice
   const lowerTranscript = transcript.toLowerCase();
   const lowerUserText = userText.toLowerCase();
   
-  // Check for specific patterns and generate advice
   const advice: string[] = [];
+  advice.push("İlgili müşteri!");
   
-  // Lead - positive engagement
-  if (category === 'L') {
-    advice.push("İlgili müşteri!");
-    
-    // Check what they agreed to
-    if (lowerTranscript.includes('zoom') || lowerTranscript.includes('q and a')) {
-      advice.push("Zoom görüşmesi planlanacak.");
-    }
-    if (lowerUserText.includes('call me') || lowerUserText.includes('call back') || lowerUserText.includes('ara')) {
-      advice.push("Geri arama istedi.");
-    }
-    if (lowerUserText.includes('send') || lowerUserText.includes('email') || lowerUserText.includes('whatsapp')) {
-      advice.push("Bilgi gönderilmesini istedi.");
-    }
-    if (lowerUserText.includes('monday') || lowerUserText.includes('tuesday') || lowerUserText.includes('wednesday') || 
-        lowerUserText.includes('thursday') || lowerUserText.includes('friday') || lowerUserText.includes('saturday') ||
-        lowerUserText.includes('pazartesi') || lowerUserText.includes('salı') || lowerUserText.includes('çarşamba')) {
-      advice.push("Belirli gün tercih etti - takvimi kontrol edin.");
-    }
-    if (lowerUserText.includes('morning') || lowerUserText.includes('afternoon') || lowerUserText.includes('evening') ||
-        lowerUserText.includes('sabah') || lowerUserText.includes('öğleden') || lowerUserText.includes('akşam')) {
-      advice.push("Saat tercihi belirtti.");
-    }
-    
-    // If no specific action found
-    if (advice.length === 1) {
-      advice.push("Hızlıca takip edin ve randevu alın.");
-    }
+  // Check what they agreed to
+  if (lowerTranscript.includes('zoom') || lowerTranscript.includes('q and a')) {
+    advice.push("Zoom görüşmesi planlanacak.");
+  }
+  if (lowerUserText.includes('call me') || lowerUserText.includes('call back') || lowerUserText.includes('ara')) {
+    advice.push("Geri arama istedi.");
+  }
+  if (lowerUserText.includes('send') || lowerUserText.includes('email') || lowerUserText.includes('whatsapp')) {
+    advice.push("Bilgi gönderilmesini istedi.");
+  }
+  if (lowerUserText.includes('monday') || lowerUserText.includes('tuesday') || lowerUserText.includes('wednesday') || 
+      lowerUserText.includes('thursday') || lowerUserText.includes('friday') || lowerUserText.includes('saturday') ||
+      lowerUserText.includes('pazartesi') || lowerUserText.includes('salı') || lowerUserText.includes('çarşamba')) {
+    advice.push("Belirli gün tercih etti - takvimi kontrol edin.");
+  }
+  if (lowerUserText.includes('morning') || lowerUserText.includes('afternoon') || lowerUserText.includes('evening') ||
+      lowerUserText.includes('sabah') || lowerUserText.includes('öğleden') || lowerUserText.includes('akşam')) {
+    advice.push("Saat tercihi belirtti.");
   }
   
-  // Neutral - some engagement but unclear
-  if (category === 'N') {
-    // Check for specific situations
-    if (lowerUserText.includes('busy') || lowerUserText.includes('meşgul') || lowerUserText.includes('not now')) {
-      advice.push("Müşteri meşguldü. Daha sonra tekrar arayın.");
-    } else if (lowerUserText.includes('who') || lowerUserText.includes('kim') || lowerUserText.includes('which company')) {
-      advice.push("Müşteri şirketi sorguladı. Güven oluşturmak için detaylı bilgi verin.");
-    } else if (lowerUserText.includes('another time') || lowerUserText.includes('later') || lowerUserText.includes('sonra')) {
-      advice.push("Başka zaman aramak istedi. 1-2 gün sonra tekrar deneyin.");
-    } else if (lowerUserText.includes('think') || lowerUserText.includes('düşün')) {
-      advice.push("Düşünmek istiyor. 2-3 gün sonra takip edin.");
-    } else {
-      advice.push("Görüşme yapıldı ama net sonuç yok. Takip araması yapın.");
-    }
+  // If no specific action found
+  if (advice.length === 1) {
+    advice.push("Hızlıca takip edin ve randevu alın.");
   }
   
   return advice.join(" ");
