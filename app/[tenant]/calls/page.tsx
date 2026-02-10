@@ -374,14 +374,14 @@ function AudioPlayer({
                     />
                   );
                 })}
-              </div>
+      </div>
               
               {/* Scrubber */}
               <div 
                 className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-orange-500 rounded-full border-2 border-white dark:border-gray-900 transition-all"
                 style={{ left: `calc(${progress}% - 8px)` }}
               />
-            </div>
+    </div>
             
             <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 font-mono tabular-nums">
               <span>{formatTime(currentTime)}</span>
@@ -1038,10 +1038,10 @@ function CallRow({
           <div className="sm:ml-12 space-y-4">
             {/* Summary */}
             {call.summary && cleanCallSummary(call.summary) && (
-              <div>
+          <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Summary</p>
                 <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(call.summary)}</p>
-              </div>
+          </div>
             )}
             
             {/* AI Evaluation - Always show since we always have a score now */}
@@ -1061,7 +1061,7 @@ function CallRow({
                      scoreDisplay === 'F' ? "ailed" :
                      scoreDisplay === 'L' ? "ead" : "eutral"}
                   </span>
-                </div>
+          </div>
                 
                 {/* Sales Advice */}
                 <div className="flex-1 space-y-2">
@@ -1088,8 +1088,8 @@ function CallRow({
                         {call.sentiment}
                       </span>
                     )}
-                  </div>
-                </div>
+        </div>
+      </div>
               </div>
             </div>
             
@@ -1110,7 +1110,7 @@ function CallRow({
 }
 
 type SortOption = "latest" | "earliest" | "score_high" | "score_low";
-
+  
 export default function CallsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const [calls, setCalls] = useState<Call[]>([]);
@@ -1158,24 +1158,24 @@ export default function CallsPage() {
             const parsedScore = parseScore(call.evaluation_score);
 
             return {
-              id: call.id,
-              user_id: "",
-              vapi_call_id: call.vapi_call_id,
-              appointment_id: null,
-              recording_url: call.recording_url,
-              transcript: call.transcript,
-              summary: call.summary,
-              sentiment: call.sentiment as Call["sentiment"],
-              duration: call.duration,
-              type: call.type as Call["type"],
-              caller_phone: call.caller_phone,
-              caller_name: call.caller_name,
-              evaluation_summary: call.evaluation_summary,
+            id: call.id,
+            user_id: "",
+            vapi_call_id: call.vapi_call_id,
+            appointment_id: null,
+            recording_url: call.recording_url,
+            transcript: call.transcript,
+            summary: call.summary,
+            sentiment: call.sentiment as Call["sentiment"],
+            duration: call.duration,
+            type: call.type as Call["type"],
+            caller_phone: call.caller_phone,
+            caller_name: call.caller_name,
+            evaluation_summary: call.evaluation_summary,
               evaluation_score: parsedScore,
               tags: [],
               metadata: call.metadata || {},
-              created_at: call.created_at,
-              updated_at: call.updated_at,
+            created_at: call.created_at,
+            updated_at: call.updated_at,
             };
           });
           setCalls(transformedCalls);
@@ -1225,7 +1225,7 @@ export default function CallsPage() {
       setIsLoading(true);
       return;
     }
-    
+
     if (user?.id) {
       // Load cached calls immediately, then sync in background
       loadCalls().then(() => {
@@ -1297,7 +1297,7 @@ export default function CallsPage() {
     try {
       // Sync from Vapi and reload
       const hasNewCalls = await syncCallsFromVapi();
-      await loadCalls();
+        await loadCalls();
       
       if (hasNewCalls) {
         console.log("New calls synced from Vapi");
@@ -1357,7 +1357,7 @@ export default function CallsPage() {
             <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Calls</h1>
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">View and manage your call history</p>
-            </div>
+                </div>
               <Button 
                 variant="outline" 
                 onClick={handleRefresh} 
@@ -1367,14 +1367,14 @@ export default function CallsPage() {
                 <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
           Refresh
               </Button>
-            </div>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">All</p>
           <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{totalCalls}</p>
-        </div>
+      </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Transferred</p>
           <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">0</p>
@@ -1382,20 +1382,20 @@ export default function CallsPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
           <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Successful</p>
           <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{successfulCalls}</p>
-        </div>
-      </div>
+            </div>
+            </div>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
         <div className="relative flex-1 w-full sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
-          <Input
+                <Input
             placeholder="Search calls..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
-          />
-        </div>
+                />
+              </div>
 
         {/* Date Picker */}
         <div className="relative w-full sm:w-auto">
@@ -1414,7 +1414,7 @@ export default function CallsPage() {
               <X className="w-3 h-3 text-gray-400" />
             </button>
           )}
-        </div>
+      </div>
 
         {/* Sort Dropdown */}
         <div className="w-full sm:w-auto">
@@ -1430,8 +1430,8 @@ export default function CallsPage() {
               <SelectItem value="score_low">Lowest Score</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-      </div>
+            </div>
+          </div>
 
       {/* Calls Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -1444,17 +1444,17 @@ export default function CallsPage() {
             <div className="w-20 text-center">Duration</div>
             <div className="w-28 text-center">Date</div>
             <div className="w-20"></div>
-          </div>
-      </div>
+                          </div>
+                        </div>
 
         {/* Table Body */}
         {filteredCalls.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <Phone className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
             <p className="text-gray-500 dark:text-gray-400">No calls found</p>
-          </div>
+                            </div>
         ) : (
-          <div>
+                              <div>
             {filteredCalls.map((call) => (
               <CallRow 
                 key={call.id} 
@@ -1465,9 +1465,9 @@ export default function CallsPage() {
                 }}
               />
             ))}
-              </div>
-        )}
-      </div>
+                          </div>
+                        )}
+                              </div>
 
       {/* Audio Player Modal */}
       <AudioPlayer

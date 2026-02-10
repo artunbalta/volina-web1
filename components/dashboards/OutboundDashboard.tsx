@@ -171,7 +171,7 @@ export default function OutboundDashboard() {
         fetch(`/api/dashboard/leads?userId=${user.id}&page=1&pageSize=1000`),
         fetch(`/api/campaigns/auto-call?userId=${user.id}`).catch(() => null),
       ]);
-      
+
       if (callsResponse.ok) {
         const callsData = await callsResponse.json();
         if (callsData.success && callsData.data) {
@@ -464,7 +464,7 @@ export default function OutboundDashboard() {
     }
     
     if (user?.id) {
-      loadData();
+    loadData();
     } else {
       setIsLoading(false);
     }
@@ -550,12 +550,12 @@ export default function OutboundDashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
+            <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
             Welcome{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ""}! Here's your AI summary.
-          </p>
-        </div>
+              </p>
+            </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <Select value={dateRange} onValueChange={(v) => setDateRange(v as typeof dateRange)}>
             <SelectTrigger className="w-32 sm:w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
@@ -568,16 +568,16 @@ export default function OutboundDashboard() {
               <SelectItem value="last_month">Last Month</SelectItem>
             </SelectContent>
           </Select>
-          <Button 
-            variant="outline" 
+              <Button 
+                variant="outline" 
             size="sm"
-            onClick={handleRefresh} 
-            disabled={isRefreshing}
+                onClick={handleRefresh} 
+                disabled={isRefreshing}
             className="border-gray-200 dark:border-gray-700"
-          >
+              >
             <RefreshCw className={cn("w-4 h-4 sm:mr-2", isRefreshing && "animate-spin")} />
             <span className="hidden sm:inline">Refresh</span>
-          </Button>
+              </Button>
         </div>
       </div>
 
@@ -747,16 +747,16 @@ export default function OutboundDashboard() {
               <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <p className="text-lg font-bold text-green-600 dark:text-green-400">{campaignSummary.totalCalls}</p>
                 <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Calls</p>
-              </div>
+        </div>
               <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <p className="text-lg font-bold text-purple-600 dark:text-purple-400">{campaignSummary.totalMessages}</p>
                 <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Messages</p>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
+                    </div>
+                  </div>
+                  
       {/* Today's Actions */}
       {todayActions.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
@@ -764,7 +764,7 @@ export default function OutboundDashboard() {
             <PhoneCall className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
             <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Today&apos;s Actions</h3>
             <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{todayActions.length} lead(s)</span>
-          </div>
+                  </div>
           <div className="space-y-2">
             {todayActions.map((action) => (
               <div key={action.id} className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30">
@@ -791,8 +791,8 @@ export default function OutboundDashboard() {
                     {format(new Date(action.nextContactDate), "HH:mm")}
                   </span>
                 )}
-              </div>
-            ))}
+                </div>
+              ))}
           </div>
         </div>
       )}
@@ -991,10 +991,10 @@ export default function OutboundDashboard() {
                   <Clock className="w-3 h-3" />
                   <span>{format(new Date(lead.date), "MMM d, HH:mm")}</span>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+                </div>
+              ))}
+            </div>
+          )}
       </div>
 
     </div>

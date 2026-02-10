@@ -37,6 +37,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       
       // Check session directly - more reliable than isAuthenticated
       if (session) {
+        // Admin users should always go to /admin, not tenant dashboard
+        if (user && user.role === "admin") {
+          router.push("/admin");
+          return;
+        }
         // User is authenticated
         if (user && tenant && user.slug !== tenant) {
           // Wrong tenant, redirect to their own

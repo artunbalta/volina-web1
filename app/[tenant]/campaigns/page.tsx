@@ -24,10 +24,10 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Target,
-  Plus,
-  RefreshCw,
+import { 
+  Target, 
+  Plus, 
+  RefreshCw, 
   Phone,
   Clock,
   Play,
@@ -646,16 +646,16 @@ export default function CampaignsPage() {
             const currentDay = progress?.current_day || 0;
 
             return (
-              <Card key={campaign.id} className="hover:shadow-lg transition-shadow">
+            <Card key={campaign.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-lg truncate">{campaign.name}</CardTitle>
                       <CardDescription className="mt-1 truncate">{campaign.description || "No description"}</CardDescription>
-                    </div>
+                  </div>
                     <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                       {status === "idle" || status === "paused" || status === "completed" ? (
-                        <Button
+                    <Button
                           variant="default" size="sm"
                           onClick={() => handleStart(campaign)}
                           disabled={isSaving || newLeadCount === 0}
@@ -667,14 +667,14 @@ export default function CampaignsPage() {
                       ) : (
                         <Button variant="destructive" size="sm" onClick={() => handleStop(campaign)} disabled={isSaving} className="h-8">
                           <Square className="w-4 h-4 mr-1" /> Stop
-                        </Button>
+                    </Button>
                       )}
                       <Button variant="ghost" size="sm" onClick={() => { setSelectedCampaign(campaign); setShowDeleteDialog(true); }} className="h-8 w-8 p-0 text-red-500 hover:text-red-700">
                         <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    </Button>
                   </div>
-                </CardHeader>
+                </div>
+              </CardHeader>
                 <CardContent className="space-y-3">
                   {/* 7-Day Visual */}
                   <div className="flex gap-1">
@@ -694,7 +694,7 @@ export default function CampaignsPage() {
                         {plan.action === "call" ? <Phone className="w-3 h-3" /> : plan.action === "whatsapp" ? <MessageSquare className="w-3 h-3" /> : <span className="text-[8px]">off</span>}
                       </div>
                     ))}
-                  </div>
+                        </div>
 
                   {/* Progress (if running) */}
                   {status === "running" && progress && (
@@ -702,7 +702,7 @@ export default function CampaignsPage() {
                       <div className="flex justify-between text-xs text-blue-800 dark:text-blue-300">
                         <span>Day {currentDay} of 7</span>
                         <span>{progress.total_calls} calls, {progress.total_messages} messages sent</span>
-                      </div>
+                        </div>
                       <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-1.5">
                         <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${(currentDay / 7) * 100}%` }} />
                       </div>
@@ -721,7 +721,7 @@ export default function CampaignsPage() {
                       <div key={day.day} className="flex items-center gap-2">
                         <MessageSquare className="w-3 h-3 text-green-400" />
                         <span>Day {day.day}: WhatsApp at {formatTime(day.whatsappSendHour ?? 10, day.whatsappSendMinute ?? 0)}</span>
-                      </div>
+                </div>
                     ))}
                   </div>
 
@@ -737,10 +737,10 @@ export default function CampaignsPage() {
                     <span className={cn("px-2 py-1 text-xs rounded-full font-medium flex items-center gap-1", statusCfg.color)}>
                       <StatusIcon className="w-3 h-3" />
                       {statusCfg.label}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
             );
           })}
         </div>
@@ -767,7 +767,7 @@ export default function CampaignsPage() {
 
             <div className="space-y-3">
               <Label className="text-base font-semibold">7-Day Plan (Turkey Time)</Label>
-              <div className="space-y-2">
+            <div className="space-y-2">
                 {formData.day_plans.map((plan, idx) => (
                   <DayPlanEditor key={plan.day} plan={plan} onUpdate={(updated) => updateDayPlan(idx, updated)} />
                 ))}
@@ -807,7 +807,7 @@ export default function CampaignsPage() {
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>
               {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Delete
-            </Button>
+              </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
