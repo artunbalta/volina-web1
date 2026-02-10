@@ -42,7 +42,8 @@ function LoginContent() {
   useEffect(() => {
     if (isAuthenticated && user && !isRedirecting) {
       setIsRedirecting(true);
-      const targetUrl = user.slug ? `/${user.slug}` : "/dashboard";
+      // Admin users go to /admin, regular users go to their tenant slug
+      const targetUrl = user.role === "admin" ? "/admin" : (user.slug ? `/${user.slug}` : "/dashboard");
       window.location.href = targetUrl;
     }
   }, [isAuthenticated, user, isRedirecting]);
@@ -76,7 +77,20 @@ function LoginContent() {
         localStorage.setItem(storageKey, JSON.stringify(result.session));
       }
       
-      // Sign-in successful - redirect to dashboard
+      // Sign-in successful - check if admin or regular user
+      // Fetch profile to check role
+      try {
+        const profileRes = await fetch(`/api/dashboard/profile?userId=${result.user.id}`);
+        const profileData = await profileRes.json();
+        if (profileData.success && profileData.data?.role === "admin") {
+          window.location.href = "/admin";
+          return;
+        }
+      } catch {
+        // If profile fetch fails, fall through to slug-based redirect
+      }
+
+      // Regular user - redirect to tenant slug
       const atIndex = email.indexOf('@');
       const domain = email.substring(atIndex + 1).split('.')[0];
       const username = email.substring(0, atIndex);

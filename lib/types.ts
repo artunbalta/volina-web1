@@ -76,6 +76,8 @@ export interface Profile {
   avatar_url: string | null;
   role: UserRole;
   vapi_org_id?: string | null;
+  vapi_assistant_id?: string | null;
+  vapi_phone_number_id?: string | null;
   slug?: string | null;
   dashboard_type?: DashboardType;
   company_name?: string | null;

@@ -209,16 +209,17 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
   vapi_call_id?: string;
   error?: string;
 }> {
-  // Get user-specific assistant ID from profiles table
+  // Get user-specific assistant ID and phone number from profiles table
   const { data: profile } = await supabase
     .from("profiles")
-    .select("vapi_assistant_id")
+    .select("vapi_assistant_id, vapi_phone_number_id")
     .eq("id", user_id)
-    .single() as { data: { vapi_assistant_id?: string | null } | null };
+    .single() as { data: { vapi_assistant_id?: string | null; vapi_phone_number_id?: string | null } | null };
 
   const assistantId = profile?.vapi_assistant_id || VAPI_ASSISTANT_ID;
+  const phoneNumberId = profile?.vapi_phone_number_id || VAPI_PHONE_NUMBER_ID;
 
-  if (!VAPI_API_KEY || !assistantId || !VAPI_PHONE_NUMBER_ID) {
+  if (!VAPI_API_KEY || !assistantId || !phoneNumberId) {
     return {
       success: false,
       message: "VAPI entegrasyonu yapılandırılmamış. Lütfen assistant ID ayarlayın.",
@@ -263,7 +264,7 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
   // The caller ID is configured in the phone number settings in VAPI dashboard
   const vapiPayload = {
     assistantId: assistantId,
-    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    phoneNumberId: phoneNumberId,
     customer: {
       number: normalizedPhone,
       name: lead.full_name,
@@ -337,17 +338,18 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
   vapi_call_id?: string;
   error?: string;
 }> {
-  // Get user-specific assistant ID from profiles table
+  // Get user-specific assistant ID and phone number from profiles table
   const { data: profile } = await supabase
     .from("profiles")
-    .select("vapi_assistant_id")
+    .select("vapi_assistant_id, vapi_phone_number_id")
     .eq("id", user_id)
-    .single() as { data: { vapi_assistant_id?: string | null } | null };
+    .single() as { data: { vapi_assistant_id?: string | null; vapi_phone_number_id?: string | null } | null };
 
   const assistantId = profile?.vapi_assistant_id || VAPI_ASSISTANT_ID;
+  const phoneNumberId = profile?.vapi_phone_number_id || VAPI_PHONE_NUMBER_ID;
 
   // Check if VAPI is configured
-  if (!VAPI_API_KEY || !assistantId || !VAPI_PHONE_NUMBER_ID) {
+  if (!VAPI_API_KEY || !assistantId || !phoneNumberId) {
     console.log("VAPI not configured. Call would be made to:", lead.phone);
     return {
       success: false,
@@ -386,7 +388,7 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
   // The caller ID is configured in the phone number settings in VAPI dashboard
   const vapiPayload = {
     assistantId: assistantId,
-    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    phoneNumberId: phoneNumberId,
     customer: {
       number: normalizedPhone,
       name: lead.full_name,
