@@ -30,13 +30,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return the session tokens
+    // Fetch profile to get role and slug
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+    const { data: profile } = await adminClient
+      .from("profiles")
+      .select("role, slug")
+      .eq("id", data.user.id)
+      .single();
+
+    // Return the session tokens + role
     return NextResponse.json({
       success: true,
       session: data.session,
       user: {
         id: data.user.id,
         email: data.user.email,
+        role: profile?.role || "user",
+        slug: profile?.slug || null,
       },
     });
   } catch (error: any) {

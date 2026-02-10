@@ -77,27 +77,22 @@ function LoginContent() {
         localStorage.setItem(storageKey, JSON.stringify(result.session));
       }
       
-      // Sign-in successful - check if admin or regular user
-      // Fetch profile to check role
-      try {
-        const profileRes = await fetch(`/api/dashboard/profile?userId=${result.user.id}`);
-        const profileData = await profileRes.json();
-        if (profileData.success && profileData.data?.role === "admin") {
-          window.location.href = "/admin";
-          return;
-        }
-      } catch {
-        // If profile fetch fails, fall through to slug-based redirect
+      // Sign-in successful - redirect based on role
+      if (result.user.role === "admin") {
+        window.location.href = "/admin";
+        return;
       }
 
-      // Regular user - redirect to tenant slug
-      const atIndex = email.indexOf('@');
-      const domain = email.substring(atIndex + 1).split('.')[0];
-      const username = email.substring(0, atIndex);
-      const personalDomains = ['gmail', 'hotmail', 'yahoo', 'outlook', 'icloud', 'mail', 'protonmail'];
-      const slug = personalDomains.includes(domain?.toLowerCase() || '') 
-        ? username.toLowerCase().replace(/[^a-z0-9]/g, '')
-        : (domain || username).toLowerCase().replace(/[^a-z0-9]/g, '');
+      // Regular user - use slug from profile, or generate from email
+      const slug = result.user.slug || (() => {
+        const atIndex = email.indexOf('@');
+        const domain = email.substring(atIndex + 1).split('.')[0];
+        const username = email.substring(0, atIndex);
+        const personalDomains = ['gmail', 'hotmail', 'yahoo', 'outlook', 'icloud', 'mail', 'protonmail'];
+        return personalDomains.includes(domain?.toLowerCase() || '') 
+          ? username.toLowerCase().replace(/[^a-z0-9]/g, '')
+          : (domain || username).toLowerCase().replace(/[^a-z0-9]/g, '');
+      })();
       
       window.location.href = `/${slug}`;
       

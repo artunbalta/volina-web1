@@ -42,7 +42,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  // Fetch user profile from profiles table
+  // Fetch user profile from profiles table via API (uses service role key for reliability)
   const fetchProfile = useCallback(async (authUser: User) => {
     console.log("[Auth] fetchProfile called for:", authUser.id);
     const email = authUser.email || "";
@@ -61,44 +61,58 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     };
     
     try {
-      console.log("[Auth] Querying profiles table with timeout...");
+      console.log("[Auth] Fetching profile via API...");
       
-      // Add timeout to profile fetch
-      const timeoutPromise = new Promise<{ data: null, error: Error }>((resolve) => {
-        setTimeout(() => {
-          console.log("[Auth] Profile query timed out");
-          resolve({ data: null, error: new Error('Timeout') });
-        }, 3000);
+      // Use server-side API to fetch profile (bypasses RLS, uses service role key)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(`/api/dashboard/profile?userId=${authUser.id}`, {
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       
-      const queryPromise = supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", authUser.id)
-        .single();
+      const result = await response.json();
+      console.log("[Auth] Profile API result:", { success: result.success, hasData: !!result.data });
       
-      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-
-      console.log("[Auth] Profile query result:", { data: !!data, error: error?.message });
-      
-      if (error || !data) {
+      if (!result.success || !result.data) {
         console.log("[Auth] Using basic profile from auth data");
         setUser(basicProfile);
         return;
       }
 
       // Cast to Profile type
-      const profile = data as Profile;
+      const profile = result.data as Profile;
       
       // If profile exists but has no slug, use the generated one
       if (!profile.slug) {
         profile.slug = generatedSlug;
       }
 
-      console.log("[Auth] Profile loaded:", profile.email, profile.slug);
+      console.log("[Auth] Profile loaded:", profile.email, profile.slug, "role:", profile.role);
       setUser(profile);
     } catch (error) {
       console.error("[Auth] Error in fetchProfile:", error);
+      
+      // Fallback: try direct supabase query
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", authUser.id)
+          .single();
+        
+        if (data) {
+          const profile = data as Profile;
+          if (!profile.slug) profile.slug = generatedSlug;
+          console.log("[Auth] Profile loaded via fallback:", profile.email, profile.role);
+          setUser(profile);
+          return;
+        }
+      } catch {
+        // ignore fallback error
+      }
+      
       // Use basic profile on error
       setUser(basicProfile);
     }
