@@ -78,6 +78,8 @@ export interface Profile {
   vapi_org_id?: string | null;
   vapi_assistant_id?: string | null;
   vapi_phone_number_id?: string | null;
+  /** Per-tenant VAPI API key (different VAPI account). Server-only, never exposed to client. */
+  vapi_private_key?: string | null;
   slug?: string | null;
   dashboard_type?: DashboardType;
   company_name?: string | null;

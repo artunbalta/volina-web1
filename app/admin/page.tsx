@@ -75,6 +75,7 @@ export default function AdminDashboard() {
   const [isSaving, setIsSaving] = useState(false);
   const [vapiAssistantId, setVapiAssistantId] = useState("");
   const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("");
+  const [vapiPrivateKey, setVapiPrivateKey] = useState("");
 
   const loadClients = useCallback(async () => {
     if (!user?.id) return;
@@ -105,6 +106,7 @@ export default function AdminDashboard() {
     setEditingClient(client);
     setVapiAssistantId(client.vapi_assistant_id || "");
     setVapiPhoneNumberId(client.vapi_phone_number_id || "");
+    setVapiPrivateKey(""); // Never show existing key; leave blank or enter new one
     setShowSettingsDialog(true);
   };
 
@@ -121,6 +123,7 @@ export default function AdminDashboard() {
           updates: {
             vapi_assistant_id: vapiAssistantId || null,
             vapi_phone_number_id: vapiPhoneNumberId || null,
+            vapi_private_key: vapiPrivateKey.trim() || null,
           },
         }),
       });
@@ -436,6 +439,18 @@ export default function AdminDashboard() {
                 className="font-mono text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">The phone number ID for outbound calls</p>
+            </div>
+            <div>
+              <Label>VAPI Private Key (farklı hesap için)</Label>
+              <Input
+                type="password"
+                value={vapiPrivateKey}
+                onChange={(e) => setVapiPrivateKey(e.target.value)}
+                placeholder="Boş bırak = varsayılan hesap (env)"
+                className="font-mono text-sm"
+                autoComplete="off"
+              />
+              <p className="text-xs text-gray-500 mt-1">Bu müşteri farklı bir VAPI hesabı kullanıyorsa API key buraya yapıştırın. Boş bırakırsanız varsayılan VAPI hesabı kullanılır.</p>
             </div>
           </div>
           <DialogFooter>

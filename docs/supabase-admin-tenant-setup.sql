@@ -14,6 +14,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'vapi_phone_number_id') THEN
         ALTER TABLE profiles ADD COLUMN vapi_phone_number_id TEXT;
     END IF;
+    -- Farklı VAPI hesabı (tenant başına API key)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'vapi_private_key') THEN
+        ALTER TABLE profiles ADD COLUMN vapi_private_key TEXT;
+    END IF;
 END $$;
 
 -- 2) Yeni kullanıcı eklenince profile otomatik oluşsun

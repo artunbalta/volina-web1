@@ -209,20 +209,21 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
   vapi_call_id?: string;
   error?: string;
 }> {
-  // Get user-specific assistant ID and phone number from profiles table
+  // Get user-specific VAPI config (assistant, phone number, optional per-tenant API key)
   const { data: profile } = await supabase
     .from("profiles")
-    .select("vapi_assistant_id, vapi_phone_number_id")
+    .select("vapi_assistant_id, vapi_phone_number_id, vapi_private_key")
     .eq("id", user_id)
-    .single() as { data: { vapi_assistant_id?: string | null; vapi_phone_number_id?: string | null } | null };
+    .single() as { data: { vapi_assistant_id?: string | null; vapi_phone_number_id?: string | null; vapi_private_key?: string | null } | null };
 
   const assistantId = profile?.vapi_assistant_id || VAPI_ASSISTANT_ID;
   const phoneNumberId = profile?.vapi_phone_number_id || VAPI_PHONE_NUMBER_ID;
+  const apiKey = (profile?.vapi_private_key?.trim() || "") || VAPI_API_KEY || "";
 
-  if (!VAPI_API_KEY || !assistantId || !phoneNumberId) {
+  if (!apiKey || !assistantId || !phoneNumberId) {
     return {
       success: false,
-      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen assistant ID ayarlayın.",
+      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen assistant ID ve (gerekirse) VAPI API key ayarlayın.",
       error: "VAPI not configured"
     };
   }
@@ -283,9 +284,9 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
   // Log the payload for debugging
   console.log(`[executeCallDirect] Making outbound call:`, {
     to: normalizedPhone,
-    caller_id: DEFAULT_CALLER_ID, // Expected caller ID (configured in VAPI phone number settings)
+    caller_id: DEFAULT_CALLER_ID,
     assistantId,
-    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    phoneNumberId,
     lead_id: lead.id,
     original_phone: lead.phone,
   });
@@ -294,7 +295,7 @@ async function executeCallDirect(lead: Lead & { user_id: string }, user_id: stri
     const response = await fetch("https://api.vapi.ai/call/phone", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${VAPI_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(vapiPayload),
@@ -338,22 +339,22 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
   vapi_call_id?: string;
   error?: string;
 }> {
-  // Get user-specific assistant ID and phone number from profiles table
+  // Get user-specific VAPI config (assistant, phone number, optional per-tenant API key)
   const { data: profile } = await supabase
     .from("profiles")
-    .select("vapi_assistant_id, vapi_phone_number_id")
+    .select("vapi_assistant_id, vapi_phone_number_id, vapi_private_key")
     .eq("id", user_id)
-    .single() as { data: { vapi_assistant_id?: string | null; vapi_phone_number_id?: string | null } | null };
+    .single() as { data: { vapi_assistant_id?: string | null; vapi_phone_number_id?: string | null; vapi_private_key?: string | null } | null };
 
   const assistantId = profile?.vapi_assistant_id || VAPI_ASSISTANT_ID;
   const phoneNumberId = profile?.vapi_phone_number_id || VAPI_PHONE_NUMBER_ID;
+  const apiKey = (profile?.vapi_private_key?.trim() || "") || VAPI_API_KEY || "";
 
-  // Check if VAPI is configured
-  if (!VAPI_API_KEY || !assistantId || !phoneNumberId) {
+  if (!apiKey || !assistantId || !phoneNumberId) {
     console.log("VAPI not configured. Call would be made to:", lead.phone);
     return {
       success: false,
-      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen assistant ID ayarlayın.",
+      message: "VAPI entegrasyonu yapılandırılmamış. Lütfen assistant ID ve (gerekirse) VAPI API key ayarlayın.",
       error: "VAPI not configured"
     };
   }
@@ -407,20 +408,19 @@ async function executeCall(lead: Lead, outreach_id: string, user_id: string): Pr
   // Log the payload for debugging
   console.log(`[executeCall] Making outbound call:`, {
     to: normalizedPhone,
-    caller_id: DEFAULT_CALLER_ID, // Expected caller ID (configured in VAPI phone number settings)
+    caller_id: DEFAULT_CALLER_ID,
     assistantId,
-    phoneNumberId: VAPI_PHONE_NUMBER_ID,
+    phoneNumberId,
     lead_id: lead.id,
     outreach_id,
     original_phone: lead.phone,
   });
 
   try {
-    // Make VAPI call
     const response = await fetch("https://api.vapi.ai/call/phone", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${VAPI_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(vapiPayload),
