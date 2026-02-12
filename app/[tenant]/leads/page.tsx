@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/components/providers/SupabaseProvider";
+import { useLanguage } from "@/lib/i18n";
 import type { Lead, LeadStatus, LeadPriority } from "@/lib/types-outbound";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -57,27 +58,143 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
-const statusConfig: Record<LeadStatus, { label: string; color: string }> = {
-  new: { label: "New", color: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" },
-  contacted: { label: "Contacted", color: "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400" },
-  interested: { label: "Interested", color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400" },
-  appointment_set: { label: "Appointment", color: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" },
-  converted: { label: "Converted", color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400" },
-  unreachable: { label: "Unreachable", color: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" },
-  lost: { label: "Lost", color: "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300" },
+// Leads translations
+const leadsTexts = {
+  title: { en: "Leads", tr: "Müşteri Adayları" },
+  subtitle: { en: "Manage your customer leads", tr: "Müşteri adaylarınızı yönetin" },
+  searchPlaceholder: { en: "Search leads...", tr: "Müşteri adaylarında ara..." },
+  status: { en: "Status", tr: "Durum" },
+  allStatus: { en: "All Status", tr: "Tüm Durumlar" },
+  sort: { en: "Sort", tr: "Sırala" },
+  newestFirst: { en: "Newest First", tr: "En Yeni" },
+  oldestFirst: { en: "Oldest First", tr: "En Eski" },
+  priorityHighLow: { en: "Priority: High→Low", tr: "Öncelik: Yüksek→Düşük" },
+  priorityLowHigh: { en: "Priority: Low→High", tr: "Öncelik: Düşük→Yüksek" },
+  lastActivity: { en: "Last Activity", tr: "Son Aktivite" },
+  statusPriority: { en: "Status Priority", tr: "Durum Önceliği" },
+  quick: { en: "Quick:", tr: "Hızlı:" },
+  new: { en: "New", tr: "Yeni" },
+  contacted: { en: "Contacted", tr: "İletişime Geçildi" },
+  selectAll: { en: "Select All", tr: "Tümünü Seç" },
+  deselect: { en: "Deselect", tr: "Seçimi Kaldır" },
+  statusBulk: { en: "Status", tr: "Durum" },
+  call: { en: "Call", tr: "Ara" },
+  delete: { en: "Delete", tr: "Sil" },
+  noLeads: { en: "No leads found", tr: "Müşteri adayı bulunamadı" },
+  addLead: { en: "Add Lead", tr: "Aday Ekle" },
+  customer: { en: "Customer", tr: "Müşteri" },
+  phone: { en: "Phone", tr: "Telefon" },
+  calls: { en: "Calls", tr: "Aramalar" },
+  priority: { en: "Priority", tr: "Öncelik" },
+  lastContact: { en: "Last Contact", tr: "Son İletişim" },
+  noPhone: { en: "No phone", tr: "Telefon yok" },
+  called: { en: "x called", tr: "x arandı" },
+  prev: { en: "Prev", tr: "Önceki" },
+  next: { en: "Next", tr: "Sonraki" },
+  of: { en: "of", tr: "/" },
+  editLead: { en: "Edit Lead", tr: "Adayı Düzenle" },
+  addNewLead: { en: "Add New Lead", tr: "Yeni Aday Ekle" },
+  updateLeadInfo: { en: "Update lead information", tr: "Aday bilgilerini güncelle" },
+  enterLeadDetails: { en: "Enter lead details", tr: "Aday detaylarını girin" },
+  fullName: { en: "Full Name *", tr: "Ad Soyad *" },
+  phoneE164: { en: "Phone (E.164 format)", tr: "Telefon (E.164 formatı)" },
+  phonePlaceholder: { en: "+33768163591, +12125551234, +903129114094", tr: "+33768163591, +12125551234, +903129114094" },
+  phoneFormat: { en: "International format: +[country code][number] (e.g., +33 for France, +1 for US/Canada)", tr: "Uluslararası format: +[ülke kodu][numara] (örn. +33 Fransa, +1 ABD/Kanada)" },
+  notes: { en: "Notes", tr: "Notlar" },
+  notesPlaceholder: { en: "Additional notes...", tr: "Ek notlar..." },
+  cancel: { en: "Cancel", tr: "İptal" },
+  saveChanges: { en: "Save Changes", tr: "Değişiklikleri Kaydet" },
+  deleteLead: { en: "Delete Lead", tr: "Adayı Sil" },
+  deleteConfirm: { en: "Are you sure you want to delete {name}? This action cannot be undone.", tr: "{name} adayını silmek istediğinize emin misiniz? Bu işlem geri alınamaz." },
+  deleteSelected: { en: "Delete Selected Leads", tr: "Seçili Adayları Sil" },
+  deleteSelectedConfirm: { en: "Are you sure you want to delete {count} lead(s)? This action cannot be undone and will permanently remove them from the database.", tr: "{count} adayı silmek istediğinize emin misiniz? Bu işlem geri alınamaz ve veritabanından kalıcı olarak kaldırılacaktır." },
+  deleteLeads: { en: "Delete {count} Lead(s)", tr: "{count} Adayı Sil" },
+  callSelected: { en: "Call Selected Leads", tr: "Seçili Adayları Ara" },
+  callSelectedDesc: { en: "You are about to call {count} lead(s). Calls will be made one by one with a 3 second delay between each call.", tr: "{count} adayı aramak üzeresiniz. Aramalar 3 saniye arayla sırayla yapılacaktır." },
+  callNote: { en: "Note:", tr: "Not:" },
+  callNoteDesc: { en: "This will initiate actual phone calls to the selected leads. Make sure your assistant is properly configured and you have enough credits.", tr: "Bu, seçili adaylara gerçek telefon aramaları başlatacaktır. Asistanınızın düzgün yapılandırıldığından ve yeterli krediniz olduğundan emin olun." },
+  startCalling: { en: "Start Calling ({count})", tr: "Aramaya Başla ({count})" },
+  calling: { en: "Calling {current}/{total}", tr: "Aranıyor {current}/{total}" },
+  currentlyCalling: { en: "Currently calling: {name}", tr: "Şu anda aranıyor: {name}" },
+  callInitiated: { en: "Call Initiated", tr: "Arama Başlatıldı" },
+  callSuccess: { en: "Successfully started call to {name}", tr: "{name} için arama başarıyla başlatıldı" },
+  importLeads: { en: "Import Leads", tr: "Adayları İçe Aktar" },
+  leadsFound: { en: "{count} leads found", tr: "{count} aday bulundu" },
+  name: { en: "Name", tr: "İsim" },
+  importButton: { en: "Import", tr: "İçe Aktar" },
+  importLeadsCount: { en: "Import {count} Leads", tr: "{count} Adayı İçe Aktar" },
+  updateStatus: { en: "Update Status", tr: "Durumu Güncelle" },
+  changeStatus: { en: "Change status for {count} selected lead(s).", tr: "{count} seçili adayın durumunu değiştir." },
+  newStatus: { en: "New Status", tr: "Yeni Durum" },
+  updateLeads: { en: "Update {count} Lead(s)", tr: "{count} Adayı Güncelle" },
+  duplicatePhones: { en: "Duplicate Phone Numbers", tr: "Yinelenen Telefon Numaraları" },
+  duplicateDesc: { en: "The following phone numbers appear more than once in your leads.", tr: "Aşağıdaki telefon numaraları adaylarınızda birden fazla kez görünüyor." },
+  close: { en: "Close", tr: "Kapat" },
+  leadDetails: { en: "Lead Details", tr: "Aday Detayları" },
+  leadInfo: { en: "Lead Information", tr: "Aday Bilgileri" },
+  importedDetails: { en: "İmport Edilen Detaylar", tr: "İçe Aktarılan Detaylar" },
+  dataDropped: { en: "Data Düşen Tarih", tr: "Data Düşen Tarih" },
+  dataCalled: { en: "Data Aranan Tarih", tr: "Data Aranan Tarih" },
+  call1: { en: "1. Arama", tr: "1. Arama" },
+  call2: { en: "2. Arama", tr: "2. Arama" },
+  call3: { en: "3. Arama", tr: "3. Arama" },
+  call4: { en: "4. Arama", tr: "4. Arama" },
+  postCallStatus: { en: "Görüşme Sonrası Durum", tr: "Görüşme Sonrası Durum" },
+  treatmentInterest: { en: "Bilgi Almak İstediği Konu", tr: "Bilgi Almak İstediği Konu" },
+  firstContactDate: { en: "First Contact Date", tr: "İlk İletişim Tarihi" },
+  lastContactDate: { en: "Last Contact Date", tr: "Son İletişim Tarihi" },
+  edit: { en: "Edit", tr: "Düzenle" },
+  export: { en: "Export", tr: "Dışa Aktar" },
+  duplicates: { en: "Duplicate{plural}", tr: "Yinelenen{plural}" },
+  statusLabels: {
+    new: { en: "New", tr: "Yeni" },
+    contacted: { en: "Contacted", tr: "İletişime Geçildi" },
+    interested: { en: "Interested", tr: "İlgili" },
+    appointment_set: { en: "Appointment", tr: "Randevu" },
+    converted: { en: "Converted", tr: "Dönüştürüldü" },
+    unreachable: { en: "Unreachable", tr: "Ulaşılamaz" },
+    lost: { en: "Lost", tr: "Kayıp" },
+  },
+  priorityLabels: {
+    high: { en: "High", tr: "Yüksek" },
+    medium: { en: "Medium", tr: "Orta" },
+    low: { en: "Low", tr: "Düşük" },
+  },
 };
 
-const priorityConfig: Record<LeadPriority, { label: string; color: string }> = {
-  high: { label: "High", color: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" },
-  medium: { label: "Medium", color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400" },
-  low: { label: "Low", color: "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300" },
-};
+const getStatusConfig = (lang: "en" | "tr"): Record<LeadStatus, { label: string; color: string }> => ({
+  new: { label: leadsTexts.statusLabels.new[lang], color: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400" },
+  contacted: { label: leadsTexts.statusLabels.contacted[lang], color: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400" },
+  interested: { label: leadsTexts.statusLabels.interested[lang], color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400" },
+  appointment_set: { label: leadsTexts.statusLabels.appointment_set[lang], color: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" },
+  converted: { label: leadsTexts.statusLabels.converted[lang], color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400" },
+  unreachable: { label: leadsTexts.statusLabels.unreachable[lang], color: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" },
+  lost: { label: leadsTexts.statusLabels.lost[lang], color: "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300" },
+});
+
+const getPriorityConfig = (lang: "en" | "tr"): Record<LeadPriority, { label: string; color: string }> => ({
+  high: { label: leadsTexts.priorityLabels.high[lang], color: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" },
+  medium: { label: leadsTexts.priorityLabels.medium[lang], color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400" },
+  low: { label: leadsTexts.priorityLabels.low[lang], color: "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300" },
+});
 
 export default function LeadsPage() {
   const router = useRouter();
   const params = useParams();
   const tenant = params?.tenant as string;
   const { user, isLoading: authLoading } = useAuth();
+  const { language } = useLanguage();
+  const t = (key: keyof typeof leadsTexts): string => {
+    const value = leadsTexts[key];
+    if (typeof value === "object" && value !== null && "en" in value && "tr" in value) {
+      const result = value[language];
+      return typeof result === "string" ? result : String(result || "");
+    }
+    return typeof value === "string" ? value : String(value || "");
+  };
+  
+  const statusConfig = getStatusConfig(language);
+  const priorityConfig = getPriorityConfig(language);
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(false); // Start as false, will be set to true when loading
@@ -1013,9 +1130,9 @@ export default function LeadsPage() {
               <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
                 </div>
             <div className="flex-1">
-              <p className="font-semibold text-gray-900 dark:text-white">Call Initiated</p>
+              <p className="font-semibold text-gray-900 dark:text-white">{t("callInitiated")}</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Successfully started call to {callSuccess.leadName}
+                {t("callSuccess").replace("{name}", callSuccess.leadName || "")}
               </p>
             </div>
             <button
@@ -1031,8 +1148,8 @@ export default function LeadsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Leads</h1>
-          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">Manage your customer leads</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{t("title")}</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           <input
@@ -1050,7 +1167,7 @@ export default function LeadsPage() {
               className="border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 flex-shrink-0"
             >
               <AlertTriangle className="w-4 h-4 sm:mr-1" />
-              <span className="hidden sm:inline">{duplicateWarnings.length} Duplicate{duplicateWarnings.length > 1 ? "s" : ""}</span>
+              <span className="hidden sm:inline">{duplicateWarnings.length} {t("duplicates").replace("{plural}", duplicateWarnings.length > 1 ? "s" : "")}</span>
             </Button>
           )}
           <Button
@@ -1061,7 +1178,7 @@ export default function LeadsPage() {
             className="border-gray-200 dark:border-gray-700 flex-shrink-0"
           >
             <Download className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">{t("export")}</span>
           </Button>
               <Button 
                 variant="outline" 
@@ -1070,11 +1187,11 @@ export default function LeadsPage() {
             size="sm"
               >
                 <Upload className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Import</span>
+            <span className="hidden sm:inline">{t("importButton")}</span>
               </Button>
           <Button onClick={() => { resetForm(); setShowAddDialog(true); }} className="flex-1 sm:flex-none" size="sm">
                 <Plus className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Add Lead</span>
+            <span className="hidden sm:inline">{t("addLead")}</span>
               </Button>
             </div>
       </div>
@@ -1086,7 +1203,7 @@ export default function LeadsPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <Input
-              placeholder="Search leads..."
+              placeholder={t("searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
@@ -1097,10 +1214,10 @@ export default function LeadsPage() {
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as LeadStatus | "all")}>
               <SelectTrigger className="w-32 sm:w-40 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
                 <Filter className="w-4 h-4 mr-1 sm:mr-2 text-gray-400 dark:text-gray-500" />
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t("status")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="all">{t("allStatus")}</SelectItem>
                 {Object.entries(statusConfig).map(([key, config]) => (
                   <SelectItem key={key} value={key}>{config.label}</SelectItem>
                 ))}
@@ -1118,15 +1235,15 @@ export default function LeadsPage() {
             >
               <SelectTrigger className="w-36 sm:w-44 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
                 <ArrowUpDown className="w-4 h-4 mr-1 text-gray-400" />
-                <SelectValue placeholder="Sort" />
+                <SelectValue placeholder={t("sort")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="created_at|desc">Newest First</SelectItem>
-                <SelectItem value="created_at|asc">Oldest First</SelectItem>
-                <SelectItem value="priority|desc">Priority: High→Low</SelectItem>
-                <SelectItem value="priority|asc">Priority: Low→High</SelectItem>
-                <SelectItem value="last_contact_date|desc">Last Activity</SelectItem>
-                <SelectItem value="status|asc">Status Priority</SelectItem>
+                <SelectItem value="created_at|desc">{t("newestFirst")}</SelectItem>
+                <SelectItem value="created_at|asc">{t("oldestFirst")}</SelectItem>
+                <SelectItem value="priority|desc">{t("priorityHighLow")}</SelectItem>
+                <SelectItem value="priority|asc">{t("priorityLowHigh")}</SelectItem>
+                <SelectItem value="last_contact_date|desc">{t("lastActivity")}</SelectItem>
+                <SelectItem value="status|asc">{t("statusPriority")}</SelectItem>
               </SelectContent>
             </Select>
           
@@ -1146,7 +1263,7 @@ export default function LeadsPage() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           {/* Quick Filter Buttons */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-            <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">Quick:</span>
+            <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{t("quick")}</span>
             <Button 
               variant={statusFilter === "new" ? "default" : "outline"}
               size="sm"
@@ -1156,7 +1273,7 @@ export default function LeadsPage() {
                 statusFilter === "new" && "bg-blue-600 hover:bg-blue-700 text-white"
               )}
             >
-              New
+              {t("new")}
             </Button>
             <Button 
               variant={statusFilter === "contacted" ? "default" : "outline"}
@@ -1167,7 +1284,7 @@ export default function LeadsPage() {
                 statusFilter === "contacted" && "bg-purple-600 hover:bg-purple-700 text-white"
               )}
             >
-              Contacted
+              {t("contacted")}
             </Button>
           </div>
 
@@ -1186,12 +1303,12 @@ export default function LeadsPage() {
                 {selectedLeadIds.size > 0 && selectedLeadIds.size >= totalLeads && totalLeads > 0 ? (
                   <>
                     <X className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">Deselect ({totalLeads})</span>
+                    <span className="hidden sm:inline">{t("deselect")} ({totalLeads})</span>
                   </>
                 ) : (
                   <>
                     <Users className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">Select All ({totalLeads})</span>
+                    <span className="hidden sm:inline">{t("selectAll")} ({totalLeads})</span>
                   </>
                 )}
               </Button>
@@ -1206,7 +1323,7 @@ export default function LeadsPage() {
                   className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
                 >
                   <Tag className="w-4 h-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Status ({selectedLeadIds.size})</span>
+                  <span className="hidden sm:inline">{t("statusBulk")} ({selectedLeadIds.size})</span>
                   <span className="sm:hidden">{selectedLeadIds.size}</span>
                 </Button>
                 <Button 
@@ -1217,7 +1334,7 @@ export default function LeadsPage() {
                   className="bg-green-600 hover:bg-green-700 text-xs sm:text-sm"
                 >
                   <Phone className="w-4 h-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Call ({selectedLeadIds.size})</span>
+                  <span className="hidden sm:inline">{t("call")} ({selectedLeadIds.size})</span>
                   <span className="sm:hidden">{selectedLeadIds.size}</span>
                 </Button>
                 <Button 
@@ -1228,7 +1345,7 @@ export default function LeadsPage() {
                   className="bg-red-600 hover:bg-red-700 text-xs sm:text-sm"
                 >
                   <Trash2 className="w-4 h-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Delete ({selectedLeadIds.size})</span>
+                  <span className="hidden sm:inline">{t("delete")} ({selectedLeadIds.size})</span>
                   <span className="sm:hidden">{selectedLeadIds.size}</span>
                 </Button>
               </>
@@ -1243,12 +1360,12 @@ export default function LeadsPage() {
         <div className="hidden sm:block px-6 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
             <div className="w-8 text-center">#</div>
-            <div className="flex-1">Customer</div>
-            <div className="w-32">Phone</div>
-            <div className="w-24">Status</div>
-            <div className="w-16 text-center">Calls</div>
-            <div className="w-24">Priority</div>
-            <div className="w-32">Last Contact</div>
+            <div className="flex-1">{t("customer")}</div>
+            <div className="w-32">{t("phone")}</div>
+            <div className="w-24">{t("status")}</div>
+            <div className="w-16 text-center">{t("calls")}</div>
+            <div className="w-24">{t("priority")}</div>
+            <div className="w-32">{t("lastContact")}</div>
             <div className="w-24"></div>
             </div>
           </div>
@@ -1257,14 +1374,14 @@ export default function LeadsPage() {
         {filteredLeads.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <Users className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-500 dark:text-gray-400">No leads found</p>
+            <p className="text-gray-500 dark:text-gray-400">{t("noLeads")}</p>
             <Button 
               onClick={() => { resetForm(); setShowAddDialog(true); }}
               className="mt-4"
               size="sm"
             >
               <Plus className="w-4 h-4 mr-2" />
-              Add Lead
+              {t("addLead")}
             </Button>
           </div>
         ) : (
@@ -1293,25 +1410,25 @@ export default function LeadsPage() {
                         <p className="font-medium text-gray-900 dark:text-white truncate">{lead.full_name || "—"}</p>
                         <div className="flex items-center gap-1">
                           <span className={cn(
-                            "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            "px-1.5 py-0.5 rounded-md text-[10px] font-medium whitespace-nowrap",
                             statusConfig[lead.status].color
                           )}>
                             {statusConfig[lead.status].label}
                           </span>
                           <span className={cn(
-                            "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            "px-1.5 py-0.5 rounded-md text-[10px] font-medium whitespace-nowrap",
                             priorityConfig[lead.priority].color
                           )}>
                             {priorityConfig[lead.priority].label}
                           </span>
                         </div>
                       </div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{lead.phone || "No phone"}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{lead.phone || t("noPhone")}</p>
                       {(lead.last_contact_date || (lead.contact_attempts && lead.contact_attempts > 0)) && (
                         <div className="flex items-center gap-2 mt-1">
                           {lead.contact_attempts > 0 && (
                             <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
-                              {lead.contact_attempts}x called
+                              {lead.contact_attempts}{t("called")}
                             </span>
                           )}
                           {lead.last_contact_date && (
@@ -1346,14 +1463,14 @@ export default function LeadsPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditDialog(lead); }}>
                                 <Edit className="w-4 h-4 mr-2" />
-                                Edit
+                                {t("edit")}
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 className="text-red-600"
                                 onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); setShowDeleteDialog(true); }}
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
-                                Delete
+                                {t("delete")}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -1395,7 +1512,7 @@ export default function LeadsPage() {
                   
                   <div className="w-24">
                     <span className={cn(
-                      "px-2 py-1 rounded-md text-xs font-medium",
+                      "px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap",
                       statusConfig[lead.status].color
                     )}>
                       {statusConfig[lead.status].label}
@@ -1414,7 +1531,7 @@ export default function LeadsPage() {
                   
                   <div className="w-24">
                     <span className={cn(
-                      "px-2 py-1 rounded-md text-xs font-medium",
+                      "px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap",
                       priorityConfig[lead.priority].color
                     )}>
                       {priorityConfig[lead.priority].label}
@@ -1452,14 +1569,14 @@ export default function LeadsPage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditDialog(lead); }}>
                           <Edit className="w-4 h-4 mr-2" />
-                          Edit
+                          {t("edit")}
                       </DropdownMenuItem>
                         <DropdownMenuItem 
                           className="text-red-600"
                           onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); setShowDeleteDialog(true); }}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
+                          {t("delete")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -1475,7 +1592,7 @@ export default function LeadsPage() {
       {totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 order-2 sm:order-1">
-            {((currentPage - 1) * 100) + 1}-{Math.min(currentPage * 100, totalLeads)} of {totalLeads}
+            {((currentPage - 1) * 100) + 1}-{Math.min(currentPage * 100, totalLeads)} {t("of")} {totalLeads}
               </div>
 
           <div className="flex items-center gap-1 sm:gap-2 order-1 sm:order-2">
@@ -1487,7 +1604,7 @@ export default function LeadsPage() {
               className="border-gray-200 dark:border-gray-700 h-8 px-2 sm:px-3"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline ml-1">Prev</span>
+              <span className="hidden sm:inline ml-1">{t("prev")}</span>
                   </Button>
             
             <div className="flex items-center gap-1">
@@ -1530,7 +1647,7 @@ export default function LeadsPage() {
               disabled={currentPage === totalPages || isLoading}
               className="border-gray-200 dark:border-gray-700 h-8 px-2 sm:px-3"
             >
-              <span className="hidden sm:inline mr-1">Next</span>
+              <span className="hidden sm:inline mr-1">{t("next")}</span>
               <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
@@ -1548,15 +1665,15 @@ export default function LeadsPage() {
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{showEditDialog ? "Edit Lead" : "Add New Lead"}</DialogTitle>
+            <DialogTitle>{showEditDialog ? t("editLead") : t("addNewLead")}</DialogTitle>
             <DialogDescription>
-              {showEditDialog ? "Update lead information" : "Enter lead details"}
+              {showEditDialog ? t("updateLeadInfo") : t("enterLeadDetails")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div>
-              <Label>Full Name *</Label>
+              <Label>{t("fullName")}</Label>
               <Input
                 value={formData.full_name}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
@@ -1565,20 +1682,20 @@ export default function LeadsPage() {
               </div>
             
             <div>
-              <Label>Phone (E.164 format)</Label>
+              <Label>{t("phoneE164")}</Label>
               <Input
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="+33768163591, +12125551234, +903129114094"
+                placeholder={t("phonePlaceholder")}
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                International format: +[country code][number] (e.g., +33 for France, +1 for US/Canada)
+                {t("phoneFormat")}
               </p>
               </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Status</Label>
+                <Label>{t("status")}</Label>
                 <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v as LeadStatus })}>
                   <SelectTrigger>
                     <SelectValue />
@@ -1592,7 +1709,7 @@ export default function LeadsPage() {
               </div>
               
               <div>
-                <Label>Priority</Label>
+                <Label>{t("priority")}</Label>
                 <Select value={formData.priority} onValueChange={(v) => setFormData({ ...formData, priority: v as LeadPriority })}>
                   <SelectTrigger>
                     <SelectValue />
@@ -1607,11 +1724,11 @@ export default function LeadsPage() {
               </div>
             
             <div>
-              <Label>Notes</Label>
+              <Label>{t("notes")}</Label>
               <Textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Additional notes..."
+                placeholder={t("notesPlaceholder")}
                 rows={3}
               />
             </div>
@@ -1624,14 +1741,14 @@ export default function LeadsPage() {
               setSelectedLead(null);
               resetForm();
             }}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button 
               onClick={showEditDialog ? handleEditLead : handleAddLead}
               disabled={isSaving || !formData.full_name || !user?.id || authLoading}
             >
               {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {showEditDialog ? "Save Changes" : "Add Lead"}
+              {showEditDialog ? t("saveChanges") : t("addLead")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1641,18 +1758,18 @@ export default function LeadsPage() {
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Lead</DialogTitle>
+            <DialogTitle>{t("deleteLead")}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete {selectedLead?.full_name}? This action cannot be undone.
+              {t("deleteConfirm").replace("{name}", selectedLead?.full_name || "")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button variant="destructive" onClick={handleDeleteLead} disabled={isSaving}>
               {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Delete
+              {t("delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1662,18 +1779,18 @@ export default function LeadsPage() {
       <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Selected Leads</DialogTitle>
+            <DialogTitle>{t("deleteSelected")}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete {selectedLeadIds.size} lead(s)? This action cannot be undone and will permanently remove them from the database.
+              {t("deleteSelectedConfirm").replace("{count}", selectedLeadIds.size.toString())}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBulkDeleteDialog(false)}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button variant="destructive" onClick={handleBulkDeleteLeads} disabled={isSaving}>
               {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Delete {selectedLeadIds.size} Lead(s)
+              {t("deleteLeads").replace("{count}", selectedLeadIds.size.toString())}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1685,23 +1802,22 @@ export default function LeadsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Phone className="w-5 h-5 text-green-600" />
-              Call Selected Leads
+              {t("callSelected")}
             </DialogTitle>
             <DialogDescription>
-              You are about to call {selectedLeadIds.size} lead(s). Calls will be made one by one with a 3 second delay between each call.
+              {t("callSelectedDesc").replace("{count}", selectedLeadIds.size.toString())}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
               <p className="text-sm text-amber-800 dark:text-amber-300">
-                <strong>Note:</strong> This will initiate actual phone calls to the selected leads. 
-                Make sure your assistant is properly configured and you have enough credits.
+                <strong>{t("callNote")}</strong> {t("callNoteDesc")}
               </p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBulkCallDialog(false)}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button 
               onClick={handleBulkCallLeads} 
@@ -1709,7 +1825,7 @@ export default function LeadsPage() {
               className="bg-green-600 hover:bg-green-700"
             >
               {isBulkCalling && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Start Calling ({selectedLeadIds.size})
+              {t("startCalling").replace("{count}", selectedLeadIds.size.toString())}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1725,10 +1841,10 @@ export default function LeadsPage() {
               </div>
               <div className="flex-1">
                 <p className="font-semibold text-gray-900 dark:text-white">
-                  Calling {bulkCallProgress.current}/{bulkCallProgress.total}
+                  {t("calling").replace("{current}", bulkCallProgress.current.toString()).replace("{total}", bulkCallProgress.total.toString())}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                  Currently calling: {bulkCallProgress.currentName}
+                  {t("currentlyCalling").replace("{name}", bulkCallProgress.currentName)}
                 </p>
               </div>
             </div>
@@ -1746,9 +1862,9 @@ export default function LeadsPage() {
       <Dialog open={showCsvDialog} onOpenChange={setShowCsvDialog}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Import Leads</DialogTitle>
+            <DialogTitle>{t("importLeads")}</DialogTitle>
             <DialogDescription>
-              {csvFileName} - {csvData.length} leads found
+              {csvFileName} - {t("leadsFound").replace("{count}", csvData.length.toString())}
             </DialogDescription>
           </DialogHeader>
           
@@ -1756,8 +1872,8 @@ export default function LeadsPage() {
                 <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium text-gray-500">Name</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-500">Phone</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-500">{t("name")}</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-500">{t("phone")}</th>
                     </tr>
                   </thead>
               <tbody className="divide-y divide-gray-100">
@@ -1778,11 +1894,11 @@ export default function LeadsPage() {
           
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowCsvDialog(false); setCsvData([]); }}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button onClick={handleCsvUpload} disabled={isUploading || !user?.id || csvData.length === 0 || authLoading}>
               {isUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Import {csvData.length} Leads
+              {t("importLeadsCount").replace("{count}", csvData.length.toString())}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1794,15 +1910,15 @@ export default function LeadsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-blue-600" />
-              Update Status
+              {t("updateStatus")}
             </DialogTitle>
             <DialogDescription>
-              Change status for {selectedLeadIds.size} selected lead(s).
+              {t("changeStatus").replace("{count}", selectedLeadIds.size.toString())}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
             <div>
-              <Label>New Status</Label>
+              <Label>{t("newStatus")}</Label>
               <Select value={bulkStatusValue} onValueChange={(v) => setBulkStatusValue(v as LeadStatus)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -1816,10 +1932,10 @@ export default function LeadsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBulkStatusDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowBulkStatusDialog(false)}>{t("cancel")}</Button>
             <Button onClick={handleBulkStatusUpdate} disabled={isSaving}>
               {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Update {selectedLeadIds.size} Lead(s)
+              {t("updateLeads").replace("{count}", selectedLeadIds.size.toString())}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1831,10 +1947,10 @@ export default function LeadsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
               <AlertTriangle className="w-5 h-5" />
-              Duplicate Phone Numbers
+              {t("duplicatePhones")}
             </DialogTitle>
             <DialogDescription>
-              The following phone numbers appear more than once in your leads.
+              {t("duplicateDesc")}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 max-h-64 overflow-y-auto space-y-3">
@@ -1848,7 +1964,7 @@ export default function LeadsPage() {
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDuplicateWarning(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setShowDuplicateWarning(false)}>{t("close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1857,9 +1973,9 @@ export default function LeadsPage() {
       <Dialog open={showLeadDetailDialog} onOpenChange={setShowLeadDetailDialog}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Lead Details</DialogTitle>
+            <DialogTitle>{t("leadDetails")}</DialogTitle>
             <DialogDescription>
-              {selectedLead?.full_name || "Lead Information"}
+              {selectedLead?.full_name || t("leadInfo")}
             </DialogDescription>
           </DialogHeader>
           
@@ -1889,17 +2005,17 @@ export default function LeadsPage() {
               {/* Status and Priority */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm text-gray-500 dark:text-gray-400">Status</Label>
+                  <Label className="text-sm text-gray-500 dark:text-gray-400">{t("status")}</Label>
                   <div className="mt-1">
-                    <span className={cn("px-2 py-1 rounded-md text-xs font-medium", statusConfig[selectedLead.status].color)}>
+                    <span className={cn("px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap", statusConfig[selectedLead.status].color)}>
                       {statusConfig[selectedLead.status].label}
                     </span>
                   </div>
                 </div>
                 <div>
-                  <Label className="text-sm text-gray-500 dark:text-gray-400">Priority</Label>
+                  <Label className="text-sm text-gray-500 dark:text-gray-400">{t("priority")}</Label>
                   <div className="mt-1">
-                    <span className={cn("px-2 py-1 rounded-md text-xs font-medium", priorityConfig[selectedLead.priority].color)}>
+                    <span className={cn("px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap", priorityConfig[selectedLead.priority].color)}>
                       {priorityConfig[selectedLead.priority].label}
                     </span>
                   </div>
@@ -1909,14 +2025,14 @@ export default function LeadsPage() {
               {/* Imported Data from CSV/XLSX - Tüm Detaylar */}
               {selectedLead.form_data && Object.keys(selectedLead.form_data).length > 0 && (
                 <div className="space-y-4 border-t border-gray-200 dark:border-gray-700 pt-4">
-                  <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-4">İmport Edilen Detaylar</h4>
+                  <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-4">{t("importedDetails")}</h4>
                   
                   <div className="grid grid-cols-1 gap-4">
                     {(() => {
                       const dateDropped = selectedLead.form_data.date_dropped;
                       return dateDropped && typeof dateDropped === 'string' && dateDropped.trim() !== '' ? (
                         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                          <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">Data Düşen Tarih</Label>
+                          <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">{t("dataDropped")}</Label>
                           <p className="mt-1 text-sm text-gray-900 dark:text-white">{dateDropped}</p>
                         </div>
                       ) : null;
@@ -1926,7 +2042,7 @@ export default function LeadsPage() {
                       const dateCalled = selectedLead.form_data.date_called;
                       return dateCalled && typeof dateCalled === 'string' && dateCalled.trim() !== '' ? (
                         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                          <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">Data Aranan Tarih</Label>
+                          <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">{t("dataCalled")}</Label>
                           <p className="mt-1 text-sm text-gray-900 dark:text-white">{dateCalled}</p>
                         </div>
                       ) : null;
@@ -1937,7 +2053,7 @@ export default function LeadsPage() {
                         const call1 = selectedLead.form_data.call_1_date;
                         return call1 && typeof call1 === 'string' && call1.trim() !== '' && call1.toLowerCase() !== 'x' ? (
                           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">1. Arama</Label>
+                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">{t("call1")}</Label>
                             <p className="mt-1 text-sm text-gray-900 dark:text-white">{call1}</p>
                           </div>
                         ) : null;
@@ -1947,7 +2063,7 @@ export default function LeadsPage() {
                         const call2 = selectedLead.form_data.call_2_date;
                         return call2 && typeof call2 === 'string' && call2.trim() !== '' && call2.toLowerCase() !== 'x' ? (
                           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">2. Arama</Label>
+                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">{t("call2")}</Label>
                             <p className="mt-1 text-sm text-gray-900 dark:text-white">{call2}</p>
                           </div>
                         ) : null;
@@ -1957,7 +2073,7 @@ export default function LeadsPage() {
                         const call3 = selectedLead.form_data.call_3_date;
                         return call3 && typeof call3 === 'string' && call3.trim() !== '' && call3.toLowerCase() !== 'x' ? (
                           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">3. Arama</Label>
+                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">{t("call3")}</Label>
                             <p className="mt-1 text-sm text-gray-900 dark:text-white">{call3}</p>
                           </div>
                         ) : null;
@@ -1967,7 +2083,7 @@ export default function LeadsPage() {
                         const call4 = selectedLead.form_data.call_4_date;
                         return call4 && typeof call4 === 'string' && call4.trim() !== '' && call4.toLowerCase() !== 'x' ? (
                           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">4. Arama</Label>
+                            <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">{t("call4")}</Label>
                             <p className="mt-1 text-sm text-gray-900 dark:text-white">{call4}</p>
                           </div>
                         ) : null;
@@ -1978,7 +2094,7 @@ export default function LeadsPage() {
                       const postCallStatus = selectedLead.form_data.post_call_status;
                       return postCallStatus && typeof postCallStatus === 'string' && postCallStatus.trim() !== '' ? (
                         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                          <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">Görüşme Sonrası Durum</Label>
+                          <Label className="text-sm font-medium text-gray-600 dark:text-gray-400">{t("postCallStatus")}</Label>
                           <p className="mt-1 text-sm text-gray-900 dark:text-white whitespace-pre-line">{postCallStatus}</p>
                         </div>
                       ) : null;
@@ -1990,7 +2106,7 @@ export default function LeadsPage() {
               {/* Treatment Interest / Bilgi Almak İstediği Konu */}
               {(selectedLead.treatment_interest || (selectedLead.form_data && typeof selectedLead.form_data.treatment_interest === 'string')) && (
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                  <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Bilgi Almak İstediği Konu</Label>
+                  <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300">{t("treatmentInterest")}</Label>
                   <p className="mt-2 text-gray-900 dark:text-white whitespace-pre-line">
                     {selectedLead.treatment_interest || (selectedLead.form_data?.treatment_interest as string) || "—"}
                   </p>
@@ -2001,7 +2117,7 @@ export default function LeadsPage() {
               {selectedLead.notes && (
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                   <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    {selectedLead.form_data?.post_call_status ? "Görüşme Sonrası Durum" : "Notes"}
+                    {selectedLead.form_data?.post_call_status ? t("postCallStatus") : t("notes")}
                   </Label>
                   <p className="mt-2 text-gray-900 dark:text-white whitespace-pre-line">{selectedLead.notes}</p>
                 </div>
@@ -2011,7 +2127,7 @@ export default function LeadsPage() {
               <div className="grid grid-cols-2 gap-4 border-t border-gray-200 dark:border-gray-700 pt-4">
                 {selectedLead.first_contact_date && (
                   <div>
-                    <Label className="text-sm text-gray-500 dark:text-gray-400">First Contact Date</Label>
+                    <Label className="text-sm text-gray-500 dark:text-gray-400">{t("firstContactDate")}</Label>
                     <p className="mt-1 text-gray-900 dark:text-white">
                       {format(new Date(selectedLead.first_contact_date), "MMM d, yyyy")}
                     </p>
@@ -2019,7 +2135,7 @@ export default function LeadsPage() {
                 )}
                 {selectedLead.last_contact_date && (
                   <div>
-                    <Label className="text-sm text-gray-500 dark:text-gray-400">Last Contact Date</Label>
+                    <Label className="text-sm text-gray-500 dark:text-gray-400">{t("lastContactDate")}</Label>
                     <p className="mt-1 text-gray-900 dark:text-white">
                       {format(new Date(selectedLead.last_contact_date), "MMM d, yyyy")}
                     </p>
@@ -2035,7 +2151,7 @@ export default function LeadsPage() {
                   className="flex-1"
                 >
                   <Edit className="w-4 h-4 mr-2" />
-                  Edit
+                  {t("edit")}
                 </Button>
                 {selectedLead.phone && (
                   <Button
@@ -2047,7 +2163,7 @@ export default function LeadsPage() {
                     className="flex-1"
                   >
                     <Phone className="w-4 h-4 mr-2" />
-                    Call
+                    {t("call")}
                   </Button>
                 )}
               </div>

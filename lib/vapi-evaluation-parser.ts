@@ -4,7 +4,7 @@
  * 
  * Expected VAPI Response Format:
  * {
- *   "score": 4,
+ *   "score": 7,
  *   "outcome": "interested",
  *   "sentiment": "positive",
  *   "summary": "Customer showed interest in the product",
@@ -13,12 +13,14 @@
  *   "nextAction": "Schedule follow-up call"
  * }
  * 
- * Score Scale (1-5):
- * 1 = No connection (voicemail, no answer, busy, wrong number)
- * 2 = Connected but negative (hang up, not interested, hostile)
- * 3 = Neutral conversation (listened but non-committal)
- * 4 = Positive interest (engaged, asked questions, wants follow-up)
- * 5 = Success (appointment set, sale made, strong commitment)
+ * Score Scale (1-10):
+ * V = Voicemail (not a score, separate category)
+ * F = Failed to connect (not a score, separate category)
+ * 1-2 = Connected but very negative (immediate hang up, hostile, wrong number)
+ * 3-4 = Connected but negative (not interested, rude, no engagement)
+ * 5-6 = Neutral conversation (listened but non-committal, unclear interest)
+ * 7-8 = Positive interest (engaged, asked questions, wants follow-up)
+ * 9-10 = Success (appointment set, sale made, strong commitment, hot lead)
  */
 
 export interface ParsedEvaluation {
@@ -108,10 +110,13 @@ function parseJsonEvaluation(text: string): ParsedEvaluation | null {
 
     const json = JSON.parse(jsonMatch[0]);
 
-    // Validate and extract score (1-5 scale)
+    // Validate and extract score (1-10 scale)
     let score: number | null = null;
-    if (typeof json.score === 'number' && json.score >= 1 && json.score <= 5) {
+    if (typeof json.score === 'number' && json.score >= 1 && json.score <= 10) {
       score = Math.round(json.score);
+    } else if (typeof json.score === 'number' && json.score >= 1 && json.score <= 5) {
+      // Convert old 1-5 scale to 1-10 scale for backward compatibility
+      score = Math.round(json.score * 2);
     }
 
     // Extract and validate tags
@@ -134,8 +139,8 @@ function parseJsonEvaluation(text: string): ParsedEvaluation | null {
     if (json.sentiment === 'positive' || json.sentiment === 'negative' || json.sentiment === 'neutral') {
       sentiment = json.sentiment;
     } else if (score !== null) {
-      // Infer from score if not provided (1-5 scale)
-      sentiment = score >= 4 ? 'positive' : score <= 2 ? 'negative' : 'neutral';
+      // Infer from score if not provided (1-10 scale)
+      sentiment = score >= 7 ? 'positive' : score <= 4 ? 'negative' : 'neutral';
     }
 
     // Clean summary
@@ -157,14 +162,16 @@ function parseJsonEvaluation(text: string): ParsedEvaluation | null {
 
 /**
  * Check if call failed to connect
+ * Note: V (Voicemail) and F (Failed) are separate categories, not scored on 1-10 scale
+ * These will be displayed as V or F letters, not numbers
  */
 function checkFailedConnection(endedReason: string): ParsedEvaluation | null {
   const reason = endedReason.toLowerCase();
 
   if (reason.includes('no-answer') || reason.includes('customer-did-not-answer')) {
     return {
-      score: 1,
-      tags: ['no_answer'],
+      score: null, // F - Failed, will be shown as "F" not a number
+      tags: ['no_answer', 'failed_call'],
       summary: 'Müşteriye ulaşılamadı',
       sentiment: 'negative',
       outcome: 'no_answer',
@@ -173,7 +180,7 @@ function checkFailedConnection(endedReason: string): ParsedEvaluation | null {
 
   if (reason.includes('voicemail')) {
     return {
-      score: 1,
+      score: null, // V - Voicemail, will be shown as "V" not a number
       tags: ['voicemail'],
       summary: 'Sesli mesaja düştü',
       sentiment: 'negative',
@@ -183,8 +190,8 @@ function checkFailedConnection(endedReason: string): ParsedEvaluation | null {
 
   if (reason.includes('busy')) {
     return {
-      score: 1,
-      tags: ['timing_concern'],
+      score: null, // F - Failed, will be shown as "F" not a number
+      tags: ['timing_concern', 'failed_call'],
       summary: 'Hat meşgul',
       sentiment: 'negative',
       outcome: 'busy',
@@ -196,13 +203,14 @@ function checkFailedConnection(endedReason: string): ParsedEvaluation | null {
 
 /**
  * Infer evaluation from endedReason when no evaluation provided
+ * Uses 1-10 scale for connected calls
  */
 function inferFromEndedReason(endedReason: string): ParsedEvaluation {
   const reason = endedReason.toLowerCase();
 
   if (reason.includes('assistant-ended-call')) {
     return {
-      score: 3,
+      score: 6, // Neutral on 1-10 scale (call completed normally)
       tags: ['successful_call'],
       summary: 'Görüşme asistan tarafından sonlandırıldı',
       sentiment: 'neutral',
@@ -211,7 +219,7 @@ function inferFromEndedReason(endedReason: string): ParsedEvaluation {
 
   if (reason.includes('customer-ended-call')) {
     return {
-      score: 3,
+      score: 5, // Slightly lower on 1-10 scale (customer ended, might indicate less interest)
       tags: [],
       summary: 'Müşteri görüşmeyi sonlandırdı',
       sentiment: 'neutral',

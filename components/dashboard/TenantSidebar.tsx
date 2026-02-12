@@ -17,14 +17,18 @@ import {
   Moon,
   Sun,
   Target,
+  Globe,
 } from "lucide-react";
 import { useTheme } from "@/components/providers/ThemeProvider";
+import { useLanguage, useTranslation } from "@/lib/i18n";
 
 export function TenantSidebar() {
   const pathname = usePathname();
   const { tenant, tenantProfile } = useTenant();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { language, setLanguage } = useLanguage();
+  const { t } = useTranslation("sidebar");
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Close mobile menu on route change
@@ -35,13 +39,17 @@ export function TenantSidebar() {
   const effectiveTenant = tenant || "dashboard";
   const dashboardType = tenantProfile?.dashboard_type || user?.dashboard_type || 'outbound';
 
-  // Navigation items - clean and minimal
+  // Navigation items - clean and minimal with translations
   const navItems = [
-    { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: "Dashboard" },
-    { href: `/${effectiveTenant}/leads`, icon: Users, label: "Leads" },
-    { href: `/${effectiveTenant}/calls`, icon: Phone, label: "Calls" },
-    { href: `/${effectiveTenant}/campaigns`, icon: Target, label: "Campaigns" },
+    { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: t("dashboard") },
+    { href: `/${effectiveTenant}/leads`, icon: Users, label: t("leads") },
+    { href: `/${effectiveTenant}/calls`, icon: Phone, label: t("calls") },
+    { href: `/${effectiveTenant}/campaigns`, icon: Target, label: t("campaigns") },
   ];
+
+  const toggleLanguage = () => {
+    setLanguage(language === "en" ? "tr" : "en");
+  };
 
   const handleLogout = async () => {
     await signOut();
@@ -140,6 +148,15 @@ export function TenantSidebar() {
 
         {/* User & Actions */}
         <div className="px-4 py-4 border-t border-gray-100 dark:border-gray-800 space-y-2">
+          {/* Language Toggle */}
+          <button
+            onClick={toggleLanguage}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            <Globe className="w-5 h-5" />
+            <span>{language === "en" ? "🇹🇷 Türkçe" : "🇬🇧 English"}</span>
+          </button>
+
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -148,12 +165,12 @@ export function TenantSidebar() {
             {theme === "dark" ? (
               <>
                 <Sun className="w-5 h-5" />
-                <span>Light Mode</span>
+                <span>{t("lightMode")}</span>
               </>
             ) : (
               <>
                 <Moon className="w-5 h-5" />
-                <span>Dark Mode</span>
+                <span>{t("darkMode")}</span>
               </>
             )}
           </button>
@@ -174,7 +191,7 @@ export function TenantSidebar() {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <LogOut className="w-5 h-5" />
-            <span>Sign Out</span>
+            <span>{t("signOut")}</span>
           </button>
         </div>
       </aside>

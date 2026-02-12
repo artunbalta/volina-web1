@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
+import { useLanguage } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -98,7 +99,72 @@ interface AutoCallCampaign {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-const DAY_LABELS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"];
+// Campaign translations
+const campaignTexts = {
+  dayLabels: { en: ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"], tr: ["Gün 1", "Gün 2", "Gün 3", "Gün 4", "Gün 5", "Gün 6", "Gün 7"] },
+  status: {
+    idle: { en: "Idle", tr: "Beklemede" },
+    running: { en: "Running", tr: "Çalışıyor" },
+    paused: { en: "Paused", tr: "Duraklatıldı" },
+    completed: { en: "Completed", tr: "Tamamlandı" },
+  },
+  action: {
+    call: { en: "Call", tr: "Arama" },
+    whatsapp: { en: "WhatsApp", tr: "WhatsApp" },
+    off: { en: "Off", tr: "Kapalı" },
+  },
+  title: { en: "Campaigns", tr: "Kampanyalar" },
+  subtitle: { en: "Automated 7-day campaigns with calls & WhatsApp", tr: "Aramalar ve WhatsApp ile otomatik 7 günlük kampanyalar" },
+  newCampaign: { en: "New Campaign", tr: "Yeni Kampanya" },
+  refresh: { en: "Refresh", tr: "Yenile" },
+  newLeads: { en: "New Leads", tr: "Yeni Müşteriler" },
+  runningCampaigns: { en: "Running Campaigns", tr: "Çalışan Kampanyalar" },
+  timezone: { en: "Timezone", tr: "Saat Dilimi" },
+  turkeyTime: { en: "Turkey (UTC+3)", tr: "Türkiye (UTC+3)" },
+  howItWorks: { en: "How it works:", tr: "Nasıl çalışır:" },
+  howItWorksDesc: { en: "Create a campaign, press Start. A background process (cron) will automatically execute calls during your time slots and send WhatsApp messages at the scheduled times. No need to keep the page open.", tr: "Bir kampanya oluşturun, Başlat'a basın. Arka planda çalışan bir süreç (cron) zaman dilimlerinizde otomatik olarak aramalar yapacak ve WhatsApp mesajlarını planlanan saatlerde gönderecektir. Sayfayı açık tutmanıza gerek yok." },
+  noCampaigns: { en: "No campaigns yet", tr: "Henüz kampanya yok" },
+  createFirst: { en: "Create Your First Campaign", tr: "İlk Kampanyanızı Oluşturun" },
+  start: { en: "Start", tr: "Başlat" },
+  restart: { en: "Restart", tr: "Yeniden Başlat" },
+  stop: { en: "Stop", tr: "Durdur" },
+  dayOf: { en: "Day {current} of 7", tr: "7 günün {current}. günü" },
+  callsSent: { en: "calls, {messages} messages sent", tr: "arama, {messages} mesaj gönderildi" },
+  leadsAssigned: { en: "leads assigned", tr: "müşteri atandı" },
+  createCampaign: { en: "Create Campaign", tr: "Kampanya Oluştur" },
+  createCampaignDesc: { en: "Set up a 7-day automated campaign. All days start as off — configure the ones you need.", tr: "7 günlük otomatik bir kampanya kurun. Tüm günler kapalı olarak başlar — ihtiyacınız olanları yapılandırın." },
+  campaignName: { en: "Campaign Name *", tr: "Kampanya Adı *" },
+  description: { en: "Description", tr: "Açıklama" },
+  optionalDesc: { en: "Optional description...", tr: "İsteğe bağlı açıklama..." },
+  dayPlan: { en: "7-Day Plan (Turkey Time)", tr: "7 Günlük Plan (Türkiye Saati)" },
+  slot: { en: "Slot {num}", tr: "Zaman Dilimi {num}" },
+  timeStart: { en: "Start", tr: "Başlangıç" },
+  timeEnd: { en: "End", tr: "Bitiş" },
+  callsInSlot: { en: "Calls in this slot", tr: "Bu zaman dilimindeki aramalar" },
+  minBetween: { en: "min | ~{interval}s between calls", tr: "dakika | aramalar arası ~{interval} saniye" },
+  addSlot: { en: "Add Slot", tr: "Zaman Dilimi Ekle" },
+  sendTime: { en: "Send Time (Turkey Time)", tr: "Gönderim Zamanı (Türkiye Saati)" },
+  messageTemplate: { en: "Message Template", tr: "Mesaj Şablonu" },
+  useName: { en: "Use {{name}} for lead's name...", tr: "Müşteri adı için {{name}} kullanın..." },
+  variables: { en: "Variables: {{name}}, {{phone}}", tr: "Değişkenler: {{name}}, {{phone}}" },
+  whatsappBusiness: { en: "WhatsApp Business API", tr: "WhatsApp Business API" },
+  whatsappDesc: { en: "Enter your WhatsApp Cloud API credentials from Meta Business Suite.", tr: "Meta Business Suite'den WhatsApp Cloud API kimlik bilgilerinizi girin." },
+  phoneNumberId: { en: "Phone Number ID", tr: "Telefon Numarası ID" },
+  accessToken: { en: "Access Token", tr: "Erişim Token'ı" },
+  businessAccountId: { en: "Business Account ID", tr: "İşletme Hesabı ID" },
+  campaignSummary: { en: "Campaign Summary", tr: "Kampanya Özeti" },
+  callDays: { en: "call day(s), {whatsapp} WhatsApp day(s), {off} off day(s).", tr: "arama günü, {whatsapp} WhatsApp günü, {off} kapalı gün." },
+  totalCalls: { en: "Total calls on call days: {total}.", tr: "Arama günlerindeki toplam aramalar: {total}." },
+  newLeadsAvailable: { en: "{count} new leads available.", tr: "{count} yeni müşteri mevcut." },
+  cancel: { en: "Cancel", tr: "İptal" },
+  deleteCampaign: { en: "Delete Campaign", tr: "Kampanyayı Sil" },
+  deleteConfirm: { en: "Are you sure you want to delete \"{name}\"? This cannot be undone.", tr: "\"{name}\" kampanyasını silmek istediğinize emin misiniz? Bu işlem geri alınamaz." },
+  delete: { en: "Delete", tr: "Sil" },
+  at: { en: "at {time}", tr: "{time} saatinde" },
+  day: { en: "Day {day}", tr: "Gün {day}" },
+  noDescription: { en: "No description", tr: "Açıklama yok" },
+  callsMessages: { en: "{calls} calls, {messages} messages sent", tr: "{calls} arama, {messages} mesaj gönderildi" },
+};
 
 const formatTime = (hour: number, minute: number) =>
   `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
@@ -113,34 +179,36 @@ const getCallInterval = (slot: TimeSlot) => {
   return Math.round((durationMinutes / slot.callsPerSlot) * 60);
 };
 
-const STATUS_CONFIG: Record<CampaignStatus, { label: string; color: string; icon: typeof CheckCircle2 }> = {
-  idle: { label: "Idle", color: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400", icon: AlertCircle },
-  running: { label: "Running", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", icon: Play },
-  paused: { label: "Paused", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", icon: Square },
-  completed: { label: "Completed", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", icon: CheckCircle2 },
-};
+const getStatusConfig = (lang: "en" | "tr"): Record<CampaignStatus, { label: string; color: string; icon: typeof CheckCircle2 }> => ({
+  idle: { label: campaignTexts.status.idle[lang], color: "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400", icon: AlertCircle },
+  running: { label: campaignTexts.status.running[lang], color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", icon: Play },
+  paused: { label: campaignTexts.status.paused[lang], color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", icon: Square },
+  completed: { label: campaignTexts.status.completed[lang], color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", icon: CheckCircle2 },
+});
 
 // ─── Component: WhatsApp Settings ────────────────────────────────────
 
 function WhatsAppSettings({
   config,
   onChange,
+  lang = "en",
 }: {
   config: { phone_number_id: string; access_token: string; business_account_id: string };
   onChange: (config: { phone_number_id: string; access_token: string; business_account_id: string }) => void;
+  lang?: "en" | "tr";
 }) {
   return (
     <div className="space-y-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
       <div className="flex items-center gap-2 mb-2">
         <MessageSquare className="w-5 h-5 text-green-600 dark:text-green-400" />
-        <h4 className="font-semibold text-green-800 dark:text-green-300">WhatsApp Business API</h4>
+        <h4 className="font-semibold text-green-800 dark:text-green-300">{campaignTexts.whatsappBusiness[lang]}</h4>
       </div>
       <p className="text-xs text-green-700 dark:text-green-400 mb-3">
-        Enter your WhatsApp Cloud API credentials from Meta Business Suite.
+        {campaignTexts.whatsappDesc[lang]}
       </p>
       <div className="space-y-2">
         <div className="space-y-1">
-          <Label className="text-xs text-green-800 dark:text-green-300">Phone Number ID</Label>
+          <Label className="text-xs text-green-800 dark:text-green-300">{campaignTexts.phoneNumberId[lang]}</Label>
           <Input
             value={config.phone_number_id}
             onChange={(e) => onChange({ ...config, phone_number_id: e.target.value })}
@@ -149,7 +217,7 @@ function WhatsAppSettings({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs text-green-800 dark:text-green-300">Access Token</Label>
+          <Label className="text-xs text-green-800 dark:text-green-300">{campaignTexts.accessToken[lang]}</Label>
           <Input
             type="password"
             value={config.access_token}
@@ -159,7 +227,7 @@ function WhatsAppSettings({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs text-green-800 dark:text-green-300">Business Account ID</Label>
+          <Label className="text-xs text-green-800 dark:text-green-300">{campaignTexts.businessAccountId[lang]}</Label>
           <Input
             value={config.business_account_id}
             onChange={(e) => onChange({ ...config, business_account_id: e.target.value })}
@@ -177,9 +245,11 @@ function WhatsAppSettings({
 function DayPlanEditor({
   plan,
   onUpdate,
+  lang = "en",
 }: {
   plan: DayPlan;
   onUpdate: (updated: DayPlan) => void;
+  lang?: "en" | "tr";
 }) {
   const [expanded, setExpanded] = useState(plan.action !== "off");
 
@@ -221,17 +291,17 @@ function DayPlanEditor({
       <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className="flex items-center gap-2">
           {actionIcon[plan.action]}
-          <span className="text-sm font-medium text-gray-900 dark:text-white">{DAY_LABELS[plan.day - 1]}</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-white">{campaignTexts.dayLabels[lang][plan.day - 1]}</span>
           <span className={cn(
             "text-xs px-2 py-0.5 rounded-full font-medium",
             plan.action === "call" && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
             plan.action === "whatsapp" && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
             plan.action === "off" && "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
           )}>
-            {plan.action === "call" ? "Call" : plan.action === "whatsapp" ? "WhatsApp" : "Off"}
+            {campaignTexts.action[plan.action][lang]}
           </span>
           {plan.action === "whatsapp" && plan.whatsappSendHour !== undefined && (
-            <span className="text-xs text-gray-500">at {formatTime(plan.whatsappSendHour, plan.whatsappSendMinute || 0)}</span>
+            <span className="text-xs text-gray-500">{campaignTexts.at[lang].replace("{time}", formatTime(plan.whatsappSendHour, plan.whatsappSendMinute || 0))}</span>
           )}
         </div>
         {plan.action !== "off" ? (
@@ -249,7 +319,7 @@ function DayPlanEditor({
               ...plan,
               action: newAction,
               timeSlots: newAction === "call" ? (plan.timeSlots.length > 0 ? plan.timeSlots : [{ id: Date.now().toString(), startHour: 12, startMinute: 0, endHour: 13, endMinute: 0, callsPerSlot: 100 }]) : [],
-              whatsappMessage: newAction === "whatsapp" ? (plan.whatsappMessage || "Merhaba {{name}}, sizinle tekrar iletişime geçiyoruz.") : undefined,
+              whatsappMessage: newAction === "whatsapp" ? (plan.whatsappMessage || (lang === "tr" ? "Merhaba {{name}}, sizinle tekrar iletişime geçiyoruz." : "Hello {{name}}, we're reaching out to you again.")) : undefined,
               whatsappSendHour: newAction === "whatsapp" ? (plan.whatsappSendHour ?? 10) : undefined,
               whatsappSendMinute: newAction === "whatsapp" ? (plan.whatsappSendMinute ?? 0) : undefined,
             });
@@ -260,9 +330,9 @@ function DayPlanEditor({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="off">Off</SelectItem>
-            <SelectItem value="call">Call</SelectItem>
-            <SelectItem value="whatsapp">WhatsApp</SelectItem>
+            <SelectItem value="off">{campaignTexts.action.off[lang]}</SelectItem>
+            <SelectItem value="call">{campaignTexts.action.call[lang]}</SelectItem>
+            <SelectItem value="whatsapp">{campaignTexts.action.whatsapp[lang]}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -276,7 +346,7 @@ function DayPlanEditor({
             return (
               <div key={slot.id} className="p-3 bg-white dark:bg-gray-800 rounded-lg space-y-2 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Slot {idx + 1}</span>
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{campaignTexts.slot[lang].replace("{num}", (idx + 1).toString())}</span>
                   {plan.timeSlots.length > 1 && (
                     <Button variant="ghost" size="sm" onClick={() => removeTimeSlot(slot.id)} className="h-6 w-6 p-0 text-red-500">
                       <Trash2 className="w-3 h-3" />
@@ -285,7 +355,7 @@ function DayPlanEditor({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">Start</Label>
+                    <Label className="text-xs">{campaignTexts.timeStart[lang]}</Label>
                     <div className="flex gap-1 items-center">
                       <Input type="number" min={0} max={23} value={slot.startHour} onChange={(e) => updateTimeSlot(slot.id, "startHour", parseInt(e.target.value) || 0)} className="w-20 min-w-[5rem] h-9 text-sm text-center tabular-nums" />
                       <span className="self-center text-xs">:</span>
@@ -293,7 +363,7 @@ function DayPlanEditor({
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">End</Label>
+                    <Label className="text-xs">{campaignTexts.timeEnd[lang]}</Label>
                     <div className="flex gap-1 items-center">
                       <Input type="number" min={0} max={23} value={slot.endHour} onChange={(e) => updateTimeSlot(slot.id, "endHour", parseInt(e.target.value) || 0)} className="w-20 min-w-[5rem] h-9 text-sm text-center tabular-nums" />
                       <span className="self-center text-xs">:</span>
@@ -302,17 +372,17 @@ function DayPlanEditor({
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Calls in this slot</Label>
+                  <Label className="text-xs">{campaignTexts.callsInSlot[lang]}</Label>
                   <Input type="number" min={1} max={1000} value={slot.callsPerSlot} onChange={(e) => updateTimeSlot(slot.id, "callsPerSlot", parseInt(e.target.value) || 1)} className="w-full h-7 text-xs" />
                 </div>
                 <div className="text-[10px] text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-1.5 rounded">
-                  {duration} min | ~{interval}s between calls
+                  {campaignTexts.minBetween[lang].replace("{interval}", interval.toString())}
                 </div>
               </div>
             );
           })}
           <Button variant="outline" size="sm" onClick={addTimeSlot} className="w-full h-7 text-xs">
-            <Plus className="w-3 h-3 mr-1" /> Add Slot
+            <Plus className="w-3 h-3 mr-1" /> {campaignTexts.addSlot[lang]}
           </Button>
         </div>
       )}
@@ -321,7 +391,7 @@ function DayPlanEditor({
         <div className="mt-3 space-y-3">
           {/* Send Time */}
           <div className="space-y-1">
-            <Label className="text-xs">Send Time (Turkey Time)</Label>
+            <Label className="text-xs">{campaignTexts.sendTime[lang]}</Label>
             <div className="flex gap-1 items-center">
               <Input
                 type="number" min={0} max={23}
@@ -336,20 +406,20 @@ function DayPlanEditor({
                 onChange={(e) => onUpdate({ ...plan, whatsappSendMinute: parseInt(e.target.value) || 0 })}
                 className="w-20 min-w-[5rem] h-9 text-sm text-center tabular-nums"
               />
-              <span className="text-xs text-gray-500 ml-2">Turkey time</span>
+              <span className="text-xs text-gray-500 ml-2">{campaignTexts.turkeyTime[lang]}</span>
             </div>
           </div>
           {/* Message */}
           <div className="space-y-1">
-            <Label className="text-xs">Message Template</Label>
+            <Label className="text-xs">{campaignTexts.messageTemplate[lang]}</Label>
             <Textarea
               value={plan.whatsappMessage || ""}
               onChange={(e) => onUpdate({ ...plan, whatsappMessage: e.target.value })}
-              placeholder="Use {{name}} for lead's name..."
+              placeholder={campaignTexts.useName[lang]}
               rows={3}
               className="text-sm border-green-300 dark:border-green-700"
             />
-            <p className="text-[10px] text-gray-500">Variables: {"{{name}}"}, {"{{phone}}"}</p>
+            <p className="text-[10px] text-gray-500">{campaignTexts.variables[lang]}</p>
           </div>
         </div>
       )}
@@ -363,6 +433,15 @@ export default function CampaignsPage() {
   const params = useParams();
   useTenant();
   const { user } = useAuth();
+  const { language } = useLanguage();
+  const t = (key: keyof typeof campaignTexts): string => {
+    const value = campaignTexts[key];
+    if (typeof value === "object" && value !== null && "en" in value && "tr" in value) {
+      const result = value[language];
+      return typeof result === "string" ? result : String(result || "");
+    }
+    return typeof value === "string" ? value : String(value || "");
+  };
 
   const [campaigns, setCampaigns] = useState<AutoCallCampaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -565,17 +644,17 @@ export default function CampaignsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Campaigns</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t("title")}</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Automated 7-day campaigns with calls &amp; WhatsApp
+            {t("subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={() => { setFormData({ name: "", description: "", timezone: "Europe/Istanbul", day_plans: makeDefaultDayPlans(), whatsapp_config: { phone_number_id: "", access_token: "", business_account_id: "" } }); setShowCreateDialog(true); }}>
-            <Plus className="w-4 h-4 mr-2" /> New Campaign
+            <Plus className="w-4 h-4 mr-2" /> {t("newCampaign")}
           </Button>
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
-            <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} /> Refresh
+            <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} /> {t("refresh")}
           </Button>
         </div>
       </div>
@@ -587,7 +666,7 @@ export default function CampaignsPage() {
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30"><Users className="w-6 h-6 text-blue-600 dark:text-blue-400" /></div>
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">New Leads</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t("newLeads")}</p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">{newLeadCount}</p>
               </div>
             </div>
@@ -598,7 +677,7 @@ export default function CampaignsPage() {
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/30"><Target className="w-6 h-6 text-green-600 dark:text-green-400" /></div>
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Running Campaigns</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t("runningCampaigns")}</p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">{campaigns.filter((c) => c.status === "running").length}</p>
               </div>
             </div>
@@ -609,8 +688,8 @@ export default function CampaignsPage() {
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/30"><Clock className="w-6 h-6 text-purple-600 dark:text-purple-400" /></div>
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Timezone</p>
-                <p className="text-lg font-semibold text-gray-900 dark:text-white">Turkey (UTC+3)</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t("timezone")}</p>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">{t("turkeyTime")}</p>
               </div>
             </div>
           </CardContent>
@@ -619,7 +698,7 @@ export default function CampaignsPage() {
 
       {/* Info Banner */}
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-sm text-blue-800 dark:text-blue-300">
-        <strong>How it works:</strong> Create a campaign, press Start. A background process (cron) will automatically execute calls during your time slots and send WhatsApp messages at the scheduled times. No need to keep the page open.
+        <strong>{t("howItWorks")}</strong> {t("howItWorksDesc")}
       </div>
 
       {/* Campaigns List */}
@@ -628,9 +707,9 @@ export default function CampaignsPage() {
           <CardContent className="py-12">
             <div className="text-center text-gray-500">
               <Target className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="mb-4">No campaigns yet</p>
+              <p className="mb-4">{t("noCampaigns")}</p>
               <Button onClick={() => { setFormData({ name: "", description: "", timezone: "Europe/Istanbul", day_plans: makeDefaultDayPlans(), whatsapp_config: { phone_number_id: "", access_token: "", business_account_id: "" } }); setShowCreateDialog(true); }}>
-                <Plus className="w-4 h-4 mr-2" /> Create Your First Campaign
+                <Plus className="w-4 h-4 mr-2" /> {t("createFirst")}
               </Button>
             </div>
           </CardContent>
@@ -640,7 +719,7 @@ export default function CampaignsPage() {
           {campaigns.map((campaign) => {
             const plans: DayPlan[] = campaign.day_plans || [];
             const status = campaign.status || "idle";
-            const statusCfg = STATUS_CONFIG[status];
+            const statusCfg = getStatusConfig(language)[status];
             const StatusIcon = statusCfg.icon;
             const progress = campaign.progress;
             const currentDay = progress?.current_day || 0;
@@ -651,7 +730,7 @@ export default function CampaignsPage() {
                 <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-lg truncate">{campaign.name}</CardTitle>
-                      <CardDescription className="mt-1 truncate">{campaign.description || "No description"}</CardDescription>
+                      <CardDescription className="mt-1 truncate">{campaign.description || t("noDescription")}</CardDescription>
                   </div>
                     <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                       {status === "idle" || status === "paused" || status === "completed" ? (
@@ -662,11 +741,11 @@ export default function CampaignsPage() {
                           className="h-8 bg-green-600 hover:bg-green-700"
                         >
                           <Play className="w-4 h-4 mr-1" />
-                          {status === "completed" ? "Restart" : "Start"}
+                          {status === "completed" ? t("restart") : t("start")}
                         </Button>
                       ) : (
                         <Button variant="destructive" size="sm" onClick={() => handleStop(campaign)} disabled={isSaving} className="h-8">
-                          <Square className="w-4 h-4 mr-1" /> Stop
+                          <Square className="w-4 h-4 mr-1" /> {t("stop")}
                     </Button>
                       )}
                       <Button variant="ghost" size="sm" onClick={() => { setSelectedCampaign(campaign); setShowDeleteDialog(true); }} className="h-8 w-8 p-0 text-red-500 hover:text-red-700">
@@ -700,8 +779,8 @@ export default function CampaignsPage() {
                   {status === "running" && progress && (
                     <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-1">
                       <div className="flex justify-between text-xs text-blue-800 dark:text-blue-300">
-                        <span>Day {currentDay} of 7</span>
-                        <span>{progress.total_calls} calls, {progress.total_messages} messages sent</span>
+                        <span>{(t("dayOf") || "").replace("{current}", currentDay.toString())}</span>
+                        <span>{(t("callsMessages") || "").replace("{calls}", progress.total_calls.toString()).replace("{messages}", progress.total_messages.toString())}</span>
                         </div>
                       <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-1.5">
                         <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${(currentDay / 7) * 100}%` }} />
@@ -714,13 +793,13 @@ export default function CampaignsPage() {
                     {plans.filter((p) => p.action === "call").map((day) => (
                       <div key={day.day} className="flex items-center gap-2">
                         <Phone className="w-3 h-3 text-blue-400" />
-                        <span>Day {day.day}: {day.timeSlots.map((s) => `${formatTime(s.startHour, s.startMinute)}–${formatTime(s.endHour, s.endMinute)} (${s.callsPerSlot})`).join(", ")}</span>
+                        <span>{(t("day") || "").replace("{day}", day.day.toString())}: {day.timeSlots.map((s) => `${formatTime(s.startHour, s.startMinute)}–${formatTime(s.endHour, s.endMinute)} (${s.callsPerSlot})`).join(", ")}</span>
                       </div>
                     ))}
                     {plans.filter((p) => p.action === "whatsapp").map((day) => (
                       <div key={day.day} className="flex items-center gap-2">
                         <MessageSquare className="w-3 h-3 text-green-400" />
-                        <span>Day {day.day}: WhatsApp at {formatTime(day.whatsappSendHour ?? 10, day.whatsappSendMinute ?? 0)}</span>
+                        <span>{(t("day") || "").replace("{day}", day.day.toString())}: {campaignTexts.action.whatsapp[language]} {(t("at") || "").replace("{time}", formatTime(day.whatsappSendHour ?? 10, day.whatsappSendMinute ?? 0))}</span>
                 </div>
                     ))}
                   </div>
@@ -731,7 +810,7 @@ export default function CampaignsPage() {
                       <Calendar className="w-3 h-3" />
                       <span>{format(new Date(campaign.created_at), "MMM d, yyyy")}</span>
                       {campaign.assigned_lead_ids && (
-                        <span className="ml-2">{campaign.assigned_lead_ids.length} leads assigned</span>
+                        <span className="ml-2">{campaign.assigned_lead_ids.length} {t("leadsAssigned")}</span>
                       )}
                     </div>
                     <span className={cn("px-2 py-1 text-xs rounded-full font-medium flex items-center gap-1", statusCfg.color)}>
@@ -750,47 +829,47 @@ export default function CampaignsPage() {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Campaign</DialogTitle>
-            <DialogDescription>Set up a 7-day automated campaign. All days start as off — configure the ones you need.</DialogDescription>
+            <DialogTitle>{t("createCampaign")}</DialogTitle>
+            <DialogDescription>{t("createCampaignDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-6 py-4">
             <div className="space-y-3">
               <div className="space-y-1">
-                <Label>Campaign Name *</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g., Weekly Lead Outreach" />
+                <Label>{t("campaignName")}</Label>
+                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder={language === "tr" ? "örn. Haftalık Müşteri Arama" : "e.g., Weekly Lead Outreach"} />
               </div>
               <div className="space-y-1">
-                <Label>Description</Label>
-                <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Optional description..." />
+                <Label>{t("description")}</Label>
+                <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder={t("optionalDesc")} />
               </div>
             </div>
 
             <div className="space-y-3">
-              <Label className="text-base font-semibold">7-Day Plan (Turkey Time)</Label>
+              <Label className="text-base font-semibold">{t("dayPlan")}</Label>
             <div className="space-y-2">
                 {formData.day_plans.map((plan, idx) => (
-                  <DayPlanEditor key={plan.day} plan={plan} onUpdate={(updated) => updateDayPlan(idx, updated)} />
+                  <DayPlanEditor key={plan.day} plan={plan} lang={language} onUpdate={(updated) => updateDayPlan(idx, updated)} />
                 ))}
               </div>
             </div>
 
             {formData.day_plans.some((p) => p.action === "whatsapp") && (
-              <WhatsAppSettings config={formData.whatsapp_config} onChange={(config) => setFormData({ ...formData, whatsapp_config: config })} />
+              <WhatsAppSettings lang={language} config={formData.whatsapp_config} onChange={(config) => setFormData({ ...formData, whatsapp_config: config })} />
             )}
 
             <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <p className="text-sm font-medium text-green-800 dark:text-green-300 mb-2">Campaign Summary</p>
+              <p className="text-sm font-medium text-green-800 dark:text-green-300 mb-2">{t("campaignSummary")}</p>
               <p className="text-sm text-green-700 dark:text-green-400">
-                {totalCallDays} call day(s), {totalWhatsAppDays} WhatsApp day(s), {totalOffDays} off day(s).
-                {totalDailyCalls > 0 && ` Total calls on call days: ${totalDailyCalls}.`}
-                {newLeadCount > 0 && ` ${newLeadCount} new leads available.`}
+                {(t("callDays") || "").replace("{whatsapp}", totalWhatsAppDays.toString()).replace("{off}", totalOffDays.toString())}
+                {totalDailyCalls > 0 && ` ${(t("totalCalls") || "").replace("{total}", totalDailyCalls.toString())}`}
+                {newLeadCount > 0 && ` ${(t("newLeadsAvailable") || "").replace("{count}", newLeadCount.toString())}`}
               </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>{t("cancel")}</Button>
             <Button onClick={handleCreate} disabled={isSaving || !formData.name}>
-              {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Create Campaign
+              {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} {t("createCampaign")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -800,13 +879,13 @@ export default function CampaignsPage() {
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Campaign</DialogTitle>
-            <DialogDescription>Are you sure you want to delete &quot;{selectedCampaign?.name}&quot;? This cannot be undone.</DialogDescription>
+            <DialogTitle>{t("deleteCampaign")}</DialogTitle>
+            <DialogDescription>{(t("deleteConfirm") || "").replace("{name}", selectedCampaign?.name || "")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>{t("cancel")}</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>
-              {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Delete
+              {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} {t("delete")}
               </Button>
           </DialogFooter>
         </DialogContent>

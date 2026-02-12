@@ -29,6 +29,54 @@ import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { Call } from "@/lib/types";
 import { format, subDays, isAfter, startOfMonth, endOfMonth, subMonths, startOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/lib/i18n";
+
+// Dashboard translations
+const dashboardTexts = {
+  dashboard: { en: "Dashboard", tr: "Panel" },
+  welcome: { en: "Welcome", tr: "Hoş geldin" },
+  aiSummary: { en: "Here's your AI summary.", tr: "İşte yapay zeka özetin." },
+  refresh: { en: "Refresh", tr: "Yenile" },
+  last7Days: { en: "Last 7 Days", tr: "Son 7 Gün" },
+  thisMonth: { en: "This Month", tr: "Bu Ay" },
+  lastMonth: { en: "Last Month", tr: "Son Ay" },
+  monthlyCalls: { en: "Monthly Calls", tr: "Aylık Aramalar" },
+  dailyCalls: { en: "Daily Calls", tr: "Günlük Aramalar" },
+  avgDuration: { en: "Avg Duration", tr: "Ort. Süre" },
+  conversionRate: { en: "Conversion Rate", tr: "Dönüşüm Oranı" },
+  overview: { en: "Overview", tr: "Genel Bakış" },
+  calls: { en: "Calls", tr: "Aramalar" },
+  conversion: { en: "Conversion", tr: "Dönüşüm" },
+  leadPipeline: { en: "Lead Pipeline", tr: "Müşteri Akışı" },
+  total: { en: "total", tr: "toplam" },
+  new: { en: "New", tr: "Yeni" },
+  contacted: { en: "Contacted", tr: "İletişime Geçildi" },
+  interested: { en: "Interested", tr: "İlgili" },
+  appointment: { en: "Appointment", tr: "Randevu" },
+  converted: { en: "Converted", tr: "Dönüştürüldü" },
+  unreachable: { en: "Unreachable", tr: "Ulaşılamaz" },
+  lost: { en: "Lost", tr: "Kayıp" },
+  monthlyTarget: { en: "Monthly Target", tr: "Aylık Hedef" },
+  edit: { en: "Edit", tr: "Düzenle" },
+  save: { en: "Save", tr: "Kaydet" },
+  ofTarget: { en: "of target", tr: "hedefin" },
+  remaining: { en: "remaining", tr: "kalan" },
+  targetReached: { en: "Target reached!", tr: "Hedefe ulaşıldı!" },
+  campaignStatus: { en: "Campaign Status", tr: "Kampanya Durumu" },
+  active: { en: "Active", tr: "Aktif" },
+  messages: { en: "Messages", tr: "Mesajlar" },
+  todayActions: { en: "Today's Actions", tr: "Bugünkü Aksiyonlar" },
+  leads: { en: "lead(s)", tr: "müşteri adayı" },
+  callDistribution: { en: "Call Distribution", tr: "Arama Dağılımı" },
+  information: { en: "Information", tr: "Bilgi" },
+  followUp: { en: "Follow-up", tr: "Takip" },
+  cancellation: { en: "Cancellation", tr: "İptal" },
+  weeklyActivity: { en: "Weekly Activity", tr: "Haftalık Aktivite" },
+  appointments: { en: "Appointments", tr: "Randevular" },
+  importantRecentLeads: { en: "Important Recent Leads", tr: "Önemli Son Müşteriler" },
+  score7Plus: { en: "Score 7+ (last 7 days)", tr: "Puan 7+ (son 7 gün)" },
+  noHighScoreLeads: { en: "No high-scoring leads in the last 7 days", tr: "Son 7 günde yüksek puanlı müşteri yok" },
+};
 
 // KPI Card Component (with trend) - Mobile Responsive
 function KPICard({ 
@@ -69,6 +117,8 @@ function KPICard({
 
 export default function OutboundDashboard() {
   const { user, isLoading: authLoading } = useAuth();
+  const { language } = useLanguage();
+  const t = (key: keyof typeof dashboardTexts) => dashboardTexts[key][language];
   
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -551,9 +601,9 @@ export default function OutboundDashboard() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{t("dashboard")}</h1>
           <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">
-            Welcome{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ""}! Here's your AI summary.
+            {t("welcome")}{user?.full_name ? `, ${user.full_name.split(' ')[0]}` : ""}! {t("aiSummary")}
               </p>
             </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -563,9 +613,9 @@ export default function OutboundDashboard() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="7days">Last 7 Days</SelectItem>
-              <SelectItem value="this_month">This Month</SelectItem>
-              <SelectItem value="last_month">Last Month</SelectItem>
+              <SelectItem value="7days">{t("last7Days")}</SelectItem>
+              <SelectItem value="this_month">{t("thisMonth")}</SelectItem>
+              <SelectItem value="last_month">{t("lastMonth")}</SelectItem>
             </SelectContent>
           </Select>
               <Button 
@@ -576,7 +626,7 @@ export default function OutboundDashboard() {
             className="border-gray-200 dark:border-gray-700"
               >
             <RefreshCw className={cn("w-4 h-4 sm:mr-2", isRefreshing && "animate-spin")} />
-            <span className="hidden sm:inline">Refresh</span>
+            <span className="hidden sm:inline">{t("refresh")}</span>
               </Button>
         </div>
       </div>
@@ -584,26 +634,26 @@ export default function OutboundDashboard() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <KPICard
-          label="Monthly Calls"
+          label={t("monthlyCalls")}
           value={monthlyCalls}
           trend={monthlyCallsTrend.type}
           trendValue={`${monthlyCallsTrend.value}%`}
           icon={Phone}
         />
         <KPICard
-          label="Daily Calls"
+          label={t("dailyCalls")}
           value={dailyCalls}
           trend={dailyCallsTrend.type}
           trendValue={`${dailyCallsTrend.value}%`}
         />
         <KPICard
-          label="Avg Duration"
+          label={t("avgDuration")}
           value={`${Math.floor(avgDuration / 60)}:${(avgDuration % 60).toString().padStart(2, '0')}`}
           trend={avgDurationTrend.type}
           trendValue={`${avgDurationTrend.value}%`}
         />
         <KPICard
-          label="Conversion Rate"
+          label={t("conversionRate")}
           value={`${conversionRate}%`}
           trend={conversionRateTrend.type}
           trendValue={`${conversionRateTrend.value}%`}
@@ -613,22 +663,22 @@ export default function OutboundDashboard() {
       {/* Date Range Stats */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
         <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-3">
-          {dateRange === "7days" ? "Last 7 Days" : dateRange === "this_month" ? "This Month" : "Last Month"} Overview
+          {dateRange === "7days" ? t("last7Days") : dateRange === "this_month" ? t("thisMonth") : t("lastMonth")} {t("overview")}
         </h3>
         <div className="grid grid-cols-3 gap-4">
           <div className="text-center">
             <p className="text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400">{filteredCallsCount}</p>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Calls</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("calls")}</p>
           </div>
           <div className="text-center">
             <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
               {Math.floor(filteredAvgDuration / 60)}:{(filteredAvgDuration % 60).toString().padStart(2, '0')}
             </p>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Avg Duration</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("avgDuration")}</p>
           </div>
           <div className="text-center">
             <p className="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400">{filteredConversionRate}%</p>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Conversion</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("conversion")}</p>
           </div>
         </div>
       </div>
@@ -639,18 +689,18 @@ export default function OutboundDashboard() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
             <Users className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Lead Pipeline</h3>
-            <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{pipelineTotal} total</span>
+            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">{t("leadPipeline")}</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{pipelineTotal} {t("total")}</span>
           </div>
           <div className="space-y-3">
             {[
-              { key: "new", label: "New", color: "bg-blue-500" },
-              { key: "contacted", label: "Contacted", color: "bg-purple-500" },
-              { key: "interested", label: "Interested", color: "bg-amber-500" },
-              { key: "appointment_set", label: "Appointment", color: "bg-green-500" },
-              { key: "converted", label: "Converted", color: "bg-emerald-500" },
-              { key: "unreachable", label: "Unreachable", color: "bg-red-500" },
-              { key: "lost", label: "Lost", color: "bg-gray-400" },
+              { key: "new", label: t("new"), color: "bg-blue-500" },
+              { key: "contacted", label: t("contacted"), color: "bg-purple-500" },
+              { key: "interested", label: t("interested"), color: "bg-amber-500" },
+              { key: "appointment_set", label: t("appointment"), color: "bg-green-500" },
+              { key: "converted", label: t("converted"), color: "bg-emerald-500" },
+              { key: "unreachable", label: t("unreachable"), color: "bg-red-500" },
+              { key: "lost", label: t("lost"), color: "bg-gray-400" },
             ].map(({ key, label, color }) => {
               const count = pipelineCounts[key] || 0;
               const pct = pipelineTotal > 0 ? (count / pipelineTotal) * 100 : 0;
@@ -671,13 +721,13 @@ export default function OutboundDashboard() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
             <Target className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Monthly Target</h3>
+            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">{t("monthlyTarget")}</h3>
             {!editingTarget ? (
               <button
                 onClick={() => { setEditingTarget(true); setTargetInput(monthlyTarget.toString()); }}
                 className="text-xs text-blue-600 dark:text-blue-400 hover:underline ml-auto"
               >
-                Edit
+                {t("edit")}
               </button>
             ) : (
               <div className="flex items-center gap-2 ml-auto">
@@ -698,7 +748,7 @@ export default function OutboundDashboard() {
                     setEditingTarget(false);
                   }}
                 >
-                  Save
+                  {t("save")}
                 </Button>
               </div>
             )}
@@ -720,15 +770,15 @@ export default function OutboundDashboard() {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{targetProgress}%</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">of target</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{t("ofTarget")}</span>
               </div>
             </div>
             <div className="mt-4 text-center">
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                <span className="font-semibold text-gray-900 dark:text-white">{monthlyCalls}</span> / {monthlyTarget} calls
+                <span className="font-semibold text-gray-900 dark:text-white">{monthlyCalls}</span> / {monthlyTarget} {t("calls")}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {targetRemaining > 0 ? `${targetRemaining} remaining` : "Target reached!"}
+                {targetRemaining > 0 ? `${targetRemaining} ${t("remaining")}` : t("targetReached")}
               </p>
             </div>
           </div>
@@ -737,20 +787,20 @@ export default function OutboundDashboard() {
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
             <div className="flex items-center gap-2 mb-3">
               <Megaphone className="w-4 h-4 text-gray-400" />
-              <h4 className="text-sm font-medium text-gray-900 dark:text-white">Campaign Status</h4>
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white">{t("campaignStatus")}</h4>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{campaignSummary.active}</p>
-                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Active</p>
+                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">{t("active")}</p>
               </div>
               <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <p className="text-lg font-bold text-green-600 dark:text-green-400">{campaignSummary.totalCalls}</p>
-                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Calls</p>
+                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">{t("calls")}</p>
         </div>
               <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <p className="text-lg font-bold text-purple-600 dark:text-purple-400">{campaignSummary.totalMessages}</p>
-                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Messages</p>
+                <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">{t("messages")}</p>
               </div>
             </div>
           </div>
@@ -762,8 +812,8 @@ export default function OutboundDashboard() {
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
             <PhoneCall className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
-            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Today&apos;s Actions</h3>
-            <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{todayActions.length} lead(s)</span>
+            <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">{t("todayActions")}</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{todayActions.length} {t("leads")}</span>
                   </div>
           <div className="space-y-2">
             {todayActions.map((action) => (
@@ -783,8 +833,8 @@ export default function OutboundDashboard() {
                   action.status === "appointment_set" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
                   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
                 )}>
-                  {action.status === "interested" ? "Interested" :
-                   action.status === "appointment_set" ? "Appointment" : action.status}
+                  {action.status === "interested" ? t("interested") :
+                   action.status === "appointment_set" ? t("appointment") : action.status}
                 </span>
                 {action.nextContactDate && (
                   <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
@@ -801,7 +851,7 @@ export default function OutboundDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Call Distribution Donut Chart */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-          <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Call Distribution</h3>
+          <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">{t("callDistribution")}</h3>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-0">
             {/* Simple Donut Chart */}
             <div className="relative w-32 h-32 sm:w-48 sm:h-48">
@@ -875,19 +925,19 @@ export default function OutboundDashboard() {
             <div className="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:gap-3 sm:ml-8">
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-blue-600 dark:bg-blue-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">Appointment</span>
+                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("appointment")}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-purple-600 dark:bg-purple-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">Information</span>
+                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("information")}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-orange-600 dark:bg-orange-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">Follow-up</span>
+                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("followUp")}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-600 dark:bg-red-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">Cancellation</span>
+                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("cancellation")}</span>
               </div>
             </div>
           </div>
@@ -895,16 +945,16 @@ export default function OutboundDashboard() {
 
         {/* Weekly Activity Bar Chart */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
-          <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Weekly Activity</h3>
+          <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">{t("weeklyActivity")}</h3>
           <div className="space-y-4">
             <div className="flex items-center gap-3 sm:gap-4 mb-4">
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded bg-blue-600 dark:bg-blue-400" />
-                <span className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-400">Calls</span>
+                <span className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-400">{t("calls")}</span>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded bg-green-600 dark:bg-green-400" />
-                <span className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-400">Appointments</span>
+                <span className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-400">{t("appointments")}</span>
               </div>
             </div>
             <div className="flex items-end justify-around">
@@ -949,14 +999,14 @@ export default function OutboundDashboard() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
         <div className="flex items-center gap-2 mb-4 sm:mb-6">
           <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
-          <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Important Recent Leads</h3>
-          <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">Score 7+ (last 7 days)</span>
+          <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">{t("importantRecentLeads")}</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{t("score7Plus")}</span>
         </div>
 
         {importantLeads.length === 0 ? (
           <div className="text-center py-8">
             <Star className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-            <p className="text-sm text-gray-500 dark:text-gray-400">No high-scoring leads in the last 7 days</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t("noHighScoreLeads")}</p>
           </div>
         ) : (
           <div className="space-y-3">

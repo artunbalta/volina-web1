@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { format, startOfDay, endOfDay, isWithinInterval, parseISO } from "date-fns";
 import { cn, cleanCallSummary } from "@/lib/utils";
+import { useTranslation, useLanguage } from "@/lib/i18n";
 
 // Audio Player Component
 function AudioPlayer({ 
@@ -481,76 +482,513 @@ function getCallerDisplay(call: Call): { name: string; phone: string } {
 }
 
 // Helper function to parse and validate score - handles all edge cases
+// Score is now on 1-10 scale. V (voicemail) and F (failed) are separate categories with null score.
 function parseScore(score: unknown): number | null {
   if (score === null || score === undefined) return null;
   
   // Handle string scores (from DB)
   if (typeof score === 'string') {
     const parsed = parseFloat(score);
-    if (!isNaN(parsed) && parsed >= 1 && parsed <= 5) {
+    // Accept 1-10 scale
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= 10) {
       return Math.round(parsed);
+    }
+    // Convert old 1-5 scale to 1-10 for backward compatibility
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= 5) {
+      return Math.round(parsed * 2);
     }
     return null;
   }
   
-  // Handle number scores (1-5 scale)
-  if (typeof score === 'number' && !isNaN(score) && score >= 1 && score <= 5) {
+  // Handle number scores (1-10 scale)
+  if (typeof score === 'number' && !isNaN(score) && score >= 1 && score <= 10) {
     return Math.round(score);
+  }
+  
+  // Convert old 1-5 scale to 1-10 for backward compatibility
+  if (typeof score === 'number' && !isNaN(score) && score >= 1 && score <= 5) {
+    return Math.round(score * 2);
   }
   
   return null;
 }
 
-// Estimate a score based on call properties when no score is available (1-5 scale)
-function estimateScore(call: Call): number {
+// Adjust score based on transcript/summary analysis
+// This catches cases where Vapi gave wrong high scores to "not interested" or short calls
+function adjustScoreBasedOnContent(
+  originalScore: number,
+  transcript: string,
+  summary: string,
+  userText: string,
+  duration?: number | null
+): number {
+  const lowerTranscript = transcript.toLowerCase();
+  const lowerSummary = summary.toLowerCase();
+  const lowerUserText = userText.toLowerCase();
+  const callDuration = duration || 0;
+  
+  // === RULE 1: Very short calls should never get high scores ===
+  // If call is under 15 seconds → max score 2
+  if (callDuration > 0 && callDuration < 15) {
+    return Math.min(originalScore, 2);
+  }
+  
+  // If call is under 20 seconds and score > 4, cap it
+  if (callDuration > 0 && callDuration < 20 && originalScore > 4) {
+    return Math.min(originalScore, 4);
+  }
+  
+  // If call is under 30 seconds and score > 6, cap it
+  if (callDuration > 0 && callDuration < 30 && originalScore > 6) {
+    return Math.min(originalScore, 5);
+  }
+  
+  // === RULE 2: User barely spoke - can't be a great call ===
+  const userWords = lowerUserText.trim().split(/\s+/).filter(w => w.length > 0);
+  const userWordCount = userWords.length;
+  
+  // User said almost nothing (0-3 words like "Hello?" or "Hi")
+  if (userWordCount <= 3) {
+    return Math.min(originalScore, 3);
+  }
+  
+  // Check for strong positive engagement BEFORE applying word count penalties
+  // This ensures cases like "Yeah. Yeah." maintain high score even with fewer words
+  const earlyPositiveCheck = (lowerUserText.match(/\b(yeah|yes|yep|yea)\b/g) || []).length >= 2;
+  const earlySummaryInterest = lowerSummary.includes('considering') || 
+                               lowerSummary.includes('interested') ||
+                               lowerSummary.includes('open to');
+  
+  // If strong positive engagement detected, skip word count penalties
+  const hasStrongEarlyPositive = earlyPositiveCheck || 
+                                 (earlySummaryInterest && lowerUserText.includes('yeah'));
+  
+  // User said very little (4-10 words) - can't be highly successful
+  // BUT: Skip if strong positive engagement (e.g., "Yeah. Yeah.")
+  if (userWordCount <= 10 && originalScore > 6 && !hasStrongEarlyPositive) {
+    return Math.min(originalScore, 5);
+  }
+  
+  // User said little (11-20 words) - can't be very successful
+  // BUT: Skip if strong positive engagement (e.g., "Yeah. Yeah." + "considering")
+  if (userWordCount <= 20 && originalScore > 7 && !hasStrongEarlyPositive) {
+    return Math.min(originalScore, 6);
+  }
+  
+  // === RULE 3: Summary indicates premature end or immediate hang up ===
+  const prematureEndPatterns = [
+    'ended prematurely', 'ended immediately', 'ended before',
+    'call ended', 'hung up', 'disconnected',
+    'incomplete', 'undetermined', 'no next step',
+    'before meaningful', 'before any discussion',
+    'cut short', 'abruptly ended', 'quickly ended'
+  ];
+  const summaryIndicatesPrematureEnd = prematureEndPatterns.some(p => lowerSummary.includes(p));
+  
+  if (summaryIndicatesPrematureEnd && originalScore > 4) {
+    return Math.min(originalScore, 4);
+  }
+  
+  // === RULE 3B: Check if this is actually a voicemail (before unavailable check) ===
+  // Voicemail indicators: automated messages, "can't take your call", "leave a message", phone numbers only
+  const voicemailIndicators = [
+    'can\'t take your call', 'can\'t take call', 'can\'t take the call',
+    'please leave a message', 'leave a message', 'after the beep',
+    'unavailable to take your call', 'not available to take your call',
+    'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın'
+  ];
+  
+  // Check if user text contains phone number + voicemail phrase (typical voicemail pattern)
+  // More flexible pattern: looks for digits followed by voicemail phrases anywhere in user text
+  // Also check for normalized variations (can't -> can t, can't -> cant)
+  const phoneNumberPattern1 = /[\d\s\.\-\(\)]{3,}(can\'t take|can t take|can t take|leave|message|unavailable|voicemail|right now)/i;
+  const phoneNumberPattern2 = /[\d\s\.\-\(\)]{3,}(cant take|leave|message|unavailable|voicemail|right now)/i;
+  const isPhoneNumberPattern = phoneNumberPattern1.test(userText) || phoneNumberPattern2.test(userText);
+  
+  const hasVoicemailPhrase = voicemailIndicators.some(p => 
+    lowerUserText.includes(p) || 
+    lowerSummary.includes(p) ||
+    lowerUserText.includes(p.replace("'", " ")) || // Handle "can't" -> "can t"
+    lowerUserText.includes(p.replace("'", ""))     // Handle "can't" -> "cant"
+  );
+  
+  // If it looks like voicemail (phone number + voicemail phrase, or just voicemail phrase with minimal engagement)
+  // Increased word count threshold to 25 to catch cases like "3 7 0 8 4 9 3 can't take your call right now"
+  if (isPhoneNumberPattern || (hasVoicemailPhrase && userWordCount <= 25)) {
+    // This is likely voicemail - return very low score
+    // The voicemail detection in display logic will catch this and show "V"
+    return 1; // Will be overridden by voicemail detection
+  }
+  
+  // === RULE 3C: User unavailable/unreachable (can't take call, busy, in meeting) ===
+  const unavailablePatterns = [
+    'can\'t talk', 'can\'t speak',
+    'unavailable', 'unreachable', 'not available', 'busy right now',
+    'in a meeting', 'in meeting', 'can\'t talk now', 'can\'t speak now',
+    'not right now', 'later', 'call back later', 'call me later',
+    'müsait değilim', 'konuşamam', 'aramayın', 'sonra ara'
+  ];
+  
+  const userUnavailable = 
+    unavailablePatterns.some(p => lowerUserText.includes(p)) ||
+    unavailablePatterns.some(p => lowerSummary.includes(p)) ||
+    (lowerSummary.includes('unavailable') && !hasVoicemailPhrase) ||
+    (lowerSummary.includes('unreachable') && !hasVoicemailPhrase);
+  
+  if (userUnavailable && !hasVoicemailPhrase) {
+    // User explicitly said they can't take the call → this is a failed connection, score 1-2
+    return Math.min(originalScore, 2);
+  }
+  
+  // === RULE 4: Strong negative indicators in user's speech ===
+  const strongNegativePatterns = [
+    'not interested', 'no thanks', 'no thank you', 'don\'t want',
+    'not for me', 'don\'t need', 'no need', 'i\'m not',
+    'ilgilenmiyorum', 'istemiyorum', 'hayır teşekkürler',
+    'hayır', 'yok', 'gerek yok', 'istemedim', 'istemiş değilim',
+    'no i don\'t', 'i don\'t want', 'i\'m not interested',
+    'not right now', 'maybe later', 'call me later',
+    // Financial rejection - very strong negative indicator
+    'can\'t afford', 'cant afford', 'can t afford', 'cannot afford',
+    'can\'t pay', 'cant pay', 'can t pay', 'cannot pay',
+    'too expensive', 'too much', 'afford', 'expensive',
+    'param yok', 'karşılayamam', 'pahalı', 'çok pahalı'
+  ];
+  
+  const userDeclined = strongNegativePatterns.some(p => lowerUserText.includes(p));
+  
+  // === RULE 4.3: Check for financial rejection FIRST (very strong negative indicator) ===
+  // "can't afford" is a definitive rejection - should override positive engagement
+  const financialRejectionPatterns = [
+    'can\'t afford', 'cant afford', 'can t afford', 'cannot afford',
+    'can\'t pay', 'cant pay', 'can t pay', 'cannot pay',
+    'too expensive', 'too much',
+    'param yok', 'karşılayamam', 'pahalı', 'çok pahalı'
+  ];
+  // Also check for "afford" with negative context (can't, cannot, too expensive)
+  // Handle normalized text where "can't" becomes "can t"
+  const hasAffordWithNegative = 
+    (lowerUserText.includes('afford') && (lowerUserText.includes('can\'t') || 
+     lowerUserText.includes('cannot') || lowerUserText.includes('cant') || 
+     lowerUserText.includes('can t'))) ||
+    (lowerSummary.includes('afford') && (lowerSummary.includes('can\'t') || 
+     lowerSummary.includes('cannot') || lowerSummary.includes('cant') || 
+     lowerSummary.includes('can t'))) ||
+    // Check for "can't afford" pattern in normalized text (can t afford)
+    lowerUserText.includes('can t afford') ||
+    lowerSummary.includes('can\'t afford') || lowerSummary.includes('cant afford') ||
+    lowerSummary.includes('cannot afford') || lowerSummary.includes('can t afford');
+  
+  const hasFinancialRejection = financialRejectionPatterns.some(p => 
+    lowerUserText.includes(p) || lowerSummary.includes(p)
+  ) || hasAffordWithNegative;
+  
+  // If user explicitly says they can't afford, this is a strong rejection → score 1-2
+  // This should override positive engagement (e.g., "Yeah" but then "can't afford")
+  // Financial rejection is definitive - score 1-2 regardless of other signals
+  if (hasFinancialRejection) {
+    // If summary also says "Not Interested" + "can't afford" + "Declined", score 1
+    if (lowerSummary.includes('not interested') && 
+        (lowerSummary.includes('can\'t afford') || lowerSummary.includes('cant afford') || 
+         lowerSummary.includes('cannot afford') || lowerSummary.includes('can t afford')) &&
+        lowerSummary.includes('declined')) {
+      return 1;
+    }
+    // Otherwise, financial rejection → score 1-2
+    return Math.min(originalScore, 2);
+  }
+  
+  // === RULE 4.5: Check for aggressive/hostile language FIRST (before other rules) ===
+  // This catches cases like "That's fucking mental" which should be score 1-2
+  const aggressivePatterns = [
+    'fucking', 'fuck', 'mental', 'crazy', 'ridiculous', 'stupid', 'annoying',
+    'that\'s mental', 'that\'s crazy', 'that\'s ridiculous', 'that\'s stupid',
+    'what the hell', 'what the fuck', 'are you kidding', 'are you serious',
+    'rahatsız ediyorsunuz', 'sinir bozucu', 'saçma', 'aptal'
+  ];
+  const hasAggressiveLanguage = aggressivePatterns.some(p => lowerUserText.includes(p));
+  
+  // Check summary for strong negative sentiment indicators
+  const strongNegativeSentiment = 
+    lowerSummary.includes('strong negative sentiment') ||
+    lowerSummary.includes('annoyed') ||
+    lowerSummary.includes('frustrated') ||
+    lowerSummary.includes('angry') ||
+    lowerSummary.includes('irritated') ||
+    lowerSummary.includes('aggressive') ||
+    lowerSummary.includes('hostile') ||
+    lowerSummary.includes('rude') ||
+    (lowerSummary.includes('negative') && lowerSummary.includes('sentiment')) ||
+    (lowerSummary.includes('not interested') && lowerSummary.includes('strong'));
+  
+  // If aggressive language or strong negative sentiment → score 1-2 (highest priority)
+  if (hasAggressiveLanguage || strongNegativeSentiment) {
+    return Math.min(originalScore, 2);
+  }
+  
+  // === RULE 5: Summary indicates not interested ===
+  // BUT: Check for positive engagement first (e.g., "Yeah. Yeah." before "declined")
+  const summaryIndicatesNotInterested = 
+    lowerSummary.includes('not interested') ||
+    lowerSummary.includes('declined') ||
+    lowerSummary.includes('refused') ||
+    lowerSummary.includes('rejected') ||
+    lowerSummary.includes('ilgilenmedi') ||
+    lowerSummary.includes('reddetti') ||
+    lowerSummary.includes('declined') ||
+    lowerSummary.includes('said no') ||
+    lowerSummary.includes('not want') ||
+    lowerSummary.includes('explicitly stated "no"') ||
+    lowerSummary.includes('repeatedly declined') ||
+    lowerSummary.includes('denied') ||
+    lowerSummary.includes('lack of interest') ||
+    // Financial rejection in summary - very strong negative indicator
+    (lowerSummary.includes('can\'t afford') || lowerSummary.includes('cant afford') || 
+     lowerSummary.includes('cannot afford') || lowerSummary.includes('can t afford')) ||
+    (lowerSummary.includes('afford') && (lowerSummary.includes('can\'t') || lowerSummary.includes('cannot')));
+  
+  // Check for positive engagement patterns BEFORE applying decline rules
+  // BUT: Skip if financial rejection detected (can't afford overrides everything)
+  // This ensures cases like "Yeah. Yeah." followed by "No. I'm alright" maintain high score
+  // BUT: "can't afford" is definitive rejection, even if they said "thanks" or "yeah"
+  const positiveEngagementPatterns = [
+    'yeah', 'yes', 'yep', 'yea', 'sure', 'okay', 'interested', 'considering',
+    'i want', 'i need', 'i\'d like', 'i would like', 'tell me', 'explain'
+  ];
+  const hasPositiveEngagement = positiveEngagementPatterns.some(p => lowerUserText.includes(p));
+  const multipleYeah = (lowerUserText.match(/\b(yeah|yes|yep|yea)\b/g) || []).length >= 2;
+  const summaryShowsInterest = lowerSummary.includes('considering') || 
+                                lowerSummary.includes('interested') ||
+                                lowerSummary.includes('open to');
+  
+  // PRIORITY: If summary says "considering" AND user said "yeah/yes", 
+  // this is STRONG positive engagement - maintain high score (8-10) even if "declined" appears
+  // BUT: Skip if financial rejection (can't afford) - that overrides everything
+  // This catches cases like Jordan Dowson: "Considering dental treatment" + "Yeah. Yeah." + "declined offer"
+  // BUT: Jason Jenkins: "can't afford" → score 1-2, even if they said "thanks"
+  if (!hasFinancialRejection && summaryShowsInterest && (multipleYeah || hasPositiveEngagement)) {
+    // Summary shows interest AND user confirmed with "yeah/yes" → this is high-value lead
+    // Even if they declined a specific offer, they're still considering → score 8-10
+    if (multipleYeah && summaryShowsInterest) {
+      // Multiple "yeah" + "considering" in summary → maintain 9-10
+      return Math.max(originalScore, 9);
+    } else if (hasPositiveEngagement && summaryShowsInterest) {
+      // Positive engagement + "considering" → maintain 8-9
+      return Math.max(originalScore, 8);
+    }
+  }
+  
+  // If user showed strong positive engagement (e.g., "Yeah. Yeah."), 
+  // don't penalize for summary saying "declined" - they showed interest first
+  // BUT: Skip if financial rejection (can't afford) - that overrides everything
+  if (!hasFinancialRejection && (hasPositiveEngagement || multipleYeah || summaryShowsInterest) && 
+      (userDeclined || summaryIndicatesNotInterested)) {
+    // User showed interest first, then declined - this is still positive engagement
+    // Don't drop score below 6-7 if they showed strong interest
+    if (multipleYeah || (hasPositiveEngagement && summaryShowsInterest)) {
+      // Multiple "yeah" or strong positive signals → maintain 7-8
+      return Math.max(originalScore, 7);
+    } else if (hasPositiveEngagement || summaryShowsInterest) {
+      // Some positive engagement → maintain 6-7
+      return Math.max(originalScore, 6);
+    }
+  }
+  
+  // If user declined or summary indicates not interested (and no strong positive engagement) → MAX score 4
+  // If summary explicitly says "not interested" → MAX score 3
+  if (userDeclined || summaryIndicatesNotInterested) {
+    if (lowerSummary.includes('not interested') && lowerSummary.includes('explicitly')) {
+      return Math.min(originalScore, 3);
+    }
+    return Math.min(originalScore, 4);
+  }
+  
+  // === RULE 6: User said "no" - but check if they changed their mind ===
+  const noCount = (lowerUserText.match(/\bno\b/g) || []).length;
+  const hayirCount = (lowerUserText.match(/\bhayır\b/g) || []).length;
+  const totalNoCount = noCount + hayirCount;
+  
+  // Check for explicit "I said no" or similar strong rejections
+  const explicitRejection = 
+    lowerUserText.includes('i said no') ||
+    lowerUserText.includes('i told you no') ||
+    lowerUserText.includes('i already said no') ||
+    lowerUserText.includes('dedim hayır') ||
+    lowerUserText.includes('söyledim hayır');
+  
+  // Strong positive engagement patterns (even after initial "no")
+  // Include "yeah" variations as they indicate agreement/interest
+  const strongPositivePatterns = [
+    'i\'m gonna hear', 'i\'ll hear', 'tell me more', 'explain', 'i want to hear',
+    'i\'d like to', 'i would like', 'sure', 'yes', 'okay', 'yeah', 'yea', 'yep',
+    'interested', 'i need', 'i want', 'solution', 'help me',
+    'dinleyeceğim', 'anlat', 'açıkla', 'istiyorum', 'ihtiyacım var',
+    'open to', 'considering', 'finding a solution', 'would be grateful',
+    'yeah yeah', 'yes yes', 'yeah i', 'yes i' // Multiple affirmatives show stronger interest
+  ];
+  
+  const hasStrongPositive = strongPositivePatterns.some(p => lowerUserText.includes(p));
+  
+  // Check summary for positive indicators (even if user said "no" initially)
+  const summaryPositiveIndicators = 
+    lowerSummary.includes('open to hearing') ||
+    lowerSummary.includes('open to') ||
+    lowerSummary.includes('considering') ||
+    lowerSummary.includes('finding a solution') ||
+    lowerSummary.includes('wants to hear') ||
+    lowerSummary.includes('interested in learning') ||
+    lowerSummary.includes('changed their mind');
+  
+  // If user has strong positive engagement (even if they said "no" later), BOOST the score
+  // This catches cases like "Yeah. Yeah." followed by "No. I'm alright. I got..." (incomplete rejection)
+  // BUT: Skip if financial rejection detected (can't afford overrides everything)
+  // Jason Jenkins: "can't afford" → score 1-2, even if they said "thanks"
+  if (!hasFinancialRejection && (hasStrongPositive || summaryPositiveIndicators) && totalNoCount <= 3 && !explicitRejection) {
+    // User showed interest (e.g., "Yeah. Yeah.") - this is positive engagement
+    // Even if they later said "no", if they showed strong interest first, maintain higher score
+    if (hasStrongPositive && summaryPositiveIndicators) {
+      // Both transcript and summary show positive engagement → boost to 8-9
+      return Math.max(originalScore, 8);
+    } else if (hasStrongPositive) {
+      // Strong positive in transcript (e.g., "Yeah. Yeah.") → boost to 7-8
+      // This ensures cases like Jordan Dowson maintain high score despite later "no"
+      return Math.max(originalScore, 7);
+    } else if (summaryPositiveIndicators) {
+      // Summary shows positive engagement → boost to 6-7
+      return Math.max(originalScore, 6);
+    }
+  }
+  
+  // Special case: If user said "yeah" or "yes" multiple times (strong affirmation), 
+  // even a single "no" later shouldn't drop the score too much
+  // BUT: Skip if financial rejection detected (can't afford overrides everything)
+  if (!hasFinancialRejection) {
+    const yeahCount = (lowerUserText.match(/\b(yeah|yes|yep|yea)\b/g) || []).length;
+    if (yeahCount >= 2 && totalNoCount <= 1 && !explicitRejection && originalScore >= 7) {
+      // Multiple "yeah/yes" shows strong interest - maintain high score (8-10)
+      return Math.max(originalScore, 8);
+    }
+  }
+  
+  // If user said "no" 3+ times or explicitly rejected, check for positive engagement
+  const userOnlySaidNo = totalNoCount >= 3 || explicitRejection || (totalNoCount >= 2 && userWordCount <= 15);
+  
+  if (userOnlySaidNo && originalScore > 4) {
+    const positivePatterns = [
+      'yes', 'sure', 'okay', 'interested', 'tell me', 'how much', 
+      'when', 'where', 'evet', 'tamam', 'olur', 'anlat', 'ne kadar',
+      'ne zaman', 'nerede', 'bilgi', 'detay', 'fiyat', 'maybe', 'belki',
+      'i want', 'i need', 'istiyorum', 'i\'d like', 'i would like',
+      'i\'m gonna hear', 'i\'ll hear', 'tell me more', 'explain', 'open to'
+    ];
+    const hasPositive = positivePatterns.some(p => lowerUserText.includes(p));
+    
+    // If explicit rejection or 3+ "no" without positive engagement → max 4
+    if (explicitRejection || (totalNoCount >= 3 && !hasPositive)) {
+      return Math.min(originalScore, 4);
+    }
+    
+    // If 2+ "no" without positive engagement → max 5
+    if (!hasPositive) {
+      return Math.min(originalScore, 5);
+    }
+  }
+  
+  // === RULE 7: Only "hello" or greeting - not a real conversation ===
+  const onlyGreeting = userWordCount <= 2 && 
+    (lowerUserText.includes('hello') || lowerUserText.includes('hi') || 
+     lowerUserText.includes('hey') || lowerUserText.includes('merhaba') ||
+     lowerUserText.includes('alo') || lowerUserText.includes('efendim'));
+  if (onlyGreeting) {
+    return Math.min(originalScore, 3);
+  }
+  
+  // === RULE 8: Check for wrong number or confusion ===
+  const wrongNumberPatterns = [
+    'wrong number', 'yanlış numara', 'wrong person', 'yanlış kişi',
+    'who is this', 'kimsiniz', 'tanımıyorum', 'don\'t know'
+  ];
+  const isWrongNumber = wrongNumberPatterns.some(p => lowerUserText.includes(p) || lowerSummary.includes(p));
+  if (isWrongNumber) {
+    return Math.min(originalScore, 2);
+  }
+  
+  // === RULE 9: Check for hostile or rude responses (non-aggressive) ===
+  // Note: Aggressive language is already handled in RULE 4.5 above
+  const hostilePatterns = [
+    'stop calling', 'don\'t call', 'remove me', 'unsubscribe',
+    'aramayın', 'arama', 'rahatsız etmeyin', 'kaldır beni'
+  ];
+  const isHostile = hostilePatterns.some(p => lowerUserText.includes(p) || lowerSummary.includes(p));
+  
+  if (isHostile) {
+    // Hostile response → score 1-2
+    return Math.min(originalScore, 2);
+  }
+  
+  // === RULE 10: Check for minimal engagement despite longer duration ===
+  // If call was longer but user said very little, it might be AI doing most talking
+  if (callDuration > 30 && userWordCount <= 15 && originalScore > 6) {
+    return Math.min(originalScore, 5);
+  }
+  
+  return originalScore;
+}
+
+// Estimate a score based on call properties when no score is available (1-10 scale)
+// Returns null for V (voicemail) and F (failed) cases - these are separate categories
+function estimateScore(call: Call): number | null {
   const duration = call.duration || 0;
   const sentiment = call.sentiment;
   const hasTranscript = !!call.transcript;
   const metadata = call.metadata as Record<string, unknown> | undefined;
   const endedReason = metadata?.endedReason as string | undefined;
   
-  // Check ended reason for special cases - all failed connections get 1
+  // Check ended reason for special cases - V and F don't get numeric scores
   if (endedReason) {
     const reason = endedReason.toLowerCase();
+    // These will be shown as V or F, not a number
     if (reason.includes('no-answer') || reason.includes('customer-did-not-answer')) {
-      return 1;
+      return null; // Will be displayed as F
     }
     if (reason.includes('voicemail')) {
-      return 1;
+      return null; // Will be displayed as V
     }
     if (reason.includes('busy')) {
-      return 1;
+      return null; // Will be displayed as F
     }
   }
   
-  // No transcript and very short call = likely failed
+  // No transcript and very short call = likely failed (F)
   if (!hasTranscript && duration < 10) {
-    return 1;
+    return null; // Will be displayed as F
   }
   
-  // Base score starts at 3 (neutral conversation)
-  let score = 3;
+  // Base score starts at 5-6 (neutral conversation on 1-10 scale)
+  let score = 5.5;
   
   // Adjust based on sentiment
   if (sentiment === 'positive') {
-    score += 1;
+    score += 2;
   } else if (sentiment === 'negative') {
-    score -= 1;
+    score -= 2;
   }
   
   // Adjust based on duration (longer calls are usually better)
   if (duration > 180) { // > 3 minutes
+    score += 1.5;
+  } else if (duration > 60) { // > 1 minute
     score += 0.5;
   } else if (duration < 30) { // < 30 seconds
-    score -= 0.5;
+    score -= 1;
   }
   
-  // Clamp between 1 and 5
-  return Math.max(1, Math.min(5, Math.round(score)));
+  // Clamp between 1 and 10
+  return Math.max(1, Math.min(10, Math.round(score)));
 }
 
 // Helper function to get sort key for calls - MUST match display logic exactly
-// Returns: 1 = V (voicemail), 2 = F (failed), 3 = N (neutral), 4 = L (lead)
+// Returns: 1 = V (voicemail), 2 = F (failed), then 3-12 based on 1-10 score (inverted for high scores first)
 function getCallSortKey(call: Call): number {
   const metadata = call.metadata as Record<string, unknown> | undefined;
   const endedReason = (metadata?.endedReason as string || '').toLowerCase();
@@ -563,6 +1001,7 @@ function getCallSortKey(call: Call): number {
     'voicemail', 'sesli mesaj',
     'record your message', 'leave a message', 'leave your message',
     'unable to take your call', 'can\'t take your call', 'can t take your call', 'cannot take your call',
+    'can\'t take call right now', 'can\'t take your call right now', 'can\'t take the call right now',
     'after the tone', 'after the beep', 'at the tone', 'mailbox',
     'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done'
   ];
@@ -606,7 +1045,37 @@ function getCallSortKey(call: Call): number {
   const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
   const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' '); // Normalize punctuation
   const userSaidMeaningful = meaningfulUserPatterns.some(p => userText.includes(p));
-  const userOnlyVoicemailPhrases = voicemailSystemPhrases.some(p => userText.includes(p)) && !userSaidMeaningful;
+  
+  // Check for phone number pattern + voicemail phrase (e.g., "370 8493 can't take your call right now")
+  // More flexible pattern: looks for digits followed by voicemail phrases anywhere in user text
+  // Check both normalized text (can't -> can t) and original text
+  // Pattern variations: "can't take", "can t take", "cant take"
+  const phoneNumberVoicemailPattern1 = /[\d\s\.\-\(\)]{3,}(can\'t take|can t take|leave|message|unavailable|voicemail|right now)/i;
+  const phoneNumberVoicemailPattern2 = /[\d\s\.\-\(\)]{3,}(cant take|leave|message|unavailable|voicemail|right now)/i;
+  
+  // Also check transcript directly for more reliable detection
+  const transcriptLower = transcript.toLowerCase();
+  const isPhoneNumberVoicemail = phoneNumberVoicemailPattern1.test(userText) || 
+                                  phoneNumberVoicemailPattern2.test(userText) ||
+                                  phoneNumberVoicemailPattern1.test(userTextRaw) ||
+                                  phoneNumberVoicemailPattern2.test(userTextRaw) ||
+                                  phoneNumberVoicemailPattern1.test(transcriptLower) ||
+                                  phoneNumberVoicemailPattern2.test(transcriptLower);
+  
+  // Also check if user text contains voicemail phrases (normalized or original)
+  // Handle variations: "can't" -> "can t" or "cant"
+  const hasVoicemailInUserText = voicemailSystemPhrases.some(p => {
+    const normalized = p.replace(/'/g, ' ').replace(/\s+/g, ' '); // "can't" -> "can t"
+    const noApostrophe = p.replace(/'/g, ''); // "can't" -> "cant"
+    return userText.includes(p) || 
+           userTextRaw.includes(p) ||
+           userText.includes(normalized) ||
+           userText.includes(noApostrophe) ||
+           userTextRaw.includes(normalized) ||
+           userTextRaw.includes(noApostrophe);
+  });
+  
+  const userOnlyVoicemailPhrases = (hasVoicemailInUserText || isPhoneNumberVoicemail) && !userSaidMeaningful;
   
   const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
   // Key change: even if userResponses >= 2, if user ONLY said voicemail phrases, it's still voicemail
@@ -614,7 +1083,8 @@ function getCallSortKey(call: Call): number {
   
   // Voicemail detection - MUST match display logic
   const isVoicemail = (hasVoicemailPhrases && !isRealConversation) || 
-                      (userOnlyVoicemailPhrases);
+                      (userOnlyVoicemailPhrases) ||
+                      isPhoneNumberVoicemail;
   const isSilenceTimeout = endedReason === 'silence-timed-out';
   const isShortCall = (call.duration || 0) < 30;
   const likelyVoicemailByBehavior = isSilenceTimeout && isShortCall && !isRealConversation;
@@ -627,15 +1097,22 @@ function getCallSortKey(call: Call): number {
   
   // Get effective score for failed check
   const parsedScore = parseScore(call.evaluation_score);
-  const effectiveScore = parsedScore !== null ? parsedScore : estimateScore(call);
+  const estimatedScore = estimateScore(call);
+  const rawScore = parsedScore !== null ? parsedScore : estimatedScore;
+  
+  // Apply the same score adjustment as display logic
+  const effectiveScore = rawScore !== null 
+    ? adjustScoreBasedOnContent(rawScore, transcript, callSummary, userText, call.duration)
+    : null;
   
   const isFailedByText = failedPatterns.some(p => textToCheck.includes(p));
   const isVeryShortCall = (call.duration || 0) < 15;
   const aiOnlySpoke = transcript.includes('ai:') && userResponses === 0;
   const customerHungUpQuickly = endedReason === 'customer-ended-call' && isVeryShortCall;
   
+  // Failed call: no score (null) means failed connection, or explicit failure patterns
   const isFailedCall = isFailedByText || 
-    effectiveScore === 1 ||  // Explicitly scored as failed
+    effectiveScore === null ||  // No score means failed to connect (V or F)
     (customerHungUpQuickly && !isRealConversation) ||
     (aiOnlySpoke && isVeryShortCall);
   
@@ -644,35 +1121,10 @@ function getCallSortKey(call: Call): number {
     return 2;
   }
   
-  // Check if Lead - MUST match display logic
-  // Negative indicators - avoid short words that match inside other words
-  const negativeIndicators = [
-    'not interested', 'no thanks', 'no thank you', 'don\'t call', 'stop calling',
-    'remove me', 'wrong number', 'can\'t talk', 'not now', 'not for me',
-    'i\'m busy', 'too busy', 'leave me alone',
-    'hayır', 'ilgilenmiyorum', 'aramayın', 'meşgulüm', 'istemiyorum'
-  ];
-  
-  // Check positive/negative ONLY in USER's speech
-  const hasPositiveFromUser = positiveIndicators.some(p => userText.includes(p));
-  const hasNegativeFromUser = negativeIndicators.some(p => userText.includes(p));
-  
-  // Special case: if user ONLY said "no" (very short response)
-  const userWords = userText.trim().split(/\s+/).filter(w => w.length > 0);
-  const onlySaidNo = userWords.length <= 2 && /\bno\b/i.test(userText) && !hasPositiveFromUser;
-  
-  const hasMinimumEngagement = isRealConversation && !isVeryShortCall;
-  
-  const isLead = hasMinimumEngagement && 
-    hasPositiveFromUser && !hasNegativeFromUser && !onlySaidNo && call.sentiment !== 'negative';
-  
-  // If lead → L (sort key 4)
-  if (isLead) {
-    return 4;
-  }
-  
-  // Otherwise → N (neutral, sort key 3)
-  return 3;
+  // For scored calls, return sort key based on ADJUSTED score (3-12 range)
+  // Higher scores get higher sort keys for "score_high" sorting
+  // Score 1 → sort key 3, Score 10 → sort key 12
+  return (effectiveScore || 5) + 2;
 }
 
 // Helper function to get valid evaluation summary
@@ -686,67 +1138,117 @@ function getValidEvaluationSummary(summary: string | null | undefined): string |
   return summary;
 }
 
-// Generate actionable summary for salespeople based on call category
+// Generate actionable summary for salespeople based on call score
 function getSalesAdvice(
-  category: 'V' | 'F' | 'L' | 'N',
+  scoreDisplay: string,
   transcript: string,
-  userText: string
+  userText: string,
+  lang: "en" | "tr" = "en"
 ): string {
-  // For voicemail, failed, and neutral - simple messages
-  if (category === 'V') {
-    return "Voicemail";
+  const texts = {
+    voicemail: { en: "Voicemail - should be called back", tr: "Sesli mesaja düştü - tekrar aranmalı" },
+    failed: { en: "Connection failed - should be called back", tr: "Bağlantı kurulamadı - tekrar aranmalı" },
+    hotLead: { en: "🔥 Hot lead!", tr: "🔥 Sıcak lead!" },
+    interested: { en: "✅ Interested customer!", tr: "✅ İlgili müşteri!" },
+    neutral: { en: "📊 Neutral conversation", tr: "📊 Nötr görüşme" },
+    lowInterest: { en: "⚠️ Low interest", tr: "⚠️ Düşük ilgi" },
+    notInterested: { en: "❌ Not interested", tr: "❌ İlgisiz" },
+    zoomMeeting: { en: "Zoom meeting to be scheduled.", tr: "Zoom görüşmesi planlanacak." },
+    callbackRequested: { en: "Requested callback.", tr: "Geri arama istedi." },
+    infoRequested: { en: "Requested information to be sent.", tr: "Bilgi gönderilmesini istedi." },
+    dayPreference: { en: "Preferred specific day - check calendar.", tr: "Belirli gün tercih etti - takvimi kontrol edin." },
+    timePreference: { en: "Specified time preference.", tr: "Saat tercihi belirtti." },
+    followUp: { en: "Follow up quickly and schedule an appointment.", tr: "Hızlıca takip edin ve randevu alın." },
+  };
+
+  // For voicemail and failed - simple messages
+  if (scoreDisplay === 'V') {
+    return texts.voicemail[lang];
   }
-  if (category === 'F') {
-    return "Failed";
-  }
-  if (category === 'N') {
-    return "Neutral";
+  if (scoreDisplay === 'F') {
+    return texts.failed[lang];
   }
   
-  // Only L (Lead) gets detailed advice
+  const score = Number(scoreDisplay);
   const lowerTranscript = transcript.toLowerCase();
   const lowerUserText = userText.toLowerCase();
   
   const advice: string[] = [];
-  advice.push("İlgili müşteri!");
   
-  // Check what they agreed to
-  if (lowerTranscript.includes('zoom') || lowerTranscript.includes('q and a')) {
-    advice.push("Zoom görüşmesi planlanacak.");
-  }
-  if (lowerUserText.includes('call me') || lowerUserText.includes('call back') || lowerUserText.includes('ara')) {
-    advice.push("Geri arama istedi.");
-  }
-  if (lowerUserText.includes('send') || lowerUserText.includes('email') || lowerUserText.includes('whatsapp')) {
-    advice.push("Bilgi gönderilmesini istedi.");
-  }
-  if (lowerUserText.includes('monday') || lowerUserText.includes('tuesday') || lowerUserText.includes('wednesday') || 
-      lowerUserText.includes('thursday') || lowerUserText.includes('friday') || lowerUserText.includes('saturday') ||
-      lowerUserText.includes('pazartesi') || lowerUserText.includes('salı') || lowerUserText.includes('çarşamba')) {
-    advice.push("Belirli gün tercih etti - takvimi kontrol edin.");
-  }
-  if (lowerUserText.includes('morning') || lowerUserText.includes('afternoon') || lowerUserText.includes('evening') ||
-      lowerUserText.includes('sabah') || lowerUserText.includes('öğleden') || lowerUserText.includes('akşam')) {
-    advice.push("Saat tercihi belirtti.");
+  // Generate advice based on score
+  if (score >= 9) {
+    advice.push(texts.hotLead[lang]);
+  } else if (score >= 7) {
+    advice.push(texts.interested[lang]);
+  } else if (score >= 5) {
+    advice.push(texts.neutral[lang]);
+  } else if (score >= 3) {
+    advice.push(texts.lowInterest[lang]);
+  } else {
+    advice.push(texts.notInterested[lang]);
   }
   
-  // If no specific action found
-  if (advice.length === 1) {
-    advice.push("Hızlıca takip edin ve randevu alın.");
+  // For scores >= 6, add detailed advice
+  if (score >= 6) {
+    // Check what they agreed to
+    if (lowerTranscript.includes('zoom') || lowerTranscript.includes('q and a')) {
+      advice.push(texts.zoomMeeting[lang]);
+    }
+    if (lowerUserText.includes('call me') || lowerUserText.includes('call back') || lowerUserText.includes('ara')) {
+      advice.push(texts.callbackRequested[lang]);
+    }
+    if (lowerUserText.includes('send') || lowerUserText.includes('email') || lowerUserText.includes('whatsapp')) {
+      advice.push(texts.infoRequested[lang]);
+    }
+    if (lowerUserText.includes('monday') || lowerUserText.includes('tuesday') || lowerUserText.includes('wednesday') || 
+        lowerUserText.includes('thursday') || lowerUserText.includes('friday') || lowerUserText.includes('saturday') ||
+        lowerUserText.includes('pazartesi') || lowerUserText.includes('salı') || lowerUserText.includes('çarşamba')) {
+      advice.push(texts.dayPreference[lang]);
+    }
+    if (lowerUserText.includes('morning') || lowerUserText.includes('afternoon') || lowerUserText.includes('evening') ||
+        lowerUserText.includes('sabah') || lowerUserText.includes('öğleden') || lowerUserText.includes('akşam')) {
+      advice.push(texts.timePreference[lang]);
+    }
+    
+    // If no specific action found for interested customers
+    if (advice.length === 1 && score >= 7) {
+      advice.push(texts.followUp[lang]);
+    }
   }
   
   return advice.join(" ");
 }
 
+// Call labels with translations
+const callLabels = {
+  summary: { en: "Summary", tr: "Özet" },
+  callStatus: { en: "Call Status", tr: "Arama Durumu" },
+  transcript: { en: "Transcript", tr: "Transkript" },
+  voicemail: { en: "Voicemail", tr: "Sesli Mesaj" },
+  notReached: { en: "Not Reached", tr: "Ulaşılamadı" },
+  hotLead: { en: "Hot Lead", tr: "Sıcak Müşteri" },
+  interested: { en: "Interested", tr: "İlgili" },
+  neutral: { en: "Neutral", tr: "Nötr" },
+  notInterested: { en: "Not Interested", tr: "İlgisiz" },
+};
+
 // Call Row Component with Expandable Detail - Mobile Responsive
 function CallRow({ 
   call, 
-  onPlay 
+  onPlay,
+  lang
 }: { 
   call: Call;
   onPlay: (call: Call) => void;
+  lang?: "en" | "tr";
 }) {
   const [expanded, setExpanded] = useState(false);
+  const { language: contextLanguage } = useLanguage();
+  
+  // Use prop lang if provided, otherwise use context language
+  // Ensure it's a valid language code
+  const currentLang: "en" | "tr" = (lang === "tr" || lang === "en") ? lang : 
+                                    (contextLanguage === "tr" || contextLanguage === "en") ? contextLanguage : "en";
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
@@ -765,19 +1267,35 @@ function CallRow({
   const callSummary = (call.summary || '').toLowerCase();
   const transcript = (call.transcript || '').toLowerCase();
   
+  // === SMART CALL CLASSIFICATION ALGORITHM ===
+  
+  // Extract what the user actually said FIRST (needed for score adjustment)
+  const userParts = transcript.split(/ai:/i).filter(part => part.includes('user:'));
+  const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
+  const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' ');
+  
   // Get the score first (either from evaluation or estimated)
+  // Score is now on 1-10 scale, null means V or F
   const parsedScore = parseScore(call.evaluation_score);
   const estimatedScoreValue = estimateScore(call);
-  const effectiveScore = parsedScore !== null ? parsedScore : estimatedScoreValue;
+  const rawScore = parsedScore !== null ? parsedScore : estimatedScoreValue;
   
-  // === SMART CALL CLASSIFICATION ALGORITHM ===
+  // Adjust score based on transcript content (catches wrong high scores like "not interested" getting 10)
+  const effectiveScore = rawScore !== null 
+    ? adjustScoreBasedOnContent(rawScore, transcript, callSummary, userText, call.duration)
+    : null;
   
   // Voicemail system phrases (these appear in automated voicemail greetings)
   const voicemailSystemPhrases = [
     'voicemail', 'sesli mesaj',
-    'record your message', 'leave a message', 'leave your message',
-    'unable to take your call', 'can\'t take your call', 'can t take your call', 'cannot take your call',
-    'after the tone', 'after the beep', 'at the tone', 'mailbox',
+    'can\'t take your call', 'can\'t take call', 'can\'t take the call',
+    'can\'t take call right now', 'can\'t take your call right now', 'can\'t take the call right now',
+    'please leave a message', 'leave a message', 'after the beep',
+    'unavailable to take your call', 'not available to take your call',
+    'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
+    'record your message', 'leave your message',
+    'unable to take your call', 'can t take your call', 'cannot take your call',
+    'after the tone', 'at the tone', 'mailbox',
     'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done'
   ];
   
@@ -807,15 +1325,40 @@ function CallRow({
   // Count user responses in transcript
   const userResponses = (transcript.match(/user:/gi) || []).length;
   
-  // Extract what the user actually said (not the AI parts)
-  // Normalize: remove punctuation for better matching
-  const userParts = transcript.split(/ai:/i).filter(part => part.includes('user:'));
-  const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
-  const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' ');
-  
   // Check if user said something meaningful (not just voicemail system)
   const userSaidMeaningful = meaningfulUserPatterns.some(p => userText.includes(p));
-  const userOnlyVoicemailPhrases = voicemailSystemPhrases.some(p => userText.includes(p)) && !userSaidMeaningful;
+  
+  // Check for phone number pattern + voicemail phrase (e.g., "370 8493 can't take your call right now")
+  // This is a typical voicemail pattern: phone number followed by automated message
+  // More flexible pattern: looks for digits followed by voicemail phrases anywhere in user text
+  // Check both normalized text (can't -> can t) and original text
+  // Pattern variations: "can't take", "can t take", "cant take"
+  const phoneNumberVoicemailPattern1 = /[\d\s\.\-\(\)]{3,}(can\'t take|can t take|leave|message|unavailable|voicemail|right now)/i;
+  const phoneNumberVoicemailPattern2 = /[\d\s\.\-\(\)]{3,}(cant take|leave|message|unavailable|voicemail|right now)/i;
+  
+  // Also check transcript directly for more reliable detection
+  const transcriptLower = transcript.toLowerCase();
+  const isPhoneNumberVoicemail = phoneNumberVoicemailPattern1.test(userText) || 
+                                  phoneNumberVoicemailPattern2.test(userText) ||
+                                  phoneNumberVoicemailPattern1.test(userTextRaw) ||
+                                  phoneNumberVoicemailPattern2.test(userTextRaw) ||
+                                  phoneNumberVoicemailPattern1.test(transcriptLower) ||
+                                  phoneNumberVoicemailPattern2.test(transcriptLower);
+  
+  // Also check if user text contains voicemail phrases (normalized or original)
+  // Handle variations: "can't" -> "can t" or "cant"
+  const hasVoicemailInUserText = voicemailSystemPhrases.some(p => {
+    const normalized = p.replace(/'/g, ' ').replace(/\s+/g, ' '); // "can't" -> "can t"
+    const noApostrophe = p.replace(/'/g, ''); // "can't" -> "cant"
+    return userText.includes(p) || 
+           userTextRaw.includes(p) ||
+           userText.includes(normalized) ||
+           userText.includes(noApostrophe) ||
+           userTextRaw.includes(normalized) ||
+           userTextRaw.includes(noApostrophe);
+  });
+  
+  const userOnlyVoicemailPhrases = (hasVoicemailInUserText || isPhoneNumberVoicemail) && !userSaidMeaningful;
   
   // Determine if this is a voicemail
   // It's voicemail if: voicemail phrases exist AND user didn't say anything meaningful
@@ -825,7 +1368,12 @@ function CallRow({
   // Key insight: Even if user responded multiple times, if they ONLY said voicemail phrases, it's still voicemail
   const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
   
-  const isVoicemail = (hasVoicemailPhrases && !isRealConversation) || 
+  // If phone number + voicemail pattern detected, it's definitely voicemail (highest priority)
+  // This catches cases like "3 7 0 8 4 9 3 can't take your call right now"
+  // Otherwise check other voicemail indicators
+  const isVoicemail = isPhoneNumberVoicemail ||  // Highest priority - phone number + voicemail phrase
+                      (hasVoicemailInUserText && !userSaidMeaningful) ||  // User said voicemail phrase but nothing meaningful
+                      (hasVoicemailPhrases && !isRealConversation) || 
                       (userOnlyVoicemailPhrases);
   
   // Silence timeout with short call = likely voicemail
@@ -844,53 +1392,14 @@ function CallRow({
   // Determine call category
   const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior;
   
-  // Failed call: explicit failure patterns OR no real engagement
+  // Failed call: no score (null) OR explicit failure patterns
   const isFailedCall = isFailedByText || 
-    effectiveScore === 1 ||  // Explicitly scored as failed
+    effectiveScore === null ||  // No score means failed to connect
     (customerHungUpQuickly && !isRealConversation) ||
     (aiOnlySpoke && isVeryShortCall);
   
-  // Lead detection: Real conversation with positive indicators FROM USER (not AI!)
-  const positiveIndicators = [
-    // Interest signals - affirmative responses
-    'interested', 'yes please', 'sure', 'okay', 'sounds good', 'yes i am',
-    'yep', 'yeah', 'yea', 'yes', 'alright',  // Common affirmatives
-    'tell me more', 'how much', 'when can', 'i want', 'i need', 'i would like',
-    // Callback/contact requests
-    'call me', 'call back', 'reach me', 'contact me', 'get back to me',
-    'send me', 'email me', 'whatsapp', 'message me', 'text me',
-    // Appointment
-    'book', 'schedule', 'appointment', 'available', 'free time',
-    // Turkish
-    'ilgili', 'randevu', 'evet', 'tamam', 'olur', 'istiyorum', 'ara beni',
-    'geri ara', 'iletişime geç', 'bilgi gönder'
-  ];
-  
-  // Negative indicators - these should NOT be leads
-  // Avoid short words that could match inside other words
-  const negativeIndicators = [
-    'not interested', 'no thanks', 'no thank you', 'don\'t call', 'stop calling',
-    'remove me', 'wrong number', 'can\'t talk', 'not now', 'not for me',
-    'i\'m busy', 'too busy', 'leave me alone',
-    // Turkish
-    'hayır', 'ilgilenmiyorum', 'aramayın', 'meşgulüm', 'istemiyorum'
-  ];
-  
-  // Check positive/negative ONLY in USER's speech, not AI's
-  const hasPositiveFromUser = positiveIndicators.some(p => userText.includes(p));
-  const hasNegativeFromUser = negativeIndicators.some(p => userText.includes(p));
-  
-  // Special case: if user ONLY said "no" (very short response), it's negative
-  const userWords = userText.trim().split(/\s+/).filter(w => w.length > 0);
-  const onlySaidNo = userWords.length <= 2 && /\bno\b/i.test(userText) && !hasPositiveFromUser;
-  const hasMinimumEngagement = isRealConversation && !isVeryShortCall;
-  
-  // Lead requires: engagement + positive indicators from user + NO negative indicators
-  const isLead = !isVoicemailFinal && !isFailedCall && hasMinimumEngagement && 
-    hasPositiveFromUser && !hasNegativeFromUser && !onlySaidNo && call.sentiment !== 'negative';
-  
   // Determine what to display in score badge
-  // V = Voicemail (red), F = Failed (red), L = Lead (green), N = Neutral (yellow)
+  // V = Voicemail (red), F = Failed (red), 1-10 = Score with color gradient
   let scoreDisplay: string;
   let badgeColor: { bg: string; text: string };
   
@@ -900,21 +1409,34 @@ function CallRow({
   } else if (isFailedCall) {
     scoreDisplay = "F";
     badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
-  } else if (isLead) {
-    scoreDisplay = "L";
-    badgeColor = { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" };
   } else {
-    scoreDisplay = "N";
-    badgeColor = { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" };
+    // Show numeric score (1-10)
+    const displayScore = effectiveScore || 5;
+    scoreDisplay = displayScore.toString();
+    
+    // Color gradient based on score:
+    // 1-3: Red (poor), 4-5: Orange (below average), 6-7: Yellow (neutral), 8-9: Light green, 10: Green (excellent)
+    if (displayScore <= 3) {
+      badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
+    } else if (displayScore <= 5) {
+      badgeColor = { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-orange-700 dark:text-orange-400" };
+    } else if (displayScore <= 7) {
+      badgeColor = { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" };
+    } else if (displayScore <= 9) {
+      badgeColor = { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-400" };
+    } else {
+      badgeColor = { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" };
+    }
   }
   
   const validSummary = getValidEvaluationSummary(call.evaluation_summary);
   
-  // Generate actionable sales advice based on category
+  // Generate actionable sales advice based on score
   const salesAdvice = getSalesAdvice(
-    scoreDisplay as 'V' | 'F' | 'L' | 'N',
+    scoreDisplay,
     call.transcript || '',
-    userText
+    userText,
+    lang
   );
 
   return (
@@ -1039,16 +1561,18 @@ function CallRow({
             {/* Summary */}
             {call.summary && cleanCallSummary(call.summary) && (
           <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Summary</p>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                  {currentLang === "tr" ? "Özet" : "Summary"}
+                </p>
                 <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(call.summary)}</p>
           </div>
             )}
             
             {/* AI Evaluation - Always show since we always have a score now */}
             <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Call Status</p>
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">{callLabels.callStatus[currentLang]}</p>
               <div className="flex items-start gap-4">
-                {/* Status Display - V (voicemail), F (failed), L (lead), N (neutral) */}
+                {/* Status Display - V (voicemail), F (failed), or 1-10 score */}
                 <div className={cn(
                   "flex-shrink-0 flex flex-col items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-xl",
                   badgeColor.bg
@@ -1057,9 +1581,8 @@ function CallRow({
                     {scoreDisplay}
                   </span>
                   <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                    {scoreDisplay === 'V' ? "oicemail" :
-                     scoreDisplay === 'F' ? "ailed" :
-                     scoreDisplay === 'L' ? "ead" : "eutral"}
+                    {scoreDisplay === 'V' ? (lang === "tr" ? "oicemail" : "oicemail") :
+                     scoreDisplay === 'F' ? (lang === "tr" ? "ailed" : "ailed") : "/10"}
                   </span>
           </div>
                 
@@ -1074,9 +1597,11 @@ function CallRow({
                       badgeColor.bg,
                       badgeColor.text
                     )}>
-                      {scoreDisplay === 'V' ? "Voicemail" :
-                       scoreDisplay === 'F' ? "Not Reached" :
-                       scoreDisplay === 'L' ? "Lead" : "Neutral"}
+                      {scoreDisplay === 'V' ? callLabels.voicemail[currentLang] :
+                       scoreDisplay === 'F' ? callLabels.notReached[currentLang] :
+                       Number(scoreDisplay) >= 8 ? callLabels.hotLead[currentLang] :
+                       Number(scoreDisplay) >= 6 ? callLabels.interested[currentLang] :
+                       Number(scoreDisplay) >= 4 ? callLabels.neutral[currentLang] : callLabels.notInterested[currentLang]}
                     </span>
                     {call.sentiment && call.sentiment !== 'neutral' && (
                       <span className={cn(
@@ -1096,7 +1621,7 @@ function CallRow({
             {/* Transcript */}
             {call.transcript && (
               <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Transcript</p>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">{callLabels.transcript[currentLang]}</p>
                 <div className="text-sm text-gray-700 dark:text-gray-300 max-h-48 overflow-y-auto bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
                   <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm">{call.transcript}</pre>
                 </div>
@@ -1113,6 +1638,7 @@ type SortOption = "latest" | "earliest" | "score_high" | "score_low";
   
 export default function CallsPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const { t, language } = useTranslation("calls");
   const [calls, setCalls] = useState<Call[]>([]);
   const [filteredCalls, setFilteredCalls] = useState<Call[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1355,8 +1881,8 @@ export default function CallsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Calls</h1>
-          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">View and manage your call history</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{t("title")}</h1>
+          <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1">{t("subtitle")}</p>
                 </div>
               <Button 
                 variant="outline" 
@@ -1365,22 +1891,22 @@ export default function CallsPage() {
           className="border-gray-200 dark:border-gray-700 w-full sm:w-auto"
               >
                 <RefreshCw className={cn("w-4 h-4 mr-2", isRefreshing && "animate-spin")} />
-          Refresh
+          {t("refresh")}
               </Button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">All</p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("allCalls")}</p>
           <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{totalCalls}</p>
       </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Transferred</p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("transferred")}</p>
           <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">0</p>
           </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Successful</p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("successful")}</p>
           <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{successfulCalls}</p>
             </div>
             </div>
@@ -1390,7 +1916,7 @@ export default function CallsPage() {
         <div className="relative flex-1 w-full sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                 <Input
-            placeholder="Search calls..."
+            placeholder={t("searchPlaceholder")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
@@ -1421,13 +1947,13 @@ export default function CallsPage() {
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
             <SelectTrigger className="w-full sm:w-52 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
               <ArrowUpDown className="w-4 h-4 mr-2 text-gray-400" />
-              <SelectValue placeholder="Sort by..." />
+              <SelectValue placeholder={t("sortBy")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="latest">Latest First</SelectItem>
-              <SelectItem value="earliest">Earliest First</SelectItem>
-              <SelectItem value="score_high">Highest Score</SelectItem>
-              <SelectItem value="score_low">Lowest Score</SelectItem>
+              <SelectItem value="latest">{t("latestFirst")}</SelectItem>
+              <SelectItem value="earliest">{t("earliestFirst")}</SelectItem>
+              <SelectItem value="score_high">{t("highestScore")}</SelectItem>
+              <SelectItem value="score_low">{t("lowestScore")}</SelectItem>
             </SelectContent>
           </Select>
             </div>
@@ -1439,10 +1965,10 @@ export default function CallsPage() {
         <div className="hidden sm:block px-6 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
             <div className="w-8 text-center">#</div>
-            <div className="w-64">Customer</div>
-            <div className="w-16 text-center">Score</div>
-            <div className="w-20 text-center">Duration</div>
-            <div className="w-28 text-center">Date</div>
+            <div className="w-64">{t("customer")}</div>
+            <div className="w-16 text-center">{t("score")}</div>
+            <div className="w-20 text-center">{t("duration")}</div>
+            <div className="w-28 text-center">{t("date")}</div>
             <div className="w-20"></div>
                           </div>
                         </div>
@@ -1451,7 +1977,7 @@ export default function CallsPage() {
         {filteredCalls.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <Phone className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-500 dark:text-gray-400">No calls found</p>
+            <p className="text-gray-500 dark:text-gray-400">{t("noCalls")}</p>
                             </div>
         ) : (
                               <div>
@@ -1459,6 +1985,7 @@ export default function CallsPage() {
               <CallRow 
                 key={call.id} 
                 call={call} 
+                lang={language}
                 onPlay={(call) => {
                   setSelectedCall(call);
                   setIsPlayerOpen(true);
@@ -1483,14 +2010,14 @@ export default function CallsPage() {
       <Dialog open={showClearAllDialog} onOpenChange={setShowClearAllDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Clear All Calls</DialogTitle>
+            <DialogTitle>{t("deleteAll")}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete all {calls.length} calls? This action cannot be undone and will permanently remove all calls from the database.
+              {t("confirmDelete")} ({calls.length})
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowClearAllDialog(false)} disabled={isDeleting}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button 
               variant="destructive" 
@@ -1499,7 +2026,7 @@ export default function CallsPage() {
               className="bg-red-600 hover:bg-red-700"
             >
               {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Delete All
+              {t("deleteAll")}
             </Button>
           </DialogFooter>
         </DialogContent>

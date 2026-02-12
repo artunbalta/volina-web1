@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
     
     // Filter by assistant_id if user has one set
-    // Include calls that match the assistantId OR have no assistantId (legacy calls)
+    // Include: user's assistant OR calls without assistant_id (legacy calls)
     let filteredCalls = allCalls || [];
     if (userAssistantId && filteredCalls.length > 0) {
       filteredCalls = filteredCalls.filter(call => {
@@ -66,8 +66,8 @@ export async function GET(request: NextRequest) {
         const metadataAssistantId = call.metadata?.assistantId as string | undefined;
         const hasAssistantId = callAssistantId || metadataAssistantId;
         
-        // Include if: matches target assistant OR has no assistantId (older calls)
-        if (!hasAssistantId) return true; // Include legacy calls without assistantId
+        // Include if: matches user's assistant OR has no assistantId (legacy/old calls)
+        if (!hasAssistantId) return true; // Include legacy calls
         return callAssistantId === userAssistantId || metadataAssistantId === userAssistantId;
       });
     }
