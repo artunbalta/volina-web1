@@ -127,7 +127,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       try {
         // First, check if there's a session in localStorage
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || '';
+        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || 'ydgsarbkvtyjevyzyuzq';
         const storageKey = `sb-${projectRef}-auth-token`;
         const storedSession = localStorage.getItem(storageKey);
         
@@ -228,10 +228,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       async (event, currentSession) => {
         if (!mounted) return;
         
-        console.log("[Auth] onAuthStateChange:", event, !!currentSession?.user);
         setSession(currentSession);
         
-        if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && currentSession?.user) {
+        if (event === "SIGNED_IN" && currentSession?.user) {
           await fetchProfile(currentSession.user);
           setIsLoading(false);
         } else if (event === "SIGNED_OUT") {
@@ -247,12 +246,9 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
             await fetchProfile(currentSession.user);
           }
           setIsLoading(false);
-        } else if (!currentSession) {
-          // No session at all — safe to mark as not loading
+        } else {
           setIsLoading(false);
         }
-        // If session exists but event is unrecognized, don't set isLoading=false
-        // to avoid race condition where user profile hasn't been fetched yet
       }
     );
 
@@ -325,7 +321,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       // Clear localStorage (Supabase stores session there)
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       if (supabaseUrl) {
-        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0];
+        const projectRef = supabaseUrl.split('//')[1]?.split('.')[0] || 'ydgsarbkvtyjevyzyuzq';
         const storageKey = `sb-${projectRef}-auth-token`;
         localStorage.removeItem(storageKey);
       }

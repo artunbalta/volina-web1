@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { Loader2 } from "lucide-react";
@@ -9,31 +9,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { user, isLoading, isAuthenticated, session } = useAuth();
   const router = useRouter();
   const [checked, setChecked] = useState(false);
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
 
-    // Session exists but user profile hasn't loaded yet — wait, don't redirect
-    if (session && !user) return;
-
     const timer = setTimeout(() => {
-      if (!session && !user) {
-        // No session at all — go to login
-        router.push("/login");
+      if (!session || !isAuthenticated) {
+        if (!hasRedirected.current) {
+          hasRedirected.current = true;
+          router.replace("/login");
+        }
         return;
       }
       if (user && user.role !== "admin") {
-        // Not admin — redirect to their tenant
-        router.push(user.slug ? `/${user.slug}` : "/login");
+        if (!hasRedirected.current) {
+          hasRedirected.current = true;
+          router.replace(user.slug ? `/${user.slug}` : "/login");
+        }
         return;
       }
-      if (user && user.role === "admin") {
-        setChecked(true);
-      }
-    }, 300);
+      setChecked(true);
+    }, 400);
 
     return () => clearTimeout(timer);
-  }, [isLoading, session, user, router]);
+  }, [isLoading, session, isAuthenticated, user, router]);
 
   if (!checked) {
     return (
