@@ -81,6 +81,30 @@ export async function GET(request: NextRequest) {
       return callType !== 'webCall';
     });
     
+    // Filter out calls from wrong assistants (e.g., GOP Dentel)
+    // Exclude calls where transcript contains indicators of wrong assistant
+    filteredCalls = filteredCalls.filter(call => {
+      const transcript = String(call.transcript || '').toLowerCase();
+      const summary = String(call.summary || '').toLowerCase();
+      const textToCheck = `${transcript} ${summary}`;
+      
+      // Exclude calls from GOP Dentel assistant
+      const wrongAssistantPatterns = [
+        'gop dentel',
+        'özel gop dentel',
+        'gop dentel diş polikliniği',
+        'eda ben', // GOP Dentel assistant name
+        'turkcell sekreter servisi' // This appears in the transcript
+      ];
+      
+      // If transcript contains any wrong assistant pattern, exclude this call
+      const isWrongAssistant = wrongAssistantPatterns.some(pattern => 
+        textToCheck.includes(pattern.toLowerCase())
+      );
+      
+      return !isWrongAssistant;
+    });
+    
     // Helper to check if string looks like a phone number
     const looksLikePhone = (str: string | null | undefined): boolean => {
       if (!str) return false;

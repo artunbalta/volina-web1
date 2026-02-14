@@ -527,6 +527,179 @@ function adjustScoreBasedOnContent(
   const lowerUserText = userText.toLowerCase();
   const callDuration = duration || 0;
   
+  // === RULE 0: Meaningless or incomplete responses (HIGHEST PRIORITY) ===
+  // Check this FIRST before any other rules - these are often voicemail, wrong number, or accidental answers
+  // Normalize userText again to ensure punctuation is removed
+  const normalizedUserText = lowerUserText.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' ').trim();
+  const userWords = normalizedUserText.split(/\s+/).filter(w => w.length > 0);
+  const userWordCount = userWords.length;
+  
+  // === RULE 0A: User never responded (no answer) ===
+  // If user said absolutely nothing (0 words), this is a failed call
+  // This should return null so it's displayed as "F" (Failed) not a numeric score
+  if (userWordCount === 0) {
+    // User never responded → this is a failed call
+    // Return a very low score that will be caught by failed call detection
+    // The display logic will show this as "F" (Failed)
+    return 1; // Will be overridden by failed call detection to show "F"
+  }
+  
+  // === RULE 0B: Single meaningless words ===
+  if (userWordCount === 1) {
+    const meaninglessSingleWords = [
+      'in', 'out', 'what', 'huh', 'eh', 'uh', 'oh', 'ah', 'um', 'er', 'hm', 'hmm'
+    ];
+    
+    // Meaningful single words that should NOT be penalized
+    const meaningfulSingleWords = [
+      'yes', 'yeah', 'yep', 'yea', 'no', 'ok', 'okay', 'sure', 'hello', 'hi', 'hey',
+      'thanks', 'thank', 'bye', 'goodbye', 'alright', 'right', 'correct', 'wrong',
+      'evet', 'hayır', 'tamam', 'merhaba', 'selam'
+    ];
+    
+    const userSingleWord = normalizedUserText;
+    const isMeaninglessSingleWord = meaninglessSingleWords.includes(userSingleWord) &&
+                                    !meaningfulSingleWords.includes(userSingleWord);
+    
+    if (isMeaninglessSingleWord) {
+      // Meaningless single word like "In" → very low score (2), likely voicemail or wrong number
+      return 2;
+    }
+  }
+  
+  // === RULE 0B: Incomplete or meaningless short phrases (2-5 words) ===
+  // Catch cases like "In zirconia, it's" or "Hi. Good morning. This is" - incomplete sentences
+  if (userWordCount >= 2 && userWordCount <= 5) {
+    // Check for incomplete sentences ending with contractions or incomplete phrases
+    const incompleteEndings = [
+      "it's", "its", "i'm", "im", "we're", "were", "they're", "theyre", "you're", "youre",
+      "he's", "hes", "she's", "shes", "that's", "thats", "what's", "whats", "who's", "whos",
+      "is", "this", "that", "the", "a", "an" // Incomplete sentences ending with articles/demonstratives
+    ];
+    
+    const lastWord = userWords[userWords.length - 1];
+    const endsWithIncomplete = lastWord ? incompleteEndings.includes(lastWord) : false;
+    
+    // Check for "this is" pattern - often indicates wrong number or interrupted call
+    // Like "Hi. Good morning. This is" - incomplete introduction
+    const hasThisIsPattern = normalizedUserText.includes("this is") && userWordCount <= 5;
+    
+    // Check for meaningless/out-of-context phrases
+    const meaninglessPhrases = [
+      "in zirconia", "zirconia it", "zirconia its", "zirconia", // Dental material out of context
+      "what the", "what is", "who is", "where is", // Incomplete questions
+      "i think", "i guess", "i mean", "i don't", "i cant", "i can't" // Incomplete thoughts
+    ];
+    
+    const hasMeaninglessPhrase = meaninglessPhrases.some(phrase => 
+      normalizedUserText.includes(phrase)
+    );
+    
+    // Check if user text starts with "in" followed by a technical/medical term (wrong number pattern)
+    // Like "in zirconia", "in titanium", "in ceramic" - these are often wrong numbers
+    const startsWithInAndTechnical = normalizedUserText.startsWith("in ") && 
+                                     userWordCount <= 4 &&
+                                     (normalizedUserText.includes("zirconia") ||
+                                      normalizedUserText.includes("titanium") ||
+                                      normalizedUserText.includes("ceramic") ||
+                                      normalizedUserText.includes("implant") ||
+                                      normalizedUserText.includes("crown"));
+    
+    // If it's a very short phrase (2-3 words) that's incomplete or meaningless
+    // OR starts with "in" + technical term (wrong number pattern)
+    // OR has "this is" pattern (incomplete introduction)
+    if ((endsWithIncomplete && userWordCount <= 3) || 
+        (hasMeaninglessPhrase && userWordCount <= 4) ||
+        startsWithInAndTechnical ||
+        hasThisIsPattern) {
+      // Incomplete or meaningless phrase → very low score (2-3)
+      return Math.min(originalScore, 3);
+    }
+  }
+  
+  // === RULE 0.5: Early financial rejection check (before other rules) ===
+  // Check for financial rejection early so callback request can check it
+  const earlyFinancialRejectionPatterns = [
+    'can\'t afford', 'cant afford', 'can t afford', 'cannot afford',
+    'can\'t pay', 'cant pay', 'can t pay', 'cannot pay',
+    'too expensive', 'too much',
+    'param yok', 'karşılayamam', 'pahalı', 'çok pahalı'
+  ];
+  const hasAffordWithNegativeEarly = 
+    (lowerUserText.includes('afford') && (lowerUserText.includes('can\'t') || 
+     lowerUserText.includes('cannot') || lowerUserText.includes('cant') || 
+     lowerUserText.includes('can t'))) ||
+    (lowerSummary.includes('afford') && (lowerSummary.includes('can\'t') || 
+     lowerSummary.includes('cannot') || lowerSummary.includes('cant') || 
+     lowerSummary.includes('can t'))) ||
+    lowerUserText.includes('can t afford') ||
+    lowerSummary.includes('can\'t afford') || lowerSummary.includes('cant afford') ||
+    lowerSummary.includes('cannot afford') || lowerSummary.includes('can t afford');
+  
+  const hasFinancialRejectionEarly = earlyFinancialRejectionPatterns.some(p => 
+    lowerUserText.includes(p) || lowerSummary.includes(p)
+  ) || hasAffordWithNegativeEarly;
+  
+  // If financial rejection, return early (this overrides everything)
+  if (hasFinancialRejectionEarly) {
+    if (lowerSummary.includes('not interested') && 
+        (lowerSummary.includes('can\'t afford') || lowerSummary.includes('cant afford') || 
+         lowerSummary.includes('cannot afford') || lowerSummary.includes('can t afford')) &&
+        lowerSummary.includes('declined')) {
+      return 1;
+    }
+    return Math.min(originalScore, 2);
+  }
+  
+  // === RULE 0.6: Early callback request check (HIGHEST PRIORITY after financial rejection) ===
+  // Check callback request early to prevent other rules from lowering the score
+  // Define callback request patterns here (will be reused in RULE 3A for voicemail check)
+  const callbackRequestPatterns = [
+    'call me another time', 'call me later', 'call back', 'call me back',
+    'possible to call me', 'can you call me', 'would you call me',
+    'sonra ara', 'geri ara', 'başka zaman ara', 'daha sonra ara',
+    'call me when', 'call me tomorrow', 'call me next week'
+  ];
+  
+  // More flexible check: look for "call me" + "another time" or "later" or "back"
+  const hasCallMeAnotherTime = (lowerUserText.includes('call me') && 
+                                 (lowerUserText.includes('another time') || 
+                                  lowerUserText.includes('later') ||
+                                  lowerUserText.includes('back'))) ||
+                                (lowerUserText.includes('possible') && 
+                                 lowerUserText.includes('call me')) ||
+                                // "Possible to call me another time" - exact pattern
+                                (lowerUserText.includes('possible') && 
+                                 lowerUserText.includes('call me') && 
+                                 lowerUserText.includes('another time')) ||
+                                // "possible to call me" - even without "another time"
+                                (lowerUserText.includes('possible to call me')) ||
+                                // Very flexible: "possible" + "call" + "another time" (words can be separated)
+                                (lowerUserText.includes('possible') && 
+                                 lowerUserText.includes('call') && 
+                                 lowerUserText.includes('another time')) ||
+                                // Even more flexible: "possible" anywhere + "call me" + "another time"
+                                (lowerUserText.includes('possible') && 
+                                 (lowerUserText.includes('call me') || lowerUserText.includes('call')) && 
+                                 lowerUserText.includes('another time'));
+  
+  const hasCallbackRequest = callbackRequestPatterns.some(p => 
+    lowerUserText.includes(p) || lowerSummary.includes(p)
+  ) || hasCallMeAnotherTime;
+  
+  // Also check summary for callback indicators
+  const summaryHasCallbackRequest = lowerSummary.includes('call back') ||
+                                    lowerSummary.includes('callback') ||
+                                    (lowerSummary.includes('call me') && lowerSummary.includes('another time')) ||
+                                    (lowerSummary.includes('call') && lowerSummary.includes('another time'));
+  
+  if (hasCallbackRequest || summaryHasCallbackRequest) {
+    // Callback request → this is positive engagement, maintain higher score (8)
+    // User wants to be called back = interested but not available now = high-value lead
+    // Return immediately to prevent other rules from lowering the score
+    return Math.max(originalScore, 8);
+  }
+  
   // === RULE 1: Very short calls should never get high scores ===
   // If call is under 15 seconds → max score 2
   if (callDuration > 0 && callDuration < 15) {
@@ -544,8 +717,7 @@ function adjustScoreBasedOnContent(
   }
   
   // === RULE 2: User barely spoke - can't be a great call ===
-  const userWords = lowerUserText.trim().split(/\s+/).filter(w => w.length > 0);
-  const userWordCount = userWords.length;
+  // Note: userWords and userWordCount already calculated in RULE 0 above
   
   // User said almost nothing (0-3 words like "Hello?" or "Hi")
   if (userWordCount <= 3) {
@@ -589,13 +761,20 @@ function adjustScoreBasedOnContent(
     return Math.min(originalScore, 4);
   }
   
+  // === RULE 3A: hasCallbackRequest was already defined in RULE 0.6 ===
+  // It's used here for voicemail check (to skip voicemail if callback request exists)
+  
   // === RULE 3B: Check if this is actually a voicemail (before unavailable check) ===
   // Voicemail indicators: automated messages, "can't take your call", "leave a message", phone numbers only
   const voicemailIndicators = [
     'can\'t take your call', 'can\'t take call', 'can\'t take the call',
-    'please leave a message', 'leave a message', 'after the beep',
+    'please leave a message', 'leave a message', 'leave your message', 'after the beep',
+    'after the tone', 'at the tone', // Voicemail tone indicators
     'unavailable to take your call', 'not available to take your call',
-    'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın'
+    'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
+    'please stay on the line', 'stay on the line', // Voicemail system phrases (but skip if callback request)
+    'is on another line', 'on another line', // "Is on another line. Just leave your message after the tone."
+    'available' // Single word "Available" is often voicemail greeting
   ];
   
   // Check if user text contains phone number + voicemail phrase (typical voicemail pattern)
@@ -612,21 +791,63 @@ function adjustScoreBasedOnContent(
     lowerUserText.includes(p.replace("'", ""))     // Handle "can't" -> "cant"
   );
   
+  // Special case: "Available" alone (1 word) is typically voicemail greeting
+  // This catches cases like Lewis Brown: "Available" + "Please stay on the line"
+  const isOnlyAvailable = userWordCount === 1 && lowerUserText.trim() === 'available';
+  
+  // Check for positive engagement (yeah, yes, etc.) - if user showed engagement, it's not voicemail
+  // Use different variable name to avoid conflict with later hasPositiveEngagement
+  const hasPositiveEngagementForVoicemail = lowerUserText.includes('yeah') ||
+                                            lowerUserText.includes('yes') ||
+                                            lowerUserText.includes('yep') ||
+                                            lowerUserText.includes('yea') ||
+                                            lowerUserText.includes('sure') ||
+                                            lowerUserText.includes('okay') ||
+                                            lowerUserText.includes('ok') ||
+                                            lowerSummary.includes('interested') ||
+                                            lowerSummary.includes('considering');
+  
+  // "Available" + "Please stay on the line" is voicemail ONLY if no positive engagement
+  // If user said "Yeah. Yeah." or showed interest, it's a real conversation, not voicemail
+  const hasAvailableAndStayOnLine = lowerUserText.includes('available') && 
+                                    (lowerUserText.includes('stay on the line') || 
+                                     lowerUserText.includes('please stay')) &&
+                                    !hasPositiveEngagementForVoicemail; // Skip if positive engagement exists
+  
+  // Special case: "Is on another line. Just leave your message after the tone."
+  // This is a classic voicemail pattern
+  const hasAnotherLineAndLeaveMessage = (lowerUserText.includes('is on another line') || 
+                                        lowerUserText.includes('on another line')) &&
+                                       (lowerUserText.includes('leave your message') ||
+                                        lowerUserText.includes('leave a message') ||
+                                        lowerUserText.includes('after the tone') ||
+                                        lowerUserText.includes('after the beep'));
+  
   // If it looks like voicemail (phone number + voicemail phrase, or just voicemail phrase with minimal engagement)
   // Increased word count threshold to 25 to catch cases like "3 7 0 8 4 9 3 can't take your call right now"
-  if (isPhoneNumberPattern || (hasVoicemailPhrase && userWordCount <= 25)) {
+  // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
+  // Also catch "Is on another line. Just leave your message after the tone." pattern
+  // BUT: Skip if callback request exists (user wants to be called back, not voicemail)
+  // BUT: Skip "Available" + "Please stay on the line" if positive engagement exists
+  if (!hasCallbackRequest && (isPhoneNumberPattern || 
+      (hasVoicemailPhrase && userWordCount <= 25) ||
+      isOnlyAvailable ||
+      hasAvailableAndStayOnLine ||
+      hasAnotherLineAndLeaveMessage)) {
     // This is likely voicemail - return very low score
     // The voicemail detection in display logic will catch this and show "V"
     return 1; // Will be overridden by voicemail detection
   }
   
   // === RULE 3C: User unavailable/unreachable (can't take call, busy, in meeting) ===
+  // BUT: Skip if callback request exists (user wants to be called back, not unavailable)
   const unavailablePatterns = [
     'can\'t talk', 'can\'t speak',
     'unavailable', 'unreachable', 'not available', 'busy right now',
     'in a meeting', 'in meeting', 'can\'t talk now', 'can\'t speak now',
-    'not right now', 'later', 'call back later', 'call me later',
+    'not right now', 'later', 'call back later',
     'müsait değilim', 'konuşamam', 'aramayın', 'sonra ara'
+    // Note: 'call me later' removed - it's handled as callback request
   ];
   
   const userUnavailable = 
@@ -635,19 +856,21 @@ function adjustScoreBasedOnContent(
     (lowerSummary.includes('unavailable') && !hasVoicemailPhrase) ||
     (lowerSummary.includes('unreachable') && !hasVoicemailPhrase);
   
-  if (userUnavailable && !hasVoicemailPhrase) {
+  // Skip unavailable check if callback request exists (user wants callback, not unavailable)
+  if (userUnavailable && !hasVoicemailPhrase && !hasCallbackRequest) {
     // User explicitly said they can't take the call → this is a failed connection, score 1-2
     return Math.min(originalScore, 2);
   }
   
   // === RULE 4: Strong negative indicators in user's speech ===
+  // Note: "call me later" is NOT here - it's handled as callback request in RULE 4.3
   const strongNegativePatterns = [
     'not interested', 'no thanks', 'no thank you', 'don\'t want',
     'not for me', 'don\'t need', 'no need', 'i\'m not',
     'ilgilenmiyorum', 'istemiyorum', 'hayır teşekkürler',
     'hayır', 'yok', 'gerek yok', 'istemedim', 'istemiş değilim',
     'no i don\'t', 'i don\'t want', 'i\'m not interested',
-    'not right now', 'maybe later', 'call me later',
+    'not right now', 'maybe later',
     // Financial rejection - very strong negative indicator
     'can\'t afford', 'cant afford', 'can t afford', 'cannot afford',
     'can\'t pay', 'cant pay', 'can t pay', 'cannot pay',
@@ -657,46 +880,9 @@ function adjustScoreBasedOnContent(
   
   const userDeclined = strongNegativePatterns.some(p => lowerUserText.includes(p));
   
-  // === RULE 4.3: Check for financial rejection FIRST (very strong negative indicator) ===
-  // "can't afford" is a definitive rejection - should override positive engagement
-  const financialRejectionPatterns = [
-    'can\'t afford', 'cant afford', 'can t afford', 'cannot afford',
-    'can\'t pay', 'cant pay', 'can t pay', 'cannot pay',
-    'too expensive', 'too much',
-    'param yok', 'karşılayamam', 'pahalı', 'çok pahalı'
-  ];
-  // Also check for "afford" with negative context (can't, cannot, too expensive)
-  // Handle normalized text where "can't" becomes "can t"
-  const hasAffordWithNegative = 
-    (lowerUserText.includes('afford') && (lowerUserText.includes('can\'t') || 
-     lowerUserText.includes('cannot') || lowerUserText.includes('cant') || 
-     lowerUserText.includes('can t'))) ||
-    (lowerSummary.includes('afford') && (lowerSummary.includes('can\'t') || 
-     lowerSummary.includes('cannot') || lowerSummary.includes('cant') || 
-     lowerSummary.includes('can t'))) ||
-    // Check for "can't afford" pattern in normalized text (can t afford)
-    lowerUserText.includes('can t afford') ||
-    lowerSummary.includes('can\'t afford') || lowerSummary.includes('cant afford') ||
-    lowerSummary.includes('cannot afford') || lowerSummary.includes('can t afford');
-  
-  const hasFinancialRejection = financialRejectionPatterns.some(p => 
-    lowerUserText.includes(p) || lowerSummary.includes(p)
-  ) || hasAffordWithNegative;
-  
-  // If user explicitly says they can't afford, this is a strong rejection → score 1-2
-  // This should override positive engagement (e.g., "Yeah" but then "can't afford")
-  // Financial rejection is definitive - score 1-2 regardless of other signals
-  if (hasFinancialRejection) {
-    // If summary also says "Not Interested" + "can't afford" + "Declined", score 1
-    if (lowerSummary.includes('not interested') && 
-        (lowerSummary.includes('can\'t afford') || lowerSummary.includes('cant afford') || 
-         lowerSummary.includes('cannot afford') || lowerSummary.includes('can t afford')) &&
-        lowerSummary.includes('declined')) {
-      return 1;
-    }
-    // Otherwise, financial rejection → score 1-2
-    return Math.min(originalScore, 2);
-  }
+  // Financial rejection was already checked in RULE 0.5 (early check)
+  // Use the early check result
+  const hasFinancialRejection = hasFinancialRejectionEarly;
   
   // === RULE 4.5: Check for aggressive/hostile language FIRST (before other rules) ===
   // This catches cases like "That's fucking mental" which should be score 1-2
@@ -796,7 +982,8 @@ function adjustScoreBasedOnContent(
   
   // If user declined or summary indicates not interested (and no strong positive engagement) → MAX score 4
   // If summary explicitly says "not interested" → MAX score 3
-  if (userDeclined || summaryIndicatesNotInterested) {
+  // BUT: Skip if callback request exists (user wants callback, not declined)
+  if ((userDeclined || summaryIndicatesNotInterested) && !hasCallbackRequest) {
     if (lowerSummary.includes('not interested') && lowerSummary.includes('explicitly')) {
       return Math.min(originalScore, 3);
     }
@@ -815,6 +1002,45 @@ function adjustScoreBasedOnContent(
     lowerUserText.includes('i already said no') ||
     lowerUserText.includes('dedim hayır') ||
     lowerUserText.includes('söyledim hayır');
+  
+  // === RULE 6A: Long detailed conversations with concerns/questions (HIGH PRIORITY) ===
+  // If user had a long conversation (50+ words) and explained concerns or asked questions,
+  // this is valuable engagement even if they said "no"
+  // This catches cases where user is interested but has concerns (e.g., guarantee, bone structure)
+  const isLongDetailedConversation = userWordCount >= 50;
+  const hasDetailedConcerns = lowerUserText.includes('guarantee') ||
+                              lowerUserText.includes('warranty') ||
+                              lowerUserText.includes('bone') ||
+                              lowerUserText.includes('gum') ||
+                              lowerUserText.includes('implant') ||
+                              lowerUserText.includes('concern') ||
+                              lowerUserText.includes('worry') ||
+                              lowerUserText.includes('endise') ||
+                              lowerUserText.includes('garanti');
+  const hasAskedQuestions = lowerUserText.includes('what company') ||
+                            lowerUserText.includes('what is') ||
+                            lowerUserText.includes('how') ||
+                            lowerUserText.includes('why') ||
+                            lowerUserText.includes('when') ||
+                            lowerUserText.includes('where') ||
+                            lowerUserText.includes('ne zaman') ||
+                            lowerUserText.includes('nasıl') ||
+                            lowerUserText.includes('neden');
+  const hasPreviousEngagement = lowerUserText.includes('already had') ||
+                               lowerUserText.includes('already got') ||
+                               lowerUserText.includes('quotation') ||
+                               lowerUserText.includes('quote') ||
+                               lowerUserText.includes('teklif');
+  
+  // If long conversation with concerns/questions/previous engagement, this is valuable even with "no"
+  if (isLongDetailedConversation && 
+      (hasDetailedConcerns || hasAskedQuestions || hasPreviousEngagement) &&
+      !hasFinancialRejection && 
+      !explicitRejection) {
+    // Long detailed conversation with concerns/questions → this is valuable engagement (5-6)
+    // User is interested but has concerns - this is still a good lead
+    return Math.max(originalScore, 5);
+  }
   
   // Strong positive engagement patterns (even after initial "no")
   // Include "yeah" variations as they indicate agreement/interest
@@ -1003,7 +1229,8 @@ function getCallSortKey(call: Call): number {
     'unable to take your call', 'can\'t take your call', 'can t take your call', 'cannot take your call',
     'can\'t take call right now', 'can\'t take your call right now', 'can\'t take the call right now',
     'after the tone', 'after the beep', 'at the tone', 'mailbox',
-    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done'
+    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done',
+    'please stay on the line', 'stay on the line' // Voicemail system phrases
   ];
   
   const failedPatterns = [
@@ -1077,14 +1304,39 @@ function getCallSortKey(call: Call): number {
   
   const userOnlyVoicemailPhrases = (hasVoicemailInUserText || isPhoneNumberVoicemail) && !userSaidMeaningful;
   
+  // Special case: "Available" + "Please stay on the line" pattern (Lewis Brown case)
+  // This is a typical voicemail greeting pattern
+  const userWords = userText.trim().split(/\s+/).filter(w => w.length > 0);
+  const userWordCount = userWords.length;
+  const isOnlyAvailable = userWordCount === 1 && userText.trim() === 'available';
+  
+  // Check for positive engagement (yeah, yes, etc.) - if user showed engagement, it's not voicemail
+  const hasPositiveEngagement = userText.toLowerCase().includes('yeah') ||
+                                userText.toLowerCase().includes('yes') ||
+                                userText.toLowerCase().includes('yep') ||
+                                userText.toLowerCase().includes('yea') ||
+                                userText.toLowerCase().includes('sure') ||
+                                userText.toLowerCase().includes('okay') ||
+                                userText.toLowerCase().includes('ok');
+  
+  // "Available" + "Please stay on the line" is voicemail ONLY if no positive engagement
+  // If user said "Yeah. Yeah." or showed interest, it's a real conversation, not voicemail
+  const hasAvailableAndStayOnLine = userText.includes('available') && 
+                                    (userText.includes('stay on the line') || 
+                                     userText.includes('please stay')) &&
+                                    !hasPositiveEngagement; // Skip if positive engagement exists
+  
   const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
   // Key change: even if userResponses >= 2, if user ONLY said voicemail phrases, it's still voicemail
   const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
   
   // Voicemail detection - MUST match display logic
+  // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
   const isVoicemail = (hasVoicemailPhrases && !isRealConversation) || 
                       (userOnlyVoicemailPhrases) ||
-                      isPhoneNumberVoicemail;
+                      isPhoneNumberVoicemail ||
+                      isOnlyAvailable ||  // Single word "Available" is voicemail greeting
+                      hasAvailableAndStayOnLine;  // "Available" + "Please stay on the line" pattern
   const isSilenceTimeout = endedReason === 'silence-timed-out';
   const isShortCall = (call.duration || 0) < 30;
   const likelyVoicemailByBehavior = isSilenceTimeout && isShortCall && !isRealConversation;
@@ -1110,9 +1362,14 @@ function getCallSortKey(call: Call): number {
   const aiOnlySpoke = transcript.includes('ai:') && userResponses === 0;
   const customerHungUpQuickly = endedReason === 'customer-ended-call' && isVeryShortCall;
   
+  // Check if user never responded (0 words) - this is always a failed call
+  const userNeverResponded = userWordCount === 0;
+  
   // Failed call: no score (null) means failed connection, or explicit failure patterns
+  // OR user never responded (no answer at all)
   const isFailedCall = isFailedByText || 
     effectiveScore === null ||  // No score means failed to connect (V or F)
+    userNeverResponded ||  // User never responded → failed call
     (customerHungUpQuickly && !isRealConversation) ||
     (aiOnlySpoke && isVeryShortCall);
   
@@ -1274,6 +1531,10 @@ function CallRow({
   const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
   const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' ');
   
+  // Calculate user word count for voicemail detection
+  const userWords = userText.trim().split(/\s+/).filter(w => w.length > 0);
+  const userWordCount = userWords.length;
+  
   // Get the score first (either from evaluation or estimated)
   // Score is now on 1-10 scale, null means V or F
   const parsedScore = parseScore(call.evaluation_score);
@@ -1290,17 +1551,20 @@ function CallRow({
     'voicemail', 'sesli mesaj',
     'can\'t take your call', 'can\'t take call', 'can\'t take the call',
     'can\'t take call right now', 'can\'t take your call right now', 'can\'t take the call right now',
-    'please leave a message', 'leave a message', 'after the beep',
+    'please leave a message', 'leave a message', 'leave your message', 'after the beep',
+    'after the tone', 'at the tone', // Voicemail tone indicators
     'unavailable to take your call', 'not available to take your call',
     'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
-    'record your message', 'leave your message',
+    'record your message',
     'unable to take your call', 'can t take your call', 'cannot take your call',
-    'after the tone', 'at the tone', 'mailbox',
-    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done'
+    'mailbox',
+    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done',
+    'please stay on the line', 'stay on the line', // Voicemail system phrases
+    'is on another line', 'on another line' // "Is on another line. Just leave your message after the tone."
   ];
   
   // Hold/wait phrases (can appear in both voicemail AND real calls)
-  const holdPhrases = ['please stay on the line', 'please hold', 'not available'];
+  const holdPhrases = ['please hold', 'not available'];
   
   // Failed call patterns (in endedReason or summary)
   const failedPatterns = [
@@ -1360,6 +1624,35 @@ function CallRow({
   
   const userOnlyVoicemailPhrases = (hasVoicemailInUserText || isPhoneNumberVoicemail) && !userSaidMeaningful;
   
+  // Special case: "Available" + "Please stay on the line" pattern (Lewis Brown case)
+  // This is a typical voicemail greeting pattern
+  const isOnlyAvailable = userWordCount === 1 && userText.trim() === 'available';
+  
+  // Check for positive engagement (yeah, yes, etc.) - if user showed engagement, it's not voicemail
+  const hasPositiveEngagement = userText.toLowerCase().includes('yeah') ||
+                                userText.toLowerCase().includes('yes') ||
+                                userText.toLowerCase().includes('yep') ||
+                                userText.toLowerCase().includes('yea') ||
+                                userText.toLowerCase().includes('sure') ||
+                                userText.toLowerCase().includes('okay') ||
+                                userText.toLowerCase().includes('ok');
+  
+  // "Available" + "Please stay on the line" is voicemail ONLY if no positive engagement
+  // If user said "Yeah. Yeah." or showed interest, it's a real conversation, not voicemail
+  const hasAvailableAndStayOnLine = userText.includes('available') && 
+                                    (userText.includes('stay on the line') || 
+                                     userText.includes('please stay')) &&
+                                    !hasPositiveEngagement; // Skip if positive engagement exists
+  
+  // Special case: "Is on another line. Just leave your message after the tone."
+  // This is a classic voicemail pattern
+  const hasAnotherLineAndLeaveMessage = (userText.includes('is on another line') || 
+                                        userText.includes('on another line')) &&
+                                       (userText.includes('leave your message') ||
+                                        userText.includes('leave a message') ||
+                                        userText.includes('after the tone') ||
+                                        userText.includes('after the beep'));
+  
   // Determine if this is a voicemail
   // It's voicemail if: voicemail phrases exist AND user didn't say anything meaningful
   const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
@@ -1370,11 +1663,16 @@ function CallRow({
   
   // If phone number + voicemail pattern detected, it's definitely voicemail (highest priority)
   // This catches cases like "3 7 0 8 4 9 3 can't take your call right now"
+  // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
+  // Also catch "Is on another line. Just leave your message after the tone." pattern
   // Otherwise check other voicemail indicators
   const isVoicemail = isPhoneNumberVoicemail ||  // Highest priority - phone number + voicemail phrase
                       (hasVoicemailInUserText && !userSaidMeaningful) ||  // User said voicemail phrase but nothing meaningful
                       (hasVoicemailPhrases && !isRealConversation) || 
-                      (userOnlyVoicemailPhrases);
+                      (userOnlyVoicemailPhrases) ||
+                      isOnlyAvailable ||  // Single word "Available" is voicemail greeting
+                      hasAvailableAndStayOnLine ||  // "Available" + "Please stay on the line" pattern
+                      hasAnotherLineAndLeaveMessage;  // "Is on another line. Just leave your message after the tone." pattern
   
   // Silence timeout with short call = likely voicemail
   const isSilenceTimeout = endedReason === 'silence-timed-out';
@@ -1389,12 +1687,17 @@ function CallRow({
   const aiOnlySpoke = transcript.includes('ai:') && userResponses === 0;
   const customerHungUpQuickly = endedReason === 'customer-ended-call' && isVeryShortCall;
   
+  // Check if user never responded (0 words) - this is always a failed call
+  const userNeverResponded = userWordCount === 0;
+  
   // Determine call category
   const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior;
   
   // Failed call: no score (null) OR explicit failure patterns
+  // OR user never responded (no answer at all)
   const isFailedCall = isFailedByText || 
     effectiveScore === null ||  // No score means failed to connect
+    userNeverResponded ||  // User never responded → failed call
     (customerHungUpQuickly && !isRealConversation) ||
     (aiOnlySpoke && isVeryShortCall);
   
