@@ -228,9 +228,10 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       async (event, currentSession) => {
         if (!mounted) return;
         
+        console.log("[Auth] onAuthStateChange:", event, !!currentSession?.user);
         setSession(currentSession);
         
-        if (event === "SIGNED_IN" && currentSession?.user) {
+        if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && currentSession?.user) {
           await fetchProfile(currentSession.user);
           setIsLoading(false);
         } else if (event === "SIGNED_OUT") {
@@ -246,9 +247,12 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
             await fetchProfile(currentSession.user);
           }
           setIsLoading(false);
-        } else {
+        } else if (!currentSession) {
+          // No session at all — safe to mark as not loading
           setIsLoading(false);
         }
+        // If session exists but event is unrecognized, don't set isLoading=false
+        // to avoid race condition where user profile hasn't been fetched yet
       }
     );
 

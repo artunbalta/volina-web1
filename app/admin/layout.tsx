@@ -13,21 +13,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (isLoading) return;
 
+    // Session exists but user profile hasn't loaded yet — wait, don't redirect
+    if (session && !user) return;
+
     const timer = setTimeout(() => {
-      if (!session || !isAuthenticated) {
+      if (!session && !user) {
+        // No session at all — go to login
         router.push("/login");
         return;
       }
       if (user && user.role !== "admin") {
-        // Not admin - redirect to their tenant
+        // Not admin — redirect to their tenant
         router.push(user.slug ? `/${user.slug}` : "/login");
         return;
       }
-      setChecked(true);
-    }, 200);
+      if (user && user.role === "admin") {
+        setChecked(true);
+      }
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [isLoading, session, isAuthenticated, user, router]);
+  }, [isLoading, session, user, router]);
 
   if (!checked) {
     return (
