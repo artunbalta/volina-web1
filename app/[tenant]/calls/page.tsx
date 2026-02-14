@@ -547,7 +547,8 @@ function adjustScoreBasedOnContent(
   // === RULE 0B: Single meaningless words ===
   if (userWordCount === 1) {
     const meaninglessSingleWords = [
-      'in', 'out', 'what', 'huh', 'eh', 'uh', 'oh', 'ah', 'um', 'er', 'hm', 'hmm'
+      'in', 'out', 'what', 'huh', 'eh', 'uh', 'oh', 'ah', 'um', 'er', 'hm', 'hmm',
+      'sorry', 'pardon', 'excuse', 'who', 'where', 'when', 'why', 'how' // Question words/sorry = confusion/wrong number
     ];
     
     // Meaningful single words that should NOT be penalized
@@ -557,12 +558,25 @@ function adjustScoreBasedOnContent(
       'evet', 'hayır', 'tamam', 'merhaba', 'selam'
     ];
     
+    // Check if user text is just "Sorry?" or "What?" (with or without question mark)
+    // These indicate confusion/wrong number and should be treated as meaningless
+    const isQuestionWord = normalizedUserText === 'sorry' || 
+                          normalizedUserText === 'what' ||
+                          normalizedUserText === 'pardon' ||
+                          normalizedUserText === 'excuse' ||
+                          normalizedUserText === 'who' ||
+                          normalizedUserText === 'where' ||
+                          normalizedUserText === 'when' ||
+                          normalizedUserText === 'why' ||
+                          normalizedUserText === 'how';
+    
     const userSingleWord = normalizedUserText;
-    const isMeaninglessSingleWord = meaninglessSingleWords.includes(userSingleWord) &&
-                                    !meaningfulSingleWords.includes(userSingleWord);
+    const isMeaninglessSingleWord = (meaninglessSingleWords.includes(userSingleWord) &&
+                                    !meaningfulSingleWords.includes(userSingleWord)) ||
+                                    isQuestionWord;
     
     if (isMeaninglessSingleWord) {
-      // Meaningless single word like "In" → very low score (2), likely voicemail or wrong number
+      // Meaningless single word like "In" or "Sorry?" → very low score (2), likely voicemail or wrong number
       return 2;
     }
   }
@@ -823,17 +837,27 @@ function adjustScoreBasedOnContent(
                                         lowerUserText.includes('after the tone') ||
                                         lowerUserText.includes('after the beep'));
   
+  // Special case: "Just leave your message after the tone" (even with "No" at the start)
+  // This is a classic voicemail pattern - "No. Just leave your message after the tone."
+  const hasJustLeaveMessageAfterTone = (lowerUserText.includes('just leave') || 
+                                        lowerUserText.includes('leave your message')) &&
+                                       (lowerUserText.includes('after the tone') ||
+                                        lowerUserText.includes('after the beep') ||
+                                        lowerUserText.includes('at the tone'));
+  
   // If it looks like voicemail (phone number + voicemail phrase, or just voicemail phrase with minimal engagement)
   // Increased word count threshold to 25 to catch cases like "3 7 0 8 4 9 3 can't take your call right now"
   // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
   // Also catch "Is on another line. Just leave your message after the tone." pattern
+  // Also catch "Just leave your message after the tone" pattern (even with "No" at start)
   // BUT: Skip if callback request exists (user wants to be called back, not voicemail)
   // BUT: Skip "Available" + "Please stay on the line" if positive engagement exists
   if (!hasCallbackRequest && (isPhoneNumberPattern || 
       (hasVoicemailPhrase && userWordCount <= 25) ||
       isOnlyAvailable ||
       hasAvailableAndStayOnLine ||
-      hasAnotherLineAndLeaveMessage)) {
+      hasAnotherLineAndLeaveMessage ||
+      hasJustLeaveMessageAfterTone)) {
     // This is likely voicemail - return very low score
     // The voicemail detection in display logic will catch this and show "V"
     return 1; // Will be overridden by voicemail detection
@@ -939,13 +963,72 @@ function adjustScoreBasedOnContent(
   // BUT: "can't afford" is definitive rejection, even if they said "thanks" or "yeah"
   const positiveEngagementPatterns = [
     'yeah', 'yes', 'yep', 'yea', 'sure', 'okay', 'interested', 'considering',
-    'i want', 'i need', 'i\'d like', 'i would like', 'tell me', 'explain'
+    'i want', 'i need', 'i\'d like', 'i would like', 'tell me', 'explain',
+    'i said yes', 'said yes', 'i said yeah', 'said yeah', // Explicit confirmations like "Yes. I said yes."
+    'for how much', 'how much', 'what\'s the price', 'whats the price', 'what is the price', // Price questions show interest
+    'how much does it cost', 'how much is it', 'what does it cost', // More price questions
+    'if i\'m interested', 'if im interested', 'if i am interested', // "If I'm interested?" shows engagement
+    'what should i do', 'what do i do', 'what should i do if', // "What should I do if I'm interested?" shows engagement
+    'i\'m interested', 'im interested', 'i am interested', // Direct interest statements
+    'i\'m in town', 'im in town', 'i am in town', // "I'm in town now" shows availability/interest
+    'all good', 'it\'s all good', 'its all good' // "It's all good" shows positive engagement
   ];
   const hasPositiveEngagement = positiveEngagementPatterns.some(p => lowerUserText.includes(p));
   const multipleYeah = (lowerUserText.match(/\b(yeah|yes|yep|yea)\b/g) || []).length >= 2;
+  
+  // Check for explicit "I said yes/yeah" - very strong positive signal
+  const hasExplicitConfirmation = lowerUserText.includes('i said yes') || 
+                                  lowerUserText.includes('said yes') ||
+                                  lowerUserText.includes('i said yeah') ||
+                                  lowerUserText.includes('said yeah');
+  
+  // Check for price questions - shows strong interest
+  const hasPriceQuestion = lowerUserText.includes('how much') ||
+                          lowerUserText.includes('for how much') ||
+                          lowerUserText.includes('what\'s the price') ||
+                          lowerUserText.includes('whats the price') ||
+                          lowerUserText.includes('what is the price') ||
+                          lowerUserText.includes('how much does') ||
+                          lowerUserText.includes('how much is') ||
+                          lowerUserText.includes('what does it cost');
+  
+  // Check for "what should I do" or "if I'm interested" - shows engagement
+  const hasEngagementQuestion = lowerUserText.includes('what should i do') ||
+                                lowerUserText.includes('what do i do') ||
+                                lowerUserText.includes('if i\'m interested') ||
+                                lowerUserText.includes('if im interested') ||
+                                lowerUserText.includes('if i am interested');
+  
   const summaryShowsInterest = lowerSummary.includes('considering') || 
                                 lowerSummary.includes('interested') ||
                                 lowerSummary.includes('open to');
+  
+  // PRIORITY: Strong positive engagement indicators (explicit confirmations, price questions, engagement questions)
+  // These should get high scores (8-9) even without summary confirmation
+  // BUT: Skip if financial rejection (can't afford) - that overrides everything
+  if (!hasFinancialRejection && (hasExplicitConfirmation || hasPriceQuestion || hasEngagementQuestion)) {
+    // "Yes. I said yes." or "For how much?" or "If I'm interested?" → very strong engagement
+    // If multiple strong signals exist, boost score even higher
+    const strongSignalCount = (hasExplicitConfirmation ? 1 : 0) + 
+                             (hasPriceQuestion ? 1 : 0) + 
+                             (hasEngagementQuestion ? 1 : 0);
+    
+    if (hasExplicitConfirmation || (hasPriceQuestion && hasPositiveEngagement)) {
+      // Explicit confirmation OR price question + positive engagement → maintain 8-9
+      // If multiple signals, boost to 9
+      if (strongSignalCount >= 2) {
+        return Math.max(originalScore, 9);
+      }
+      return Math.max(originalScore, 8);
+    } else if (hasPriceQuestion || hasEngagementQuestion) {
+      // Price question or engagement question → maintain 7-8
+      // If both exist, boost to 8
+      if (hasPriceQuestion && hasEngagementQuestion) {
+        return Math.max(originalScore, 8);
+      }
+      return Math.max(originalScore, 7);
+    }
+  }
   
   // PRIORITY: If summary says "considering" AND user said "yeah/yes", 
   // this is STRONG positive engagement - maintain high score (8-10) even if "declined" appears
@@ -964,17 +1047,21 @@ function adjustScoreBasedOnContent(
     }
   }
   
-  // If user showed strong positive engagement (e.g., "Yeah. Yeah."), 
-  // don't penalize for summary saying "declined" - they showed interest first
+  // If user showed strong positive engagement (e.g., "Yeah. Yeah.", "Yes. I said yes.", price questions), 
+  // don't penalize for summary saying "declined" or early "no" - they showed interest later
   // BUT: Skip if financial rejection (can't afford) - that overrides everything
-  if (!hasFinancialRejection && (hasPositiveEngagement || multipleYeah || summaryShowsInterest) && 
+  // This catches cases like: "No. Of course, not." followed by "Yes. I said yes." and "For how much?"
+  if (!hasFinancialRejection && 
+      (hasPositiveEngagement || multipleYeah || summaryShowsInterest || 
+       hasExplicitConfirmation || hasPriceQuestion || hasEngagementQuestion) && 
       (userDeclined || summaryIndicatesNotInterested)) {
-    // User showed interest first, then declined - this is still positive engagement
-    // Don't drop score below 6-7 if they showed strong interest
-    if (multipleYeah || (hasPositiveEngagement && summaryShowsInterest)) {
-      // Multiple "yeah" or strong positive signals → maintain 7-8
+    // User showed interest later (even after early "no") - this is still positive engagement
+    // Don't drop score below 7-8 if they showed strong interest later
+    if (hasExplicitConfirmation || hasPriceQuestion || multipleYeah || 
+        (hasPositiveEngagement && summaryShowsInterest)) {
+      // Explicit confirmation, price question, or strong positive signals → maintain 7-8
       return Math.max(originalScore, 7);
-    } else if (hasPositiveEngagement || summaryShowsInterest) {
+    } else if (hasPositiveEngagement || hasEngagementQuestion || summaryShowsInterest) {
       // Some positive engagement → maintain 6-7
       return Math.max(originalScore, 6);
     }
@@ -1326,17 +1413,38 @@ function getCallSortKey(call: Call): number {
                                      userText.includes('please stay')) &&
                                     !hasPositiveEngagement; // Skip if positive engagement exists
   
+  // Special case: "Is on another line. Just leave your message after the tone."
+  // This is a classic voicemail pattern
+  const hasAnotherLineAndLeaveMessage = (userText.includes('is on another line') || 
+                                        userText.includes('on another line')) &&
+                                       (userText.includes('leave your message') ||
+                                        userText.includes('leave a message') ||
+                                        userText.includes('after the tone') ||
+                                        userText.includes('after the beep'));
+  
+  // Special case: "Just leave your message after the tone" (even with "No" at the start)
+  // This is a classic voicemail pattern - "No. Just leave your message after the tone."
+  const hasJustLeaveMessageAfterTone = (userText.toLowerCase().includes('just leave') || 
+                                        userText.toLowerCase().includes('leave your message')) &&
+                                       (userText.toLowerCase().includes('after the tone') ||
+                                        userText.toLowerCase().includes('after the beep') ||
+                                        userText.toLowerCase().includes('at the tone'));
+  
   const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
   // Key change: even if userResponses >= 2, if user ONLY said voicemail phrases, it's still voicemail
   const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
   
   // Voicemail detection - MUST match display logic
   // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
+  // Also catch "Is on another line. Just leave your message after the tone." pattern
+  // Also catch "Just leave your message after the tone" pattern (even with "No" at start)
   const isVoicemail = (hasVoicemailPhrases && !isRealConversation) || 
                       (userOnlyVoicemailPhrases) ||
                       isPhoneNumberVoicemail ||
                       isOnlyAvailable ||  // Single word "Available" is voicemail greeting
-                      hasAvailableAndStayOnLine;  // "Available" + "Please stay on the line" pattern
+                      hasAvailableAndStayOnLine ||  // "Available" + "Please stay on the line" pattern
+                      hasAnotherLineAndLeaveMessage ||  // "Is on another line. Just leave your message after the tone." pattern
+                      hasJustLeaveMessageAfterTone;  // "Just leave your message after the tone" pattern (even with "No" at start)
   const isSilenceTimeout = endedReason === 'silence-timed-out';
   const isShortCall = (call.duration || 0) < 30;
   const likelyVoicemailByBehavior = isSilenceTimeout && isShortCall && !isRealConversation;
@@ -1653,6 +1761,14 @@ function CallRow({
                                         userText.includes('after the tone') ||
                                         userText.includes('after the beep'));
   
+  // Special case: "Just leave your message after the tone" (even with "No" at the start)
+  // This is a classic voicemail pattern - "No. Just leave your message after the tone."
+  const hasJustLeaveMessageAfterTone = (userText.toLowerCase().includes('just leave') || 
+                                        userText.toLowerCase().includes('leave your message')) &&
+                                       (userText.toLowerCase().includes('after the tone') ||
+                                        userText.toLowerCase().includes('after the beep') ||
+                                        userText.toLowerCase().includes('at the tone'));
+  
   // Determine if this is a voicemail
   // It's voicemail if: voicemail phrases exist AND user didn't say anything meaningful
   const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
@@ -1665,6 +1781,7 @@ function CallRow({
   // This catches cases like "3 7 0 8 4 9 3 can't take your call right now"
   // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
   // Also catch "Is on another line. Just leave your message after the tone." pattern
+  // Also catch "Just leave your message after the tone" pattern (even with "No" at start)
   // Otherwise check other voicemail indicators
   const isVoicemail = isPhoneNumberVoicemail ||  // Highest priority - phone number + voicemail phrase
                       (hasVoicemailInUserText && !userSaidMeaningful) ||  // User said voicemail phrase but nothing meaningful
@@ -1672,7 +1789,8 @@ function CallRow({
                       (userOnlyVoicemailPhrases) ||
                       isOnlyAvailable ||  // Single word "Available" is voicemail greeting
                       hasAvailableAndStayOnLine ||  // "Available" + "Please stay on the line" pattern
-                      hasAnotherLineAndLeaveMessage;  // "Is on another line. Just leave your message after the tone." pattern
+                      hasAnotherLineAndLeaveMessage ||  // "Is on another line. Just leave your message after the tone." pattern
+                      hasJustLeaveMessageAfterTone;  // "Just leave your message after the tone" pattern (even with "No" at start)
   
   // Silence timeout with short call = likely voicemail
   const isSilenceTimeout = endedReason === 'silence-timed-out';
