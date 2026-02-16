@@ -7,13 +7,6 @@ import { cleanCallSummary } from "@/lib/utils";
 // POST - Sync VAPI calls to Supabase
 export async function POST(request: NextRequest) {
   try {
-    if (!isVapiConfigured()) {
-      return NextResponse.json(
-        { error: "VAPI is not configured", code: "VAPI_NOT_CONFIGURED" },
-        { status: 503 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const days = Math.min(parseInt(searchParams.get("days") || "14"), 14);
     const userId = searchParams.get("userId");
@@ -25,15 +18,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if user has a per-tenant VAPI API key
+    const supabaseForProfile = createAdminClient();
+    const { data: userProfile } = await supabaseForProfile
+      .from("profiles")
+      .select("vapi_private_key, vapi_assistant_id")
+      .eq("id", userId)
+      .single() as { data: { vapi_private_key?: string | null; vapi_assistant_id?: string | null } | null };
+    
+    const tenantApiKey = userProfile?.vapi_private_key?.trim() || undefined;
+
     // Calculate date range (VAPI only allows 14 days)
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Fetch calls from VAPI
+    // Fetch calls from VAPI using tenant-specific key if available
     const vapiCalls = await getVapiCalls({
       limit: 100,
       createdAtGe: startDate.toISOString(),
-    });
+      assistantId: userProfile?.vapi_assistant_id || undefined,
+    }, tenantApiKey);
 
     if (vapiCalls.length === 0) {
       return NextResponse.json({

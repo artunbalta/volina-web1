@@ -15,11 +15,13 @@ function getVapiApiKey(): string {
 }
 
 // Generic fetch helper with authentication
+// Accepts optional overrideApiKey to support per-tenant VAPI accounts
 async function vapiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  overrideApiKey?: string
 ): Promise<T> {
-  const apiKey = getVapiApiKey();
+  const apiKey = overrideApiKey || getVapiApiKey();
   
   const response = await fetch(`${VAPI_API_BASE_URL}${endpoint}`, {
     ...options,
@@ -141,7 +143,8 @@ export interface VapiListCallsResponse {
  * Fetch a list of calls from VAPI
  */
 export async function getVapiCalls(
-  params: VapiListCallsParams = {}
+  params: VapiListCallsParams = {},
+  overrideApiKey?: string
 ): Promise<VapiCall[]> {
   const queryParams = new URLSearchParams();
   
@@ -156,7 +159,7 @@ export async function getVapiCalls(
   const queryString = queryParams.toString();
   const endpoint = `/call${queryString ? `?${queryString}` : ''}`;
   
-  const response = await vapiRequest<VapiCall[] | VapiListCallsResponse>(endpoint);
+  const response = await vapiRequest<VapiCall[] | VapiListCallsResponse>(endpoint, {}, overrideApiKey);
   
   // Handle both array response and paginated response
   if (Array.isArray(response)) {

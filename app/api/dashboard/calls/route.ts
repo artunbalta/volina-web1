@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
     
     // Filter by assistant_id if user has one set
-    // Include: user's assistant OR calls without assistant_id (legacy calls)
+    // Include calls that match the assistantId OR have no assistantId (legacy calls)
     let filteredCalls = allCalls || [];
     if (userAssistantId && filteredCalls.length > 0) {
       filteredCalls = filteredCalls.filter(call => {
@@ -66,8 +66,8 @@ export async function GET(request: NextRequest) {
         const metadataAssistantId = call.metadata?.assistantId as string | undefined;
         const hasAssistantId = callAssistantId || metadataAssistantId;
         
-        // Include if: matches user's assistant OR has no assistantId (legacy/old calls)
-        if (!hasAssistantId) return true; // Include legacy calls
+        // Include if: matches target assistant OR has no assistantId (older calls)
+        if (!hasAssistantId) return true; // Include legacy calls without assistantId
         return callAssistantId === userAssistantId || metadataAssistantId === userAssistantId;
       });
     }
@@ -82,51 +82,30 @@ export async function GET(request: NextRequest) {
     });
     
     // Filter out calls from wrong assistants (e.g., GOP Dentel)
-    // Exclude calls where transcript contains indicators of wrong assistant
     filteredCalls = filteredCalls.filter(call => {
       const transcript = String(call.transcript || '').toLowerCase();
       const summary = String(call.summary || '').toLowerCase();
       const textToCheck = `${transcript} ${summary}`;
       
-      // Exclude calls from GOP Dentel assistant
       const wrongAssistantPatterns = [
         'gop dentel',
         'özel gop dentel',
         'gop dentel diş polikliniği',
-        'eda ben', // GOP Dentel assistant name
-        'turkcell sekreter servisi' // This appears in the transcript
+        'eda ben',
+        'turkcell sekreter servisi'
       ];
       
-      // If transcript contains any wrong assistant pattern, exclude this call
       const isWrongAssistant = wrongAssistantPatterns.some(pattern => 
         textToCheck.includes(pattern.toLowerCase())
       );
       
       return !isWrongAssistant;
     });
-    
-    // Helper to check if string looks like a phone number
-    const looksLikePhone = (str: string | null | undefined): boolean => {
-      if (!str) return false;
-      const cleaned = str.replace(/[\s\-\(\)]/g, '');
-      return cleaned.startsWith('+') || /^\d{7,}$/.test(cleaned);
-    };
-    
-    // Filter out Unknown Callers:
-    // 1. No caller_name at all
-    // 2. caller_name is a phone number and no caller_phone (would display as "Unknown Caller")
-    filteredCalls = filteredCalls.filter(call => {
-      const hasName = call.caller_name !== null && call.caller_name !== undefined && call.caller_name !== '';
-      if (!hasName) return false;
-      
-      // If name looks like a phone number and there's no actual phone, it's effectively unknown
-      const callerPhone = (call as Record<string, unknown>).caller_phone as string | null | undefined;
-      if (looksLikePhone(call.caller_name) && !callerPhone) {
-        return false; // This would show as "Unknown Caller" in UI
-      }
-      
-      return true;
-    });
+
+    // Show ALL calls - don't filter by caller_name
+    // Calls without caller_name will display phone number or "Unknown" in UI
+    // Previously we filtered out calls without caller_name, but this hid
+    // international calls that didn't match any lead in the database
 
     if (error) {
       console.error("Error fetching calls:", error);

@@ -286,6 +286,21 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     }
   }
 
+  // 5. Fallback: find user by vapi_assistant_id (for per-tenant VAPI accounts)
+  const callAssistantId = call.assistantId || call.assistant?.id;
+  if (!userId && callAssistantId) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("vapi_assistant_id", callAssistantId)
+      .single() as { data: { id: string } | null };
+    
+    if (profile) {
+      userId = profile.id;
+      console.log("Using user_id from vapi_assistant_id match:", userId);
+    }
+  }
+
   if (!userId) {
     console.error("=== USER ID NOT FOUND ===");
     console.error("Call ID:", call.id);
