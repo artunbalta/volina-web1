@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { parseVapiEvaluation } from "@/lib/vapi-evaluation-parser";
+import { parseVapiEvaluation, parseVapiStructuredData } from "@/lib/vapi-evaluation-parser";
 import { cleanCallSummary } from "@/lib/utils";
 
 // Vapi webhook types - supporting multiple message types
@@ -318,14 +318,37 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     );
   }
 
-  // Parse VAPI's success evaluation to get score, tags, and sentiment
-  const parsedEvaluation = parseVapiEvaluation(
-    analysis?.successEvaluation,
-    call.endedReason
-  );
+  // Parse VAPI's structured output data (new format) or fallback to old format
+  // Priority: structuredData > successEvaluation string
+  let parsedEvaluation;
+  let callSummaryFromStructured: string | null = null;
+  
+  if (analysis?.structuredData && typeof analysis.structuredData === 'object') {
+    // New format: structured outputs
+    const structuredResult = parseVapiStructuredData(
+      analysis.structuredData as Record<string, unknown>,
+      call.endedReason
+    );
+    parsedEvaluation = structuredResult.evaluation;
+    callSummaryFromStructured = structuredResult.callSummary;
+    
+    console.log("Using structured output data:", {
+      hasEvaluation: !!parsedEvaluation,
+      hasCallSummary: !!callSummaryFromStructured,
+      structuredDataKeys: Object.keys(analysis.structuredData),
+    });
+  } else {
+    // Old format: successEvaluation string (backward compatibility)
+    parsedEvaluation = parseVapiEvaluation(
+      analysis?.successEvaluation,
+      call.endedReason
+    );
+    console.log("Using legacy successEvaluation string");
+  }
   
   const sentiment = parsedEvaluation.sentiment;
   const evaluationScore = parsedEvaluation.score;
+  // Use structured call summary if available, otherwise fallback to old format
   const evaluationSummary = parsedEvaluation.summary || analysis?.successEvaluation || null;
   const tags = parsedEvaluation.tags;
 
@@ -334,6 +357,7 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     tags,
     sentiment,
     summary: evaluationSummary?.substring(0, 100),
+    callSummaryFromStructured: callSummaryFromStructured?.substring(0, 100),
   });
 
   // Determine call type
@@ -409,8 +433,8 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
 
   // Insert call record into calls table
   if (userId) {
-    // Clean the summary from markdown formatting
-    const rawSummary = analysis?.summary || summary || null;
+    // Priority for summary: structured callSummary > analysis.summary > summary parameter
+    const rawSummary = callSummaryFromStructured || analysis?.summary || summary || null;
     const cleanedSummary = cleanCallSummary(rawSummary);
 
     // Get assistant_id from call

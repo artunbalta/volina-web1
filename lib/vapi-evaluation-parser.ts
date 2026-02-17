@@ -63,7 +63,47 @@ const VALID_TAGS = [
 ] as const;
 
 /**
+ * Parse VAPI's structured output data
+ * Handles both old format (successEvaluation string) and new format (structuredData object)
+ */
+export function parseVapiStructuredData(
+  structuredData: Record<string, unknown> | null | undefined,
+  endedReason?: string
+): { evaluation: ParsedEvaluation; callSummary: string | null } {
+  // Priority 1: Check endedReason for failed connections (always override)
+  if (endedReason) {
+    const failedResult = checkFailedConnection(endedReason);
+    if (failedResult) {
+      return {
+        evaluation: failedResult,
+        callSummary: null,
+      };
+    }
+  }
+
+  // Priority 2: Parse structured output data (new format)
+  if (structuredData) {
+    const evaluation = parseStructuredEvaluation(structuredData, endedReason);
+    const callSummary = parseStructuredCallSummary(structuredData);
+    
+    if (evaluation || callSummary) {
+      return {
+        evaluation: evaluation || createEmptyResult(),
+        callSummary,
+      };
+    }
+  }
+
+  // Priority 3: Fallback to empty result
+  return {
+    evaluation: endedReason ? inferFromEndedReason(endedReason) : createEmptyResult(),
+    callSummary: null,
+  };
+}
+
+/**
  * Parse VAPI's successEvaluation - expects JSON from the new prompt
+ * This is the old format - kept for backward compatibility
  */
 export function parseVapiEvaluation(
   successEvaluation: string | null | undefined,
@@ -97,6 +137,140 @@ export function parseVapiEvaluation(
     summary: cleanText(successEvaluation),
     sentiment: 'neutral',
   };
+}
+
+/**
+ * Parse structured evaluation from VAPI structured output
+ * Expected structure: { score, sentiment, outcome, tags, objections, nextAction }
+ */
+function parseStructuredEvaluation(
+  structuredData: Record<string, unknown>,
+  endedReason?: string
+): ParsedEvaluation | null {
+  try {
+    // Priority: Check endedReason for voicemail/failed connections FIRST
+    // This overrides any score from structured output
+    if (endedReason) {
+      const failedResult = checkFailedConnection(endedReason);
+      if (failedResult) {
+        return failedResult;
+      }
+    }
+    
+    // Try to get successEvaluation structured output
+    // VAPI structured outputs can be named differently, try common names
+    let evaluationData: Record<string, unknown>;
+    
+    if (structuredData.successEvaluation && typeof structuredData.successEvaluation === 'object') {
+      evaluationData = structuredData.successEvaluation as Record<string, unknown>;
+    } else if (structuredData.evaluation && typeof structuredData.evaluation === 'object') {
+      evaluationData = structuredData.evaluation as Record<string, unknown>;
+    } else {
+      // Use the whole structuredData if it contains evaluation fields directly
+      evaluationData = structuredData;
+    }
+    
+    // Extract outcome first (will be used multiple times)
+    const evaluationOutcome = evaluationData.outcome;
+    
+    // Check if outcome is voicemail - override score if so
+    if (typeof evaluationOutcome === 'string' && evaluationOutcome.toLowerCase() === 'voicemail') {
+      return {
+        score: null, // V - Voicemail, will be shown as "V" not a number
+        tags: ['voicemail'],
+        summary: 'Sesli mesaja düştü',
+        sentiment: 'negative',
+        outcome: 'voicemail',
+      };
+    }
+
+    // Validate and extract score (1-10 scale)
+    let score: number | null = null;
+    const scoreValue = evaluationData.score;
+    if (typeof scoreValue === 'number' && scoreValue >= 1 && scoreValue <= 10) {
+      score = Math.round(scoreValue);
+    } else if (typeof scoreValue === 'number' && scoreValue >= 1 && scoreValue <= 5) {
+      // Convert old 1-5 scale to 1-10 scale for backward compatibility
+      score = Math.round(scoreValue * 2);
+    }
+
+    // Extract and validate tags
+    let tags: string[] = [];
+    const tagsValue = evaluationData.tags;
+    if (Array.isArray(tagsValue)) {
+      tags = tagsValue.filter((t: unknown) => 
+        typeof t === 'string' && VALID_TAGS.includes(t as typeof VALID_TAGS[number])
+      );
+    }
+
+    // Add outcome as a tag if valid
+    if (typeof evaluationOutcome === 'string' && VALID_OUTCOMES.includes(evaluationOutcome as typeof VALID_OUTCOMES[number])) {
+      if (!tags.includes(evaluationOutcome)) {
+        tags.unshift(evaluationOutcome);
+      }
+    }
+
+    // Determine sentiment
+    let sentiment: 'positive' | 'neutral' | 'negative' = 'neutral';
+    const sentimentValue = evaluationData.sentiment;
+    if (sentimentValue === 'positive' || sentimentValue === 'negative' || sentimentValue === 'neutral') {
+      sentiment = sentimentValue;
+    } else if (score !== null) {
+      // Infer from score if not provided (1-10 scale)
+      sentiment = score >= 7 ? 'positive' : score <= 4 ? 'negative' : 'neutral';
+    }
+
+    // Clean summary (if provided in evaluation)
+    const summary = typeof evaluationData.summary === 'string' 
+      ? cleanText(evaluationData.summary) 
+      : null;
+
+    // Extract other fields
+    const objections = Array.isArray(evaluationData.objections) 
+      ? evaluationData.objections as string[] 
+      : undefined;
+    const nextAction = typeof evaluationData.nextAction === 'string' 
+      ? evaluationData.nextAction 
+      : undefined;
+
+    return {
+      score,
+      tags,
+      summary,
+      sentiment,
+      outcome: typeof evaluationOutcome === 'string' ? evaluationOutcome : undefined,
+      objections,
+      nextAction,
+    };
+  } catch (error) {
+    console.error('Error parsing structured evaluation:', error);
+    return null;
+  }
+}
+
+/**
+ * Parse structured call summary from VAPI structured output
+ * Expected structure: { callSummary } or { summary }
+ */
+function parseStructuredCallSummary(
+  structuredData: Record<string, unknown>
+): string | null {
+  try {
+    // Try different possible field names for call summary
+    const summaryValue = 
+      structuredData.callSummary ||
+      structuredData.summary ||
+      structuredData.call_summary;
+
+    if (typeof summaryValue === 'string' && summaryValue.trim()) {
+      return cleanText(summaryValue);
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error parsing structured call summary:', error);
+    return null;
+  }
 }
 
 /**

@@ -782,13 +782,15 @@ function adjustScoreBasedOnContent(
   // Voicemail indicators: automated messages, "can't take your call", "leave a message", phone numbers only
   const voicemailIndicators = [
     'can\'t take your call', 'can\'t take call', 'can\'t take the call',
-    'please leave a message', 'leave a message', 'leave your message', 'after the beep',
-    'after the tone', 'at the tone', // Voicemail tone indicators
+    'please leave a message', 'leave a message', 'leave your message', 
+    'leave me a message', 'leave me a brief message', 'leave me', // "You can leave me a brief message"
+    'after the beep', 'after the tone', 'at the tone', // Voicemail tone indicators
     'unavailable to take your call', 'not available to take your call',
     'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
     'please stay on the line', 'stay on the line', // Voicemail system phrases (but skip if callback request)
     'is on another line', 'on another line', // "Is on another line. Just leave your message after the tone."
-    'available' // Single word "Available" is often voicemail greeting
+    'available', // Single word "Available" is often voicemail greeting
+    'get back to you', 'i\'ll get back to you' // "I'll get back to you" often indicates voicemail
   ];
   
   // Check if user text contains phone number + voicemail phrase (typical voicemail pattern)
@@ -1216,6 +1218,29 @@ function adjustScoreBasedOnContent(
     return Math.min(originalScore, 3);
   }
   
+  // === RULE 7A: Language mismatch - customer wants different language ===
+  // If customer explicitly asks for a different language, they're not interested in current conversation
+  const languageMismatchPatterns = [
+    'someone speak spanish', 'speak spanish', 'spanish', 'español',
+    'someone speak turkish', 'speak turkish', 'türkçe', 'turkish',
+    'someone speak', 'speak another language', 'different language',
+    'i don\'t speak', 'i dont speak', 'no hablo', 'no entiendo',
+    'farklı dil', 'başka dil', 'türkçe konuş', 'spanish speaker'
+  ];
+  const hasLanguageMismatch = languageMismatchPatterns.some(p => 
+    lowerUserText.includes(p) || lowerSummary.includes(p)
+  );
+  
+  // If language mismatch AND minimal engagement (very few words), this is not a successful call
+  if (hasLanguageMismatch && userWordCount <= 10) {
+    return Math.min(originalScore, 3);
+  }
+  
+  // If language mismatch even with more words, still cap at 4 (they're not interested)
+  if (hasLanguageMismatch) {
+    return Math.min(originalScore, 4);
+  }
+  
   // === RULE 8: Check for wrong number or confusion ===
   const wrongNumberPatterns = [
     'wrong number', 'yanlış numara', 'wrong person', 'yanlış kişi',
@@ -1243,6 +1268,32 @@ function adjustScoreBasedOnContent(
   // If call was longer but user said very little, it might be AI doing most talking
   if (callDuration > 30 && userWordCount <= 15 && originalScore > 6) {
     return Math.min(originalScore, 5);
+  }
+  
+  // === RULE 10A: Very minimal responses (just "okay", "hello?", "yes" without context) ===
+  // If user only said very short, passive responses like "okay", "hello?", "yes" without any real engagement
+  const minimalPassiveResponses = [
+    'okay', 'ok', 'alright', 'fine', 'sure', 'yeah', 'yes', 'yep',
+    'hello', 'hi', 'hey', 'hello?', 'hi?', 'hey?',
+    'tamam', 'olur', 'evet', 'hayır', 'merhaba'
+  ];
+  
+  // Check if user text is ONLY these minimal responses (no real conversation)
+  const userWordsArray = userText.trim().split(/\s+/).filter(w => w.length > 0);
+  const allMinimalResponses = userWordsArray.length > 0 && 
+    userWordsArray.every(word => {
+      const cleanWord = word.toLowerCase().replace(/[.,!?;:'"]/g, '');
+      return minimalPassiveResponses.includes(cleanWord) || cleanWord.length <= 2;
+    });
+  
+  // If user only said minimal passive responses (like "Hello? Okay.") and word count is very low
+  if (allMinimalResponses && userWordCount <= 8 && originalScore > 4) {
+    return Math.min(originalScore, 3);
+  }
+  
+  // If user said very few words (5 or less) and they're all minimal responses, cap at 3
+  if (userWordCount <= 5 && allMinimalResponses && originalScore > 3) {
+    return Math.min(originalScore, 3);
   }
   
   return originalScore;
