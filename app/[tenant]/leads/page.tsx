@@ -76,6 +76,7 @@ const leadsTexts = {
   new: { en: "New", tr: "Yeni" },
   contacted: { en: "Contacted", tr: "İletişime Geçildi" },
   selectAll: { en: "Select All", tr: "Tümünü Seç" },
+  selectPage: { en: "Select Page", tr: "Sayfayı Seç" },
   deselect: { en: "Deselect", tr: "Seçimi Kaldır" },
   statusBulk: { en: "Status", tr: "Durum" },
   call: { en: "Call", tr: "Ara" },
@@ -705,6 +706,12 @@ export default function LeadsPage() {
     }
   };
 
+  // Select only leads on the current page (up to 100 or fewer)
+  const selectCurrentPage = () => {
+    const pageIds = leads.map((lead) => lead.id);
+    setSelectedLeadIds(new Set(pageIds));
+  };
+
   // Toggle single lead selection
   const toggleLeadSelection = (leadId: string) => {
     const newSelected = new Set(selectedLeadIds);
@@ -1293,25 +1300,36 @@ export default function LeadsPage() {
           {/* Selection Controls */}
           <div className="flex items-center gap-2">
             {filteredLeads.length > 0 && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={toggleSelectAll}
-                className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
-                disabled={isLoading || !user?.id}
-              >
-                {selectedLeadIds.size > 0 && selectedLeadIds.size >= totalLeads && totalLeads > 0 ? (
-                  <>
-                    <X className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{t("deselect")} ({totalLeads})</span>
-                  </>
-                ) : (
-                  <>
-                    <Users className="w-4 h-4 sm:mr-1" />
-                    <span className="hidden sm:inline">{t("selectAll")} ({totalLeads})</span>
-                  </>
-                )}
-              </Button>
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={toggleSelectAll}
+                  className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
+                  disabled={isLoading || !user?.id}
+                >
+                  {selectedLeadIds.size > 0 && selectedLeadIds.size >= totalLeads && totalLeads > 0 ? (
+                    <>
+                      <X className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{t("deselect")} ({totalLeads})</span>
+                    </>
+                  ) : (
+                    <>
+                      <Users className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{t("selectAll")} ({totalLeads})</span>
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={selectCurrentPage}
+                  className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
+                  disabled={isLoading || !user?.id}
+                >
+                  {t("selectPage")} ({leads.length})
+                </Button>
+              </>
             )}
             {selectedLeadIds.size > 0 && (
               <>
