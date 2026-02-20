@@ -1652,10 +1652,12 @@ const callLabels = {
 function CallRow({ 
   call, 
   onPlay,
+  onUpdate,
   lang
 }: { 
   call: Call;
   onPlay: (call: Call) => void;
+  onUpdate?: () => void;
   lang?: "en" | "tr";
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -2462,6 +2464,7 @@ export default function CallsPage() {
                   setSelectedCall(call);
                   setIsPlayerOpen(true);
                 }}
+                onUpdate={loadCalls}
               />
             ))}
                           </div>

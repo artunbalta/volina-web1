@@ -46,21 +46,30 @@ async function evaluateCallWithStructuredOutput(
   // Use the same prompt as VAPI structured output description
   const systemPrompt = `Analyze this call and evaluate its success. You must fill ALL required fields in the structured output.
 
-CRITICAL RULES FOR SCORING (1-10 scale):
+CRITICAL RULES FOR SCORING (1-10 scale) - APPLY IN ORDER:
+
+PRIORITY 1 - FAILED CONNECTIONS (Score 1-2, outcome "voicemail", "no_answer", or "busy"):
 1. If caller NEVER responded or only AI spoke → score 1, outcome "no_answer"
 2. If voicemail system answered OR customer said "leave me a message", "you can leave me a brief message", "leave a message", "I'll get back to you" → score 1, outcome "voicemail" (CRITICAL: "leave me a message" = voicemail, NOT a conversation)
-3. If customer said "can't take your call", "can't talk", "unavailable", "busy right now", "in a meeting" → score 1-2, outcome "unavailable" (this is NOT a successful call, user is not available to engage)
-4. If call lasted <15 seconds with no real conversation → score 1 or 2
+3. If customer said "can't take your call", "can't talk", "unavailable", "busy right now", "in a meeting" → score 1-2, outcome "busy" (this is NOT a successful call, user is not available to engage)
+4. If call lasted <15 seconds with no real conversation → score 1 or 2, outcome "no_answer" or "not_interested"
+
+PRIORITY 2 - IMMEDIATE REJECTIONS (Score 2-4):
 5. If customer hung up immediately without engaging → score 2, outcome "not_interested"
 6. If customer said "not interested", "no thanks", "don't want" AND maintained rejection throughout → MAX score 4, outcome "not_interested"
-7. If customer barely spoke (only greetings like "hello", "hi") → MAX score 3
-8. If customer said multiple "no" WITHOUT any positive engagement later → MAX score 5
-9. If call duration <20 seconds and customer showed no interest → MAX score 4
-10. If customer asked for different language (e.g., "someone speak Spanish", "speak Turkish") → MAX score 3-4 (language mismatch = not interested in current conversation)
-11. If customer only gave minimal passive responses (just "okay", "hello?", "yes" without context) → MAX score 3 (no real engagement)
-12. IMPORTANT: If customer initially said "no" but THEN showed positive engagement (e.g., "I'm gonna hear", "tell me more", "yeah", "open to", "considering", "finding a solution") → score 7-8 (this shows they changed their mind or are open to learning more)
-13. ONLY give score 7-8 if customer showed GENUINE interest (asked questions, discussed details, engaged in conversation, OR changed their mind after initial hesitation)
-14. ONLY give score 9-10 if appointment was set, sale was made, or strong commitment was given
+7. If customer asked for different language (e.g., "someone speak Spanish", "speak Turkish") → MAX score 3-4, outcome "not_interested" (language mismatch = not interested in current conversation)
+
+PRIORITY 3 - MINIMAL ENGAGEMENT (Score 3-5):
+8. If customer barely spoke (only greetings like "hello", "hi", "yes", "okay" without context) → MAX score 3, outcome "not_interested"
+9. If customer only gave minimal passive responses (just "okay", "hello?", "yes" without context, no questions asked) → MAX score 3, outcome "needs_info" or "not_interested"
+10. If customer said multiple "no" WITHOUT any positive engagement later → MAX score 5, outcome "not_interested"
+11. If call duration <20 seconds and customer showed no interest → MAX score 4, outcome "not_interested"
+
+PRIORITY 4 - POSITIVE ENGAGEMENT (Score 7-10):
+12. IMPORTANT: If customer initially said "no" but THEN showed positive engagement (e.g., "I'm gonna hear", "tell me more", "yeah", "open to", "considering", "finding a solution", "let me think about it") → score 7-8, outcome "interested" (this shows they changed their mind or are open to learning more)
+13. ONLY give score 7-8 if customer showed GENUINE interest: asked questions, discussed details, engaged in conversation, OR changed their mind after initial hesitation
+14. ONLY give score 9-10 if appointment was set, sale was made, or strong commitment was given → outcome "appointment_set" or "interested"
+15. If customer requested callback or follow-up → score 8-9, outcome "callback_requested"
 
 Scoring (1-10):
 - 1: No connection (voicemail, no answer, busy, only AI spoke, customer never responded, call <15 seconds)
@@ -74,28 +83,30 @@ Scoring (1-10):
 - 9: Success (appointment set, callback scheduled, strong commitment, hot lead)
 - 10: Great success (sale made, appointment confirmed, very strong commitment, VIP lead)
 
-IMPORTANT:
+CRITICAL SCORING GUIDELINES:
 - Be STRICT with high scores (7-10). Only give them if there's clear evidence of genuine interest or success.
-- If customer said "can't take your call", "unavailable", "busy", "in a meeting" → score 1-2 (user is not available, this is NOT a successful engagement)
-- If customer said "not interested" or similar AND maintained rejection throughout, NEVER give score > 4
-- BUT: If customer initially said "no" but THEN showed positive engagement (e.g., "I'm gonna hear", "tell me more", "yeah", "open to", "considering"), this is POSITIVE - give score 7-8
+- ALWAYS check call duration FIRST: very short calls (<20 seconds) cannot be highly successful (MAX score 4)
+- ALWAYS check user engagement: if user said very few words (<10 words), it cannot be a great call (MAX score 5)
+- If customer said "can't take your call", "unavailable", "busy", "in a meeting" → score 1-2, outcome "busy" (user is not available, this is NOT a successful engagement)
+- If customer said "not interested" or similar AND maintained rejection throughout, NEVER give score > 4, outcome "not_interested"
+- BUT: If customer initially said "no" but THEN showed positive engagement (e.g., "I'm gonna hear", "tell me more", "yeah", "open to", "considering", "let me think"), this is POSITIVE - give score 7-8, outcome "interested"
 - If call was very short (<20 seconds) and customer didn't engage, NEVER give score > 4
-- If customer barely spoke (only greetings), NEVER give score > 3
-- Consider call duration: very short calls (<20 seconds) cannot be highly successful
-- Consider user engagement: if user said very few words, it cannot be a great call
-- Pay attention to the FULL conversation: initial "no" followed by positive engagement (like "I'm gonna hear", "tell me more", "open to") indicates genuine interest - score 7-8
+- If customer barely spoke (only greetings like "hello", "hi"), NEVER give score > 3
+- Pay attention to the FULL conversation: initial "no" followed by positive engagement indicates genuine interest - score 7-8
 - NEVER give high scores (7-10) if user explicitly said they can't take the call or are unavailable - this is a failed connection, not a success
+- Count user's actual words: if user said less than 10 meaningful words, MAX score is 5
+- If user only responded with single words ("yes", "no", "okay", "hello") without context, MAX score is 3
 
-OUTCOME VALUES (choose the most appropriate):
-- "appointment_set": Appointment or meeting was scheduled
-- "callback_requested": Customer asked to be called back later
-- "interested": Customer showed genuine interest but no commitment yet
-- "not_interested": Customer explicitly declined or showed no interest
-- "needs_info": Customer needs more information before deciding
-- "no_answer": Customer never answered the call
-- "voicemail": Call went to voicemail
-- "wrong_number": Wrong number or person reached
-- "busy": Line was busy or customer was unavailable
+OUTCOME VALUES (choose the most appropriate - MUST match the score):
+- "appointment_set": Appointment or meeting was scheduled (score 9-10)
+- "callback_requested": Customer asked to be called back later (score 8-9)
+- "interested": Customer showed genuine interest but no commitment yet (score 7-8)
+- "not_interested": Customer explicitly declined or showed no interest (score 2-4)
+- "needs_info": Customer needs more information before deciding (score 5-6)
+- "no_answer": Customer never answered the call (score 1)
+- "voicemail": Call went to voicemail (score 1)
+- "wrong_number": Wrong number or person reached (score 2)
+- "busy": Line was busy or customer was unavailable (score 1-2)
 
 SENTIMENT VALUES:
 - "positive": Customer was positive, engaged, interested
