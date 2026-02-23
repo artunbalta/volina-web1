@@ -3,10 +3,17 @@ import { createAdminClient } from "@/lib/supabase";
 import { filterVisibleDashboardCalls, getUserAssistantId } from "@/lib/dashboard/visible-calls";
 import { computeCallScore } from "@/lib/dashboard/call-scoring";
 
+/** Max leads considered for eval filter/sort (candidate set and in-memory sort). Raises cap so older leads with 6+ calls are included. */
+const EVAL_LEADS_LIMIT = 50000;
+
+/** Canonical form: digits only, strip international 00 prefix, then + prefix. */
 function normalizePhone(phone: string | null | undefined): string {
   if (!phone || typeof phone !== "string") return "";
-  const digits = phone.replace(/\D/g, "");
-  return digits ? `+${digits}` : "";
+  let digits = phone.replace(/\D/g, "");
+  if (!digits) return "";
+  // International format 00<country>... → treat as +<country>...
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  return `+${digits}`;
 }
 
 function addPhoneKeysForEval(map: Map<string, string>, norm: string, leadId: string) {
@@ -22,6 +29,20 @@ function addPhoneKeysForEval(map: Map<string, string>, norm: string, leadId: str
     map.set("+1" + digits, leadId);
     map.set("1" + digits, leadId);
   }
+}
+
+/** Resolve lead id from caller_phone using all common variants (norm, digits, 00-stripped, US 10/11-digit). */
+function resolveLeadIdByPhone(phoneToLeadId: Map<string, string>, callerPhone: string | null | undefined): string | undefined {
+  if (!callerPhone || typeof callerPhone !== "string") return undefined;
+  const norm = normalizePhone(callerPhone);
+  if (!norm) return undefined;
+  const digits = norm.replace(/\D/g, "");
+  return (
+    phoneToLeadId.get(norm) ??
+    phoneToLeadId.get(digits) ??
+    (digits.length === 11 && digits.startsWith("1") ? phoneToLeadId.get("+" + digits.slice(1)) ?? phoneToLeadId.get(digits.slice(1)) : undefined) ??
+    (digits.length === 10 ? phoneToLeadId.get("+1" + digits) ?? phoneToLeadId.get("1" + digits) : undefined)
+  );
 }
 
 interface LeadRecord {
@@ -150,7 +171,7 @@ export async function GET(request: NextRequest) {
       if (status && status !== "all") candidateQuery = candidateQuery.eq("status", status);
       if (priority && priority !== "all") candidateQuery = candidateQuery.eq("priority", priority);
       if (search) candidateQuery = candidateQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
-      candidateQuery = candidateQuery.order("created_at", { ascending: false }).limit(10000);
+      candidateQuery = candidateQuery.order("created_at", { ascending: false }).limit(EVAL_LEADS_LIMIT);
       const { data: candidateLeads } = await candidateQuery as { data: { id: string; phone: string | null }[] | null };
       const candidateIdSet = new Set((candidateLeads || []).map((l) => l.id));
       const phoneToLeadId = new Map<string, string>();
@@ -174,14 +195,7 @@ export async function GET(request: NextRequest) {
       const byLead: Record<string, ("V" | "F" | number)[]> = {};
       for (const call of visibleCalls) {
         const meta = (call.metadata || {}) as Record<string, unknown>;
-        let lid: string | undefined;
-        if (call.caller_phone) {
-          const normCall = normalizePhone(call.caller_phone);
-          const digits = normCall.replace(/\D/g, "");
-          lid = phoneToLeadId.get(normCall) ?? phoneToLeadId.get(digits)
-            ?? (digits.length === 11 && digits.startsWith("1") ? phoneToLeadId.get("+" + digits.slice(1)) ?? phoneToLeadId.get(digits.slice(1)) : undefined)
-            ?? (digits.length === 10 ? phoneToLeadId.get("+1" + digits) ?? phoneToLeadId.get("1" + digits) : undefined);
-        }
+        let lid: string | undefined = resolveLeadIdByPhone(phoneToLeadId, call.caller_phone);
         if (!lid && meta.lead_id && candidateIdSet.has(meta.lead_id as string)) lid = meta.lead_id as string;
         if (!lid) continue;
         if (!byLead[lid]) byLead[lid] = [];
@@ -234,7 +248,7 @@ export async function GET(request: NextRequest) {
       if (priority && priority !== "all") sortLeadsQuery = sortLeadsQuery.eq("priority", priority);
       if (search) sortLeadsQuery = sortLeadsQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
       if (matchingIds != null && matchingIds.length > 0) sortLeadsQuery = sortLeadsQuery.in("id", matchingIds);
-      sortLeadsQuery = sortLeadsQuery.order("created_at", { ascending: false }).limit(10000);
+      sortLeadsQuery = sortLeadsQuery.order("created_at", { ascending: false }).limit(EVAL_LEADS_LIMIT);
       const { data: allLeadsForSort } = await sortLeadsQuery as { data: { id: string; phone: string | null }[] | null };
       const phoneToLidSort = new Map<string, string>();
       for (const l of allLeadsForSort || []) {
@@ -256,14 +270,7 @@ export async function GET(request: NextRequest) {
       const byLead: Record<string, ("V" | "F" | number)[]> = {};
       for (const call of visibleCallsForSort) {
         const meta = (call.metadata || {}) as Record<string, unknown>;
-        let lid: string | undefined;
-        if (call.caller_phone) {
-          const n = normalizePhone(call.caller_phone);
-          const digits = n.replace(/\D/g, "");
-          lid = phoneToLidSort.get(n) ?? phoneToLidSort.get(digits)
-            ?? (digits.length === 11 && digits.startsWith("1") ? phoneToLidSort.get("+" + digits.slice(1)) ?? phoneToLidSort.get(digits.slice(1)) : undefined)
-            ?? (digits.length === 10 ? phoneToLidSort.get("+1" + digits) ?? phoneToLidSort.get("1" + digits) : undefined);
-        }
+        let lid: string | undefined = resolveLeadIdByPhone(phoneToLidSort, call.caller_phone);
         if (!lid && meta.lead_id) lid = meta.lead_id as string;
         if (!lid) continue;
         if (!byLead[lid]) byLead[lid] = [];
@@ -347,8 +354,8 @@ export async function GET(request: NextRequest) {
     };
 
     if (needsMemorySort) {
-      // For priority/status/eval_score sorting, fetch ALL matching leads (up to 10k; Supabase default is 1000), sort in memory, then paginate
-      const { data: allLeads, count, error } = await buildSortedQuery(baseQuery).limit(10000) as { 
+      // For priority/status/eval_score sorting, fetch matching leads (up to EVAL_LEADS_LIMIT), sort in memory, then paginate
+      const { data: allLeads, count, error } = await buildSortedQuery(baseQuery).limit(EVAL_LEADS_LIMIT) as { 
         data: LeadRecord[] | null; 
         count: number | null; 
         error: { message: string } | null 

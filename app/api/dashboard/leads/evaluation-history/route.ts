@@ -3,11 +3,13 @@ import { createAdminClient } from "@/lib/supabase";
 import { filterVisibleDashboardCalls, getUserAssistantId } from "@/lib/dashboard/visible-calls";
 import { computeCallScore } from "@/lib/dashboard/call-scoring";
 
-/** Normalize phone for matching: digits only with + */
+/** Canonical form: digits only, strip international 00 prefix, then + prefix. */
 function normalizePhone(phone: string | null | undefined): string {
   if (!phone || typeof phone !== "string") return "";
-  const digits = phone.replace(/\D/g, "");
-  return digits ? `+${digits}` : "";
+  let digits = phone.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  return `+${digits}`;
 }
 
 /** Add all lookup keys for a normalized phone so 10-digit and 11-digit (1+10) match */
