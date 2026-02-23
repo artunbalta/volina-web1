@@ -250,6 +250,28 @@ export function adjustScoreBasedOnContent(
     return Math.max(originalScore, 8);
   }
 
+  // === RULE 0.7: Appointment booked (HIGHEST PRIORITY - check early) ===
+  // Check for appointment booking indicators
+  const appointmentDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const appointmentTimes = ['morning', 'afternoon', 'evening', 'am', 'pm'];
+  const hasAppointmentDay = appointmentDays.some(day => lowerUserText.includes(day) || lowerSummary.includes(day));
+  const hasAppointmentTime = appointmentTimes.some(time => lowerUserText.includes(time) || lowerSummary.includes(time));
+  const hasAppointmentKeywords = lowerUserText.includes('book') || 
+    lowerUserText.includes('schedule') || 
+    lowerUserText.includes('appointment') ||
+    lowerSummary.includes('booked') ||
+    lowerSummary.includes('scheduled') ||
+    lowerSummary.includes('appointment');
+  
+  // If appointment was booked, this is a very positive call (9-10)
+  const appointmentBooked = (hasAppointmentDay && hasAppointmentTime) || 
+    (hasAppointmentDay && hasAppointmentKeywords) ||
+    (hasAppointmentKeywords && (hasAppointmentDay || hasAppointmentTime));
+
+  if (appointmentBooked) {
+    return Math.max(originalScore, 9);
+  }
+
   // === RULE 1: Very short calls should never get high scores ===
   if (callDuration > 0 && callDuration < 15) {
     return Math.min(originalScore, 2);
@@ -293,18 +315,76 @@ export function adjustScoreBasedOnContent(
     return Math.min(originalScore, 4);
   }
 
+  // === RULE 3A: IVR (Interactive Voice Response) / Automated phone system detection ===
+  // These are automated phone systems, not real conversations
+  const ivrPatterns = [
+    'this is your first call with us',
+    'please listen closely',
+    'press 1', 'press 2', 'press 3', 'press 4', 'press 5', 'press 6', 'press 7', 'press 8', 'press 9',
+    'press one', 'press two', 'press three', 'press four', 'press five', 'press six', 'press seven', 'press eight', 'press nine',
+    'i\'ll forward you to a representative',
+    'forward you to a representative',
+    'welcome to', 'this call may be recorded',
+    'para español', 'for spanish', 'for english',
+    'if you\'re not calling to', 'if you are not calling to',
+    'please say the', 'say the full',
+    'if the pickup location is', 'if those options were not',
+    'book a ride', 'pickup location', 'street name', 'town',
+    'yellow checker cab', 'cab company', 'taxi company',
+    'renewable energy tracking system', 'gateway place',
+    'knox services', 'county center plaza'
+  ];
+  
+  const hasIvrPattern = ivrPatterns.some(p => 
+    lowerUserText.includes(p) || 
+    lowerSummary.includes(p) || 
+    transcript.includes(p)
+  );
+  
+  // If IVR detected, this is not a real conversation - treat as voicemail (score 1)
+  if (hasIvrPattern) {
+    return 1;
+  }
+
   // === RULE 3B: Voicemail detection ===
   const voicemailIndicators = [
     'can\'t take your call', 'can\'t take call', 'can\'t take the call',
     'please leave a message', 'leave a message', 'leave your message',
     'leave me a message', 'leave me a brief message', 'leave me',
+    'leave a voice message', 'leave voice messages', 'leave voice message',
     'after the beep', 'after the tone', 'at the tone',
     'unavailable to take your call', 'not available to take your call',
     'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
     'please stay on the line', 'stay on the line',
     'is on another line', 'on another line',
     'available',
-    'get back to you', 'i\'ll get back to you'
+    'get back to you', 'i\'ll get back to you',
+    'after leaving a message', 'after leaving message',
+    'press pound for more options', 'press pound',
+    'you can hang up', 'can hang up', 'hang up after',
+    'mailbox is full', 'mailbox full', 'mailbox',
+    'to send an sms notification', 'press 5', 'press 1', 'press 2', 'press 3', 'press 4',
+    'i\'m not here right now', 'not here right now', 'sorry i got you',
+    'to get through, please press', 'to get through press', 'please press',
+    'call control', 'has call control', 'number has call control',
+    'not accepting calls', 'not accepting calls at this time',
+    'the number you have reached', 'number you have reached',
+    // Hold/connecting patterns (telephone system automated messages)
+    'please hold while we try to connect you', 'please hold while we try to connect',
+    'please hold while we connect you', 'please hold while we connect',
+    'hold while we try to connect you', 'hold while we try to connect',
+    'hold while we connect you', 'hold while we connect',
+    'please hold', 'please wait while we connect', 'wait while we connect',
+    'connecting you', 'trying to connect you', 'we are connecting you',
+    'please hold on', 'hold on', 'one moment please',
+    // Operator/receptionist screening patterns
+    'before i try to connect you', 'before i try to connect',
+    'can i ask what you\'re calling about', 'can i ask what you are calling about',
+    'what are you calling about', 'what you\'re calling about',
+    'the person you\'re calling cannot take your call', 'the person you are calling cannot take your call',
+    'person you\'re calling cannot take your call right now', 'person you are calling cannot take your call right now',
+    'unfortunately, the person you\'re calling', 'unfortunately the person you\'re calling',
+    'unfortunately, the person you are calling', 'unfortunately the person you are calling'
   ];
 
   const phoneNumberPattern1 = /[\d\s\.\-\(\)]{3,}(can\'t take|can t take|can t take|leave|message|unavailable|voicemail|right now)/i;
@@ -315,8 +395,17 @@ export function adjustScoreBasedOnContent(
     lowerUserText.includes(p) ||
     lowerSummary.includes(p) ||
     lowerUserText.includes(p.replace("'", " ")) ||
-    lowerUserText.includes(p.replace("'", ""))
-  );
+    lowerUserText.includes(p.replace("'", "")) ||
+    transcript.includes(p) // Also check full transcript
+  ) ||
+    // Additional patterns for "just leave a voice message" variations
+    (lowerUserText.includes('just leave') && (lowerUserText.includes('voice message') || lowerUserText.includes('voice messages'))) ||
+    (lowerUserText.includes('leave') && lowerUserText.includes('voice message')) ||
+    // "After leaving a message, you can hang up"
+    (lowerUserText.includes('after leaving') && (lowerUserText.includes('message') || lowerUserText.includes('hang up'))) ||
+    // "press pound for more options"
+    lowerUserText.includes('press pound') ||
+    lowerUserText.includes('press #');
 
   const isOnlyAvailable = userWordCount === 1 && lowerUserText.trim() === 'available';
 
@@ -343,21 +432,90 @@ export function adjustScoreBasedOnContent(
       lowerUserText.includes('after the beep'));
 
   const hasJustLeaveMessageAfterTone = (lowerUserText.includes('just leave') ||
-    lowerUserText.includes('leave your message')) &&
+    lowerUserText.includes('leave your message') ||
+    lowerUserText.includes('leave a voice message') ||
+    lowerUserText.includes('leave voice messages')) &&
     (lowerUserText.includes('after the tone') ||
       lowerUserText.includes('after the beep') ||
-      lowerUserText.includes('at the tone'));
+      lowerUserText.includes('at the tone') ||
+      lowerUserText.includes('you can hang up') ||
+      lowerUserText.includes('can hang up') ||
+      lowerUserText.includes('hang up after'));
+
+  const hasAfterLeavingMessage = lowerUserText.includes('after leaving a message') ||
+    lowerUserText.includes('after leaving message');
+
+  // Mailbox full / SMS notification / Call control patterns
+  const hasMailboxFull = lowerUserText.includes('mailbox is full') ||
+    lowerUserText.includes('mailbox full') ||
+    (lowerUserText.includes('mailbox') && lowerUserText.includes('full'));
+
+  const hasSmsNotification = lowerUserText.includes('to send an sms notification') ||
+    lowerUserText.includes('send an sms notification') ||
+    (lowerUserText.includes('sms notification') && lowerUserText.includes('press'));
+
+  const hasPressNumber = (lowerUserText.includes('press 5') ||
+    lowerUserText.includes('press 1') ||
+    lowerUserText.includes('press 2') ||
+    lowerUserText.includes('press 3') ||
+    lowerUserText.includes('press 4')) &&
+    (lowerUserText.includes('notification') || lowerUserText.includes('sms') || lowerUserText.includes('message') || lowerUserText.includes('get through'));
+
+  const hasNotHereRightNow = lowerUserText.includes('i\'m not here right now') ||
+    lowerUserText.includes('not here right now') ||
+    (lowerUserText.includes('sorry') && lowerUserText.includes('not here'));
+
+  // Call control patterns
+  const hasCallControl = lowerUserText.includes('call control') ||
+    lowerUserText.includes('has call control') ||
+    lowerUserText.includes('number has call control');
+
+  const hasToGetThrough = lowerUserText.includes('to get through, please press') ||
+    lowerUserText.includes('to get through press') ||
+    (lowerUserText.includes('to get through') && lowerUserText.includes('press'));
+
+  const hasNotAcceptingCalls = lowerUserText.includes('not accepting calls') ||
+    lowerUserText.includes('not accepting calls at this time');
+
+  const hasNumberReached = lowerUserText.includes('the number you have reached') ||
+    lowerUserText.includes('number you have reached');
+
+  // Operator/receptionist screening patterns (no word count limit - these are always voicemail)
+  const hasOperatorScreening = lowerUserText.includes('before i try to connect you') ||
+    lowerUserText.includes('before i try to connect') ||
+    (lowerUserText.includes('can i ask what you') && lowerUserText.includes('calling about')) ||
+    lowerUserText.includes('the person you\'re calling cannot take your call') ||
+    lowerUserText.includes('the person you are calling cannot take your call') ||
+    lowerUserText.includes('person you\'re calling cannot take your call right now') ||
+    lowerUserText.includes('person you are calling cannot take your call right now') ||
+    lowerUserText.includes('unfortunately, the person you\'re calling') ||
+    lowerUserText.includes('unfortunately the person you\'re calling') ||
+    lowerUserText.includes('unfortunately, the person you are calling') ||
+    lowerUserText.includes('unfortunately the person you are calling');
 
   if (!hasCallbackRequest && (isPhoneNumberPattern ||
     (hasVoicemailPhrase && userWordCount <= 25) ||
     isOnlyAvailable ||
     hasAvailableAndStayOnLine ||
     hasAnotherLineAndLeaveMessage ||
-    hasJustLeaveMessageAfterTone)) {
+    hasJustLeaveMessageAfterTone ||
+    hasAfterLeavingMessage ||
+    hasMailboxFull ||
+    hasSmsNotification ||
+    hasPressNumber ||
+    hasNotHereRightNow ||
+    hasCallControl ||
+    hasToGetThrough ||
+    hasNotAcceptingCalls ||
+    hasNumberReached ||
+    hasOperatorScreening)) {
     return 1;
   }
 
-  // === RULE 3C: User unavailable/unreachable ===
+  // === RULE 3C: Language mismatch / communication barrier ===
+  // (This rule is handled later in RULE 7 to avoid duplicate definitions)
+
+  // === RULE 3D: User unavailable/unreachable ===
   const unavailablePatterns = [
     'can\'t talk', 'can\'t speak',
     'unavailable', 'unreachable', 'not available', 'busy right now',
@@ -383,13 +541,29 @@ export function adjustScoreBasedOnContent(
     'ilgilenmiyorum', 'istemiyorum', 'hayır teşekkürler',
     'hayır', 'yok', 'gerek yok', 'istemedim', 'istemiş değilim',
     'no i don\'t', 'i don\'t want', 'i\'m not interested',
-    'not right now', 'maybe later',
     'can\'t afford', 'cant afford', 'can t afford', 'cannot afford',
     'can\'t pay', 'cant pay', 'can t pay', 'cannot pay',
     'too expensive', 'too much', 'afford', 'expensive',
     'param yok', 'karşılayamam', 'pahalı', 'çok pahalı'
   ];
-  const userDeclined = strongNegativePatterns.some(p => lowerUserText.includes(p));
+  
+  // "not right now" and "maybe later" are only negative if there's no positive context
+  // If combined with "at some point", "sure", "yes", or appointment booking, they're neutral/positive
+  const hasFutureInterest = lowerUserText.includes('at some point') ||
+    lowerUserText.includes('maybe later') ||
+    lowerUserText.includes('not right now');
+  const hasPositiveAfterNotRightNow = lowerUserText.includes('sure') ||
+    lowerUserText.includes('yes') ||
+    lowerUserText.includes('okay') ||
+    lowerUserText.includes('yeah') ||
+    appointmentBooked;
+  
+  // Only count "not right now" / "maybe later" as negative if there's no positive follow-up
+  const notRightNowIsNegative = (lowerUserText.includes('not right now') || lowerUserText.includes('maybe later')) &&
+    !hasPositiveAfterNotRightNow &&
+    !lowerUserText.includes('at some point');
+  
+  const userDeclined = strongNegativePatterns.some(p => lowerUserText.includes(p)) || notRightNowIsNegative;
   const hasFinancialRejection = hasFinancialRejectionEarly;
 
   // === RULE 4.5: Aggressive/hostile language ===
@@ -412,6 +586,12 @@ export function adjustScoreBasedOnContent(
     lowerSummary.includes('rude') ||
     (lowerSummary.includes('negative') && lowerSummary.includes('sentiment')) ||
     (lowerSummary.includes('not interested') && lowerSummary.includes('strong'));
+
+  // === RULE 4.3: Appointment booked (HIGHEST PRIORITY - overrides everything) ===
+  if (appointmentBooked) {
+    // Appointment was booked - this is a very successful call
+    return Math.max(originalScore, 9);
+  }
 
   if (hasAggressiveLanguage || strongNegativeSentiment) {
     return Math.min(originalScore, 2);
@@ -513,9 +693,41 @@ export function adjustScoreBasedOnContent(
   }
 
   // === RULE 6: User said "no" ===
-  const noCount = (lowerUserText.match(/\bno\b/g) || []).length;
+  // Count "no" but exclude:
+  // 1. Spanish phrases where "no" is not a rejection
+  // 2. Greeting patterns like "No, man" or "No, how are you?"
+  const spanishNoExceptions = [
+    'no tengo', 'no puedo', 'no sé', 'no se', 'no entiendo', 'no comprendo',
+    'no falo', 'no hablo', 'no tengo papeles', 'no puedo dejar'
+  ];
+  
+  // Greeting patterns where "no" is not a rejection
+  const greetingNoPatterns = [
+    'no, man', 'no man', 'no, how', 'no how', 'no, what', 'no what',
+    'no, who', 'no who', 'no, where', 'no where', 'no, when', 'no when'
+  ];
+  
+  // Count standalone "no" (rejections) but exclude exceptions
+  const allNoMatches = lowerUserText.match(/\bno\b/g) || [];
+  
+  // Simpler approach: count "no" but subtract those in exception phrases
+  let adjustedNoCount = allNoMatches.length;
+  
+  // Subtract Spanish exceptions
+  spanishNoExceptions.forEach(exception => {
+    const exceptionMatches = (lowerUserText.match(new RegExp(exception.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+    adjustedNoCount = Math.max(0, adjustedNoCount - exceptionMatches);
+  });
+  
+  // Subtract greeting patterns
+  greetingNoPatterns.forEach(pattern => {
+    if (lowerUserText.includes(pattern)) {
+      adjustedNoCount = Math.max(0, adjustedNoCount - 1);
+    }
+  });
+  
   const hayirCount = (lowerUserText.match(/\bhayır\b/g) || []).length;
-  const totalNoCount = noCount + hayirCount;
+  const totalNoCount = adjustedNoCount + hayirCount;
 
   const explicitRejection =
     lowerUserText.includes('i said no') ||
@@ -543,29 +755,65 @@ export function adjustScoreBasedOnContent(
     lowerUserText.includes('where') ||
     lowerUserText.includes('ne zaman') ||
     lowerUserText.includes('nasıl') ||
-    lowerUserText.includes('neden');
+    lowerUserText.includes('neden') ||
+    // Spanish questions
+    lowerUserText.includes('qué') || lowerUserText.includes('que') ||
+    lowerUserText.includes('cómo') || lowerUserText.includes('como') ||
+    lowerUserText.includes('cuándo') || lowerUserText.includes('cuando') ||
+    lowerUserText.includes('dónde') || lowerUserText.includes('donde') ||
+    lowerUserText.includes('por qué') || lowerUserText.includes('porque');
   const hasPreviousEngagement = lowerUserText.includes('already had') ||
     lowerUserText.includes('already got') ||
     lowerUserText.includes('quotation') ||
     lowerUserText.includes('quote') ||
     lowerUserText.includes('teklif');
 
-  if (isLongDetailedConversation &&
-    (hasDetailedConcerns || hasAskedQuestions || hasPreviousEngagement) &&
-    !hasFinancialRejection &&
-    !explicitRejection) {
-    return Math.max(originalScore, 5);
-  }
-
+  // Define positive patterns first (needed for checks below)
   const strongPositivePatterns = [
     'i\'m gonna hear', 'i\'ll hear', 'tell me more', 'explain', 'i want to hear',
     'i\'d like to', 'i would like', 'sure', 'yes', 'okay', 'yeah', 'yea', 'yep',
     'interested', 'i need', 'i want', 'solution', 'help me',
     'dinleyeceğim', 'anlat', 'açıkla', 'istiyorum', 'ihtiyacım var',
     'open to', 'considering', 'finding a solution', 'would be grateful',
-    'yeah yeah', 'yes yes', 'yeah i', 'yes i'
+    'yeah yeah', 'yes yes', 'yeah i', 'yes i',
+    // Spanish positive patterns
+    'sí', 'si', 'ok, gracias', 'ok gracias', 'gracias', 'mejor', 'pensar', 'pensaré',
+    'explicar', 'explica', 'explicame', 'déjame pensar', 'dejame pensar',
+    'quiero', 'necesito', 'me gustaría', 'me gustaria', 'estoy interesado', 'estoy interesada'
   ];
   const hasStrongPositive = strongPositivePatterns.some(p => lowerUserText.includes(p));
+
+  // Check for Spanish positive engagement patterns
+  const spanishPositivePatterns = [
+    'sí', 'si', 'explicar', 'explica', 'explicame', 'pensar', 'pensaré',
+    'déjame pensar', 'dejame pensar', 'quiero', 'necesito', 'me gustaría', 'me gustaria',
+    'estoy interesado', 'estoy interesada', 'ok, gracias', 'ok gracias', 'gracias', 'mejor'
+  ];
+  const hasSpanishPositive = spanishPositivePatterns.some(p => lowerUserText.includes(p));
+  const spanishQuestionWords = ['qué', 'que', 'cómo', 'como', 'cuándo', 'cuando', 'dónde', 'donde', 'por qué', 'porque'];
+  const hasSpanishQuestions = spanishQuestionWords.some(p => lowerUserText.includes(p));
+  
+  // Long conversation with positive signals + questions = high score (8+)
+  // This catches conversations where user is engaged, asking questions, showing interest
+  if (isLongDetailedConversation &&
+    (hasStrongPositive || hasSpanishPositive) &&
+    (hasAskedQuestions || hasSpanishQuestions || hasDetailedConcerns) &&
+    !hasFinancialRejection &&
+    !explicitRejection &&
+    totalNoCount <= 2) {
+    return Math.max(originalScore, 8);
+  }
+
+  if (isLongDetailedConversation &&
+    (hasDetailedConcerns || hasAskedQuestions || hasPreviousEngagement) &&
+    !hasFinancialRejection &&
+    !explicitRejection) {
+    // If it has strong positive signals, boost it higher
+    if (hasStrongPositive || hasSpanishPositive) {
+      return Math.max(originalScore, 7);
+    }
+    return Math.max(originalScore, 5);
+  }
 
   const summaryPositiveIndicators =
     lowerSummary.includes('open to hearing') ||
@@ -584,7 +832,9 @@ export function adjustScoreBasedOnContent(
 
   if (!hasFinancialRejection) {
     const yeahCount = (lowerUserText.match(/\b(yeah|yes|yep|yea)\b/g) || []).length;
-    if (yeahCount >= 2 && totalNoCount <= 1 && !explicitRejection && originalScore >= 7) {
+    const siCount = (lowerUserText.match(/\b(sí|si)\b/g) || []).length;
+    const totalYesCount = yeahCount + siCount;
+    if (totalYesCount >= 2 && totalNoCount <= 1 && !explicitRejection && originalScore >= 7) {
       return Math.max(originalScore, 8);
     }
   }
@@ -597,7 +847,12 @@ export function adjustScoreBasedOnContent(
       'when', 'where', 'evet', 'tamam', 'olur', 'anlat', 'ne kadar',
       'ne zaman', 'nerede', 'bilgi', 'detay', 'fiyat', 'maybe', 'belki',
       'i want', 'i need', 'istiyorum', 'i\'d like', 'i would like',
-      'i\'m gonna hear', 'i\'ll hear', 'tell me more', 'explain', 'open to'
+      'i\'m gonna hear', 'i\'ll hear', 'tell me more', 'explain', 'open to',
+      // Spanish positive patterns
+      'sí', 'si', 'ok, gracias', 'ok gracias', 'gracias', 'mejor', 'pensar', 'pensaré',
+      'explicar', 'explica', 'explicame', 'déjame pensar', 'dejame pensar',
+      'quiero', 'necesito', 'me gustaría', 'me gustaria', 'estoy interesado', 'estoy interesada',
+      'vale', 'bueno', 'está bien', 'esta bien'
     ];
     const hasPositive = positivePatterns.some(p => lowerUserText.includes(p));
 
@@ -624,13 +879,21 @@ export function adjustScoreBasedOnContent(
     'someone speak turkish', 'speak turkish', 'türkçe', 'turkish',
     'someone speak', 'speak another language', 'different language',
     'i don\'t speak', 'i dont speak', 'no hablo', 'no entiendo',
-    'farklı dil', 'başka dil', 'türkçe konuş', 'spanish speaker'
+    'farklı dil', 'başka dil', 'türkçe konuş', 'spanish speaker',
+    // Additional patterns
+    'no speak english', 'no speak', 'don\'t speak english', 'don\'t speak',
+    'i speak portuguese', 'i speak spanish', 'i speak turkish', 'i speak french',
+    'speak portuguese', 'speak spanish', 'speak turkish', 'speak french',
+    'no english', 'no entiendo', 'no comprendo', 'no falo',
+    'language', 'lingua', 'idioma'
   ];
   const hasLanguageMismatch = languageMismatchPatterns.some(p =>
-    lowerUserText.includes(p) || lowerSummary.includes(p)
+    lowerUserText.includes(p) || 
+    lowerSummary.includes(p) ||
+    transcript.includes(p)
   );
   if (hasLanguageMismatch && userWordCount <= 10) return Math.min(originalScore, 3);
-  if (hasLanguageMismatch) return Math.min(originalScore, 4);
+  if (hasLanguageMismatch) return Math.min(originalScore, 3); // Changed from 4 to 3 for consistency
 
   // === RULE 8: Wrong number ===
   const wrongNumberPatterns = [
@@ -696,8 +959,8 @@ export function computeCallScore(call: CallScoringInput): CallScoreResult {
   const transcript = (call.transcript || '').toLowerCase();
   const callSummary = (call.summary || '').toLowerCase();
   const evalSummary = (call.evaluation_summary || '').toLowerCase();
-  const metadata = (call.metadata || {}) as Record<string, unknown>;
-  const endedReason = (metadata.endedReason as string || '').toLowerCase();
+  const callMetadata = (call.metadata || {}) as Record<string, unknown>;
+  const endedReason = (callMetadata.endedReason as string || '').toLowerCase();
 
   // Extract user text from transcript
   const { userTextRaw, userText } = extractUserText(call.transcript || '');
@@ -709,8 +972,13 @@ export function computeCallScore(call: CallScoringInput): CallScoreResult {
   // User response count
   const userResponses = (transcript.match(/user:/gi) || []).length;
 
-  // --- Step 1: parse raw score ---
-  const parsedScore = parseScore(call.evaluation_score);
+  // --- Step 0: Check for overrides first ---
+  const overrides = callMetadata.overrides as { evaluation_score?: number | null } | undefined;
+  const overrideScore = overrides?.evaluation_score;
+
+  // --- Step 1: parse raw score (use override if exists, otherwise original) ---
+  const scoreToParse = overrideScore !== undefined ? overrideScore : call.evaluation_score;
+  const parsedScore = parseScore(scoreToParse);
 
   // --- Step 2: estimate if no DB score ---
   const estimatedScoreValue = estimateScore(call);
@@ -726,8 +994,8 @@ export function computeCallScore(call: CallScoringInput): CallScoreResult {
     'voicemail', 'sesli mesaj',
     'can\'t take your call', 'can\'t take call', 'can\'t take the call',
     'can\'t take call right now', 'can\'t take your call right now', 'can\'t take the call right now',
-    'please leave a message', 'leave a message', 'leave your message', 'after the beep',
-    'after the tone', 'at the tone',
+    'please leave a message', 'leave a message', 'leave your message', 'leave a voice message', 'leave voice messages',
+    'after the beep', 'after the tone', 'at the tone',
     'unavailable to take your call', 'not available to take your call',
     'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
     'record your message',
@@ -735,7 +1003,8 @@ export function computeCallScore(call: CallScoringInput): CallScoreResult {
     'mailbox',
     'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done',
     'please stay on the line', 'stay on the line',
-    'is on another line', 'on another line'
+    'is on another line', 'on another line',
+    'after leaving a message', 'after leaving message', 'press pound for more options'
   ];
 
   const meaningfulUserPatterns = [

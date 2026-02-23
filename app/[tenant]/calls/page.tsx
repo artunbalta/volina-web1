@@ -437,11 +437,18 @@ function AudioPlayer({
           )}
 
           {/* Summary Bubble */}
-          {call.summary && cleanCallSummary(call.summary) && (
-            <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 inline-block max-w-md">
-              <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(call.summary)}</p>
-            </div>
-          )}
+          {(() => {
+            const metadata = call.metadata as Record<string, unknown> | undefined;
+            const overrides = metadata?.overrides as { summary?: string | null } | undefined;
+            const effectiveSummary = (overrides?.summary !== undefined) 
+              ? overrides.summary 
+              : call.summary;
+            return effectiveSummary && cleanCallSummary(effectiveSummary) && (
+              <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 inline-block max-w-md">
+                <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(effectiveSummary)}</p>
+              </div>
+            );
+          })()}
         </div>
       </DialogContent>
     </Dialog>
@@ -503,15 +510,80 @@ function getCallSortKey(call: Call): number {
   const callSummary = (call.summary || '').toLowerCase();
   const transcript = (call.transcript || '').toLowerCase();
   
-  // MUST match display logic patterns exactly
+  // Extract user text first (needed for IVR detection)
+  const userParts = transcript.split(/ai:/i).filter(part => part.includes('user:'));
+  const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
+  const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' ');
+  
+  // IVR (Interactive Voice Response) / Automated phone system detection
+  const ivrPatterns = [
+    'this is your first call with us',
+    'please listen closely',
+    'press 1', 'press 2', 'press 3', 'press 4', 'press 5', 'press 6', 'press 7', 'press 8', 'press 9',
+    'press one', 'press two', 'press three', 'press four', 'press five', 'press six', 'press seven', 'press eight', 'press nine',
+    'i\'ll forward you to a representative',
+    'forward you to a representative',
+    'welcome to', 'this call may be recorded',
+    'para español', 'for spanish', 'for english',
+    'if you\'re not calling to', 'if you are not calling to',
+    'please say the', 'say the full',
+    'if the pickup location is', 'if those options were not',
+    'book a ride', 'pickup location', 'street name', 'town',
+    'yellow checker cab', 'cab company', 'taxi company',
+    'renewable energy tracking system', 'gateway place',
+    'knox services', 'county center plaza'
+  ];
+  
+  const hasIvrPattern = ivrPatterns.some(p => 
+    userText.includes(p) || 
+    callSummary.includes(p) || 
+    transcript.includes(p)
+  );
+  
+  // If IVR detected, treat as voicemail (sort key 1)
+  if (hasIvrPattern) {
+    return 1;
+  }
+
+  // MUST match display logic patterns exactly (same as CallRow component)
   const voicemailSystemPhrases = [
     'voicemail', 'sesli mesaj',
-    'record your message', 'leave a message', 'leave your message',
-    'unable to take your call', 'can\'t take your call', 'can t take your call', 'cannot take your call',
+    'can\'t take your call', 'can\'t take call', 'can\'t take the call',
     'can\'t take call right now', 'can\'t take your call right now', 'can\'t take the call right now',
-    'after the tone', 'after the beep', 'at the tone', 'mailbox',
-    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done',
-    'please stay on the line', 'stay on the line' // Voicemail system phrases
+    'please leave a message', 'leave a message', 'leave your message', 'leave a voice message', 'leave voice messages',
+    'after the beep', 'after the tone', 'at the tone', // Voicemail tone indicators
+    'unavailable to take your call', 'not available to take your call',
+    'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
+    'record your message',
+    'unable to take your call', 'can t take your call', 'cannot take your call',
+    'mailbox', 'mailbox is full', 'mailbox full',
+    'press hash', 'press 5', 'press 1', 'press 2', 'press 3', 'press 4',
+    'to send an sms notification', 'send an sms notification',
+    'to get through, please press', 'to get through press', 'please press',
+    'call control', 'has call control', 'number has call control',
+    'not accepting calls', 'not accepting calls at this time',
+    'the number you have reached', 'number you have reached',
+    'hang up', 'just hang up', 'when you re done', 'when you\'re done',
+    'please stay on the line', 'stay on the line', // Voicemail system phrases
+    'is on another line', 'on another line', // "Is on another line. Just leave your message after the tone."
+    'after leaving a message', 'after leaving message', 'press pound for more options',
+    'i\'m not here right now', 'not here right now', 'sorry i got you',
+    // Hold/connecting patterns (telephone system automated messages)
+    'please hold while we try to connect you', 'please hold while we try to connect',
+    'please hold while we connect you', 'please hold while we connect',
+    'hold while we try to connect you', 'hold while we try to connect',
+    'hold while we connect you', 'hold while we connect',
+    'please wait while we connect', 'wait while we connect',
+    'connecting you', 'trying to connect you', 'we are connecting you',
+    'please hold on', 'hold on', 'one moment please',
+    // Operator/receptionist screening patterns
+    'before i try to connect you', 'before i try to connect',
+    'can i ask what you\'re calling about', 'can i ask what you are calling about',
+    'what are you calling about', 'what you\'re calling about',
+    'the person you\'re calling cannot take your call', 'the person you are calling cannot take your call',
+    'person you\'re calling cannot take your call right now', 'person you are calling cannot take your call right now',
+    'unfortunately, the person you\'re calling', 'unfortunately the person you\'re calling',
+    'unfortunately, the person you are calling', 'unfortunately the person you are calling'
   ];
   
   const failedPatterns = [
@@ -549,9 +621,7 @@ function getCallSortKey(call: Call): number {
   
   // Count user responses
   const userResponses = (transcript.match(/user:/gi) || []).length;
-  const userParts = transcript.split(/ai:/i).filter(part => part.includes('user:'));
-  const userTextRaw = userParts.map(p => p.split('user:')[1] || '').join(' ').toLowerCase();
-  const userText = userTextRaw.replace(/[.,!?;:'"]/g, ' ').replace(/\s+/g, ' '); // Normalize punctuation
+  // userText already defined above (line 516)
   const userSaidMeaningful = meaningfulUserPatterns.some(p => userText.includes(p));
   
   // Check for phone number pattern + voicemail phrase (e.g., "370 8493 can't take your call right now")
@@ -619,30 +689,114 @@ function getCallSortKey(call: Call): number {
   // Special case: "Just leave your message after the tone" (even with "No" at the start)
   // This is a classic voicemail pattern - "No. Just leave your message after the tone."
   const hasJustLeaveMessageAfterTone = (userText.toLowerCase().includes('just leave') || 
-                                        userText.toLowerCase().includes('leave your message')) &&
+                                        userText.toLowerCase().includes('leave your message') ||
+                                        userText.toLowerCase().includes('leave a voice message') ||
+                                        userText.toLowerCase().includes('leave voice messages')) &&
                                        (userText.toLowerCase().includes('after the tone') ||
                                         userText.toLowerCase().includes('after the beep') ||
-                                        userText.toLowerCase().includes('at the tone'));
+                                        userText.toLowerCase().includes('at the tone') ||
+                                        userText.toLowerCase().includes('you can hang up') ||
+                                        userText.toLowerCase().includes('can hang up') ||
+                                        userText.toLowerCase().includes('hang up after'));
+
+  // Special case: "After leaving a message, you can hang up"
+  const hasAfterLeavingMessage = userText.toLowerCase().includes('after leaving a message') ||
+                                 userText.toLowerCase().includes('after leaving message');
+
+  // Special case: "Just leave a voice messages" (without "after the tone")
+  const hasJustLeaveVoiceMessage = (userText.toLowerCase().includes('just leave') && 
+                                    (userText.toLowerCase().includes('voice message') || 
+                                     userText.toLowerCase().includes('voice messages'))) ||
+                                   (userText.toLowerCase().includes('leave') && 
+                                    userText.toLowerCase().includes('voice message'));
+
+  // Special case: "press pound for more options"
+  const hasPressPound = userText.toLowerCase().includes('press pound') ||
+                        userText.toLowerCase().includes('press #');
+
+  // Special case: "Mailbox is full" / "To send an SMS notification, press 5"
+  const hasMailboxFull = userText.toLowerCase().includes('mailbox is full') ||
+                         userText.toLowerCase().includes('mailbox full') ||
+                         (userText.toLowerCase().includes('mailbox') && userText.toLowerCase().includes('full'));
+
+  const hasSmsNotification = userText.toLowerCase().includes('to send an sms notification') ||
+                             userText.toLowerCase().includes('send an sms notification') ||
+                             (userText.toLowerCase().includes('sms notification') && userText.toLowerCase().includes('press'));
+
+  const hasPressNumber = (userText.toLowerCase().includes('press 5') ||
+                          userText.toLowerCase().includes('press 1') ||
+                          userText.toLowerCase().includes('press 2') ||
+                          userText.toLowerCase().includes('press 3') ||
+                          userText.toLowerCase().includes('press 4')) &&
+                         (userText.toLowerCase().includes('notification') || 
+                          userText.toLowerCase().includes('sms') || 
+                          userText.toLowerCase().includes('message') ||
+                          userText.toLowerCase().includes('get through'));
+
+  const hasNotHereRightNow = userText.toLowerCase().includes('i\'m not here right now') ||
+                              userText.toLowerCase().includes('not here right now') ||
+                              (userText.toLowerCase().includes('sorry') && userText.toLowerCase().includes('not here'));
+
+  // Call control patterns
+  const hasCallControl = userText.toLowerCase().includes('call control') ||
+                         userText.toLowerCase().includes('has call control') ||
+                         userText.toLowerCase().includes('number has call control');
+
+  const hasToGetThrough = userText.toLowerCase().includes('to get through, please press') ||
+                          userText.toLowerCase().includes('to get through press') ||
+                          (userText.toLowerCase().includes('to get through') && userText.toLowerCase().includes('press'));
+
+  const hasNotAcceptingCalls = userText.toLowerCase().includes('not accepting calls') ||
+                                userText.toLowerCase().includes('not accepting calls at this time');
+
+  const hasNumberReached = userText.toLowerCase().includes('the number you have reached') ||
+                           userText.toLowerCase().includes('number you have reached');
+
+  // Operator/receptionist screening patterns (no word count limit - these are always voicemail)
+  const hasOperatorScreening = userText.toLowerCase().includes('before i try to connect you') ||
+                               userText.toLowerCase().includes('before i try to connect') ||
+                               (userText.toLowerCase().includes('can i ask what you') && userText.toLowerCase().includes('calling about')) ||
+                               userText.toLowerCase().includes('the person you\'re calling cannot take your call') ||
+                               userText.toLowerCase().includes('the person you are calling cannot take your call') ||
+                               userText.toLowerCase().includes('person you\'re calling cannot take your call right now') ||
+                               userText.toLowerCase().includes('person you are calling cannot take your call right now') ||
+                               userText.toLowerCase().includes('unfortunately, the person you\'re calling') ||
+                               userText.toLowerCase().includes('unfortunately the person you\'re calling') ||
+                               userText.toLowerCase().includes('unfortunately, the person you are calling') ||
+                               userText.toLowerCase().includes('unfortunately the person you are calling');
   
   const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
   // Key change: even if userResponses >= 2, if user ONLY said voicemail phrases, it's still voicemail
   const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
   
-  // Voicemail detection - MUST match display logic
+  // Voicemail detection - MUST match display logic EXACTLY
   // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
   // Also catch "Is on another line. Just leave your message after the tone." pattern
   // Also catch "Just leave your message after the tone" pattern (even with "No" at start)
-  const isVoicemail = (hasVoicemailPhrases && !isRealConversation) || 
+  const isVoicemail = isPhoneNumberVoicemail ||  // Highest priority - phone number + voicemail phrase
+                      (hasVoicemailInUserText && !userSaidMeaningful) ||  // User said voicemail phrase but nothing meaningful
+                      (hasVoicemailPhrases && !isRealConversation) || 
                       (userOnlyVoicemailPhrases) ||
-                      isPhoneNumberVoicemail ||
                       isOnlyAvailable ||  // Single word "Available" is voicemail greeting
                       hasAvailableAndStayOnLine ||  // "Available" + "Please stay on the line" pattern
                       hasAnotherLineAndLeaveMessage ||  // "Is on another line. Just leave your message after the tone." pattern
-                      hasJustLeaveMessageAfterTone;  // "Just leave your message after the tone" pattern (even with "No" at start)
+                      hasJustLeaveMessageAfterTone ||  // "Just leave your message after the tone" pattern (even with "No" at start)
+                      hasAfterLeavingMessage ||  // "After leaving a message, you can hang up"
+                      hasJustLeaveVoiceMessage ||  // "Just leave a voice messages"
+                      hasPressPound ||  // "press pound for more options"
+                      hasMailboxFull ||  // "Mailbox is full"
+                      hasSmsNotification ||  // "To send an SMS notification"
+                      hasPressNumber ||  // "press 5" for SMS notification
+                      hasNotHereRightNow ||  // "I'm not here right now"
+                      hasCallControl ||  // "call control"
+                      hasToGetThrough ||  // "To get through, please press 5"
+                      hasNotAcceptingCalls ||  // "not accepting calls"
+                      hasNumberReached ||  // "The number you have reached"
+                      hasOperatorScreening;  // Operator/receptionist screening (e.g., "Before I try to connect you" + "person you're calling cannot take your call")
   const isSilenceTimeout = endedReason === 'silence-timed-out';
   const isShortCall = (call.duration || 0) < 30;
   const likelyVoicemailByBehavior = isSilenceTimeout && isShortCall && !isRealConversation;
-  const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior;
+  const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior || hasIvrPattern;
   
   // If voicemail → V (sort key 1)
   if (isVoicemailFinal) {
@@ -655,9 +809,29 @@ function getCallSortKey(call: Call): number {
   const rawScore = parsedScore !== null ? parsedScore : estimatedScore;
   
   // Apply the same score adjustment as display logic
-  const effectiveScore = rawScore !== null 
+  let effectiveScore = rawScore !== null 
     ? adjustScoreBasedOnContent(rawScore, transcript, callSummary, userText, call.duration)
     : null;
+  
+  // Additional adjustment for language mismatch (communication barrier) - MUST match CallRow logic
+  const languageMismatchPatterns = [
+    'no speak english', 'no speak', 'don\'t speak english', 'don\'t speak',
+    'i speak portuguese', 'i speak spanish', 'i speak turkish', 'i speak french',
+    'speak portuguese', 'speak spanish', 'speak turkish', 'speak french',
+    'no english', 'no entiendo', 'no comprendo', 'no falo',
+    'someone speak', 'speak turkish', 'speak portuguese', 'speak spanish',
+    'language', 'lingua', 'idioma'
+  ];
+  
+  const hasLanguageMismatch = languageMismatchPatterns.some(p =>
+    userText.includes(p) ||
+    transcript.includes(p) ||
+    callSummary.includes(p)
+  );
+  
+  if (effectiveScore !== null && hasLanguageMismatch && effectiveScore > 3) {
+    effectiveScore = Math.min(effectiveScore, 3);
+  }
   
   const isFailedByText = failedPatterns.some(p => textToCheck.includes(p));
   const isVeryShortCall = (call.duration || 0) < 15;
@@ -839,36 +1013,137 @@ function CallRow({
   const userWords = userText.trim().split(/\s+/).filter(w => w.length > 0);
   const userWordCount = userWords.length;
   
-  // Get the score first (either from evaluation or estimated)
+  // Get the score first (check override, then evaluation, then estimated)
   // Score is now on 1-10 scale, null means V or F
-  const parsedScore = parseScore(call.evaluation_score);
+  const overrides = metadata?.overrides as { 
+    evaluation_score?: number | null;
+    sentiment?: 'positive' | 'neutral' | 'negative' | null;
+    summary?: string | null;
+    evaluation_summary?: string | null;
+  } | undefined;
+  const overrideScore = overrides?.evaluation_score;
+  const scoreToParse = overrideScore !== undefined ? overrideScore : call.evaluation_score;
+  const parsedScore = parseScore(scoreToParse);
   const estimatedScoreValue = estimateScore(call);
   const rawScore = parsedScore !== null ? parsedScore : estimatedScoreValue;
   
+  // Language mismatch patterns (check before score adjustment)
+  const languageMismatchPatterns = [
+    'no speak english', 'no speak', 'don\'t speak english', 'don\'t speak',
+    'i speak portuguese', 'i speak spanish', 'i speak turkish', 'i speak french',
+    'speak portuguese', 'speak spanish', 'speak turkish', 'speak french',
+    'no english', 'no entiendo', 'no comprendo', 'no falo',
+    'someone speak', 'speak turkish', 'speak portuguese', 'speak spanish',
+    'language', 'lingua', 'idioma'
+  ];
+
+  const hasLanguageMismatch = languageMismatchPatterns.some(p =>
+    userText.includes(p) ||
+    transcript.includes(p) ||
+    callSummary.includes(p)
+  );
+  
   // Adjust score based on transcript content (catches wrong high scores like "not interested" getting 10)
-  const effectiveScore = rawScore !== null 
+  let effectiveScore = rawScore !== null 
     ? adjustScoreBasedOnContent(rawScore, transcript, callSummary, userText, call.duration)
     : null;
+
+  // Additional adjustment for language mismatch (communication barrier)
+  if (effectiveScore !== null && hasLanguageMismatch && effectiveScore > 3) {
+    effectiveScore = Math.min(effectiveScore, 3);
+  }
+  
+  // IVR (Interactive Voice Response) / Automated phone system detection
+  const ivrPatterns = [
+    'this is your first call with us',
+    'please listen closely',
+    'press 1', 'press 2', 'press 3', 'press 4', 'press 5', 'press 6', 'press 7', 'press 8', 'press 9',
+    'press one', 'press two', 'press three', 'press four', 'press five', 'press six', 'press seven', 'press eight', 'press nine',
+    'i\'ll forward you to a representative',
+    'forward you to a representative',
+    'welcome to', 'this call may be recorded',
+    'para español', 'for spanish', 'for english',
+    'if you\'re not calling to', 'if you are not calling to',
+    'please say the', 'say the full',
+    'if the pickup location is', 'if those options were not',
+    'book a ride', 'pickup location', 'street name', 'town',
+    'yellow checker cab', 'cab company', 'taxi company',
+    'renewable energy tracking system', 'gateway place',
+    'knox services', 'county center plaza'
+  ];
+  
+  const hasIvrPattern = ivrPatterns.some(p => 
+    userText.includes(p) || 
+    callSummary.includes(p) || 
+    transcript.includes(p)
+  );
+  
+  // If IVR detected, treat as voicemail (score 1, display V)
+  if (hasIvrPattern) {
+    effectiveScore = 1;
+  }
   
   // Voicemail system phrases (these appear in automated voicemail greetings)
   const voicemailSystemPhrases = [
     'voicemail', 'sesli mesaj',
     'can\'t take your call', 'can\'t take call', 'can\'t take the call',
     'can\'t take call right now', 'can\'t take your call right now', 'can\'t take the call right now',
-    'please leave a message', 'leave a message', 'leave your message', 'after the beep',
-    'after the tone', 'at the tone', // Voicemail tone indicators
+    'please leave a message', 'leave a message', 'leave your message', 'leave a voice message', 'leave voice messages',
+    'after the beep', 'after the tone', 'at the tone', // Voicemail tone indicators
     'unavailable to take your call', 'not available to take your call',
     'mesaj bırakın', 'bip sesinden sonra', 'sesli mesaj bırakın',
     'record your message',
     'unable to take your call', 'can t take your call', 'cannot take your call',
-    'mailbox',
-    'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done',
+    'mailbox', 'mailbox is full', 'mailbox full',
+    'press hash', 'press 5', 'press 1', 'press 2', 'press 3', 'press 4',
+    'to send an sms notification', 'send an sms notification',
+    'to get through, please press', 'to get through press', 'please press',
+    'call control', 'has call control', 'number has call control',
+    'not accepting calls', 'not accepting calls at this time',
+    'the number you have reached', 'number you have reached',
+    'hang up', 'just hang up', 'when you re done', 'when you\'re done',
     'please stay on the line', 'stay on the line', // Voicemail system phrases
-    'is on another line', 'on another line' // "Is on another line. Just leave your message after the tone."
+    'is on another line', 'on another line', // "Is on another line. Just leave your message after the tone."
+    'after leaving a message', 'after leaving message', 'press pound for more options',
+    'i\'m not here right now', 'not here right now', 'sorry i got you',
+    // Hold/connecting patterns (telephone system automated messages)
+    'please hold while we try to connect you', 'please hold while we try to connect',
+    'please hold while we connect you', 'please hold while we connect',
+    'hold while we try to connect you', 'hold while we try to connect',
+    'hold while we connect you', 'hold while we connect',
+    'please wait while we connect', 'wait while we connect',
+    'connecting you', 'trying to connect you', 'we are connecting you',
+    'please hold on', 'hold on', 'one moment please',
+    // Operator/receptionist screening patterns
+    'before i try to connect you', 'before i try to connect',
+    'can i ask what you\'re calling about', 'can i ask what you are calling about',
+    'what are you calling about', 'what you\'re calling about',
+    'the person you\'re calling cannot take your call', 'the person you are calling cannot take your call',
+    'person you\'re calling cannot take your call right now', 'person you are calling cannot take your call right now',
+    'unfortunately, the person you\'re calling', 'unfortunately the person you\'re calling',
+    'unfortunately, the person you are calling', 'unfortunately the person you are calling'
   ];
   
   // Hold/wait phrases (can appear in both voicemail AND real calls)
-  const holdPhrases = ['please hold', 'not available'];
+  // But if combined with "connecting" or "try to connect", it's likely a phone system message
+  const holdPhrases = [
+    'please hold', 'not available',
+    'please hold while we try to connect you', 'please hold while we try to connect',
+    'please hold while we connect you', 'please hold while we connect',
+    'hold while we try to connect you', 'hold while we try to connect',
+    'hold while we connect you', 'hold while we connect',
+    'please wait while we connect', 'wait while we connect',
+    'connecting you', 'trying to connect you', 'we are connecting you',
+    'please hold on', 'hold on', 'one moment please',
+    // Operator/receptionist screening patterns
+    'before i try to connect you', 'before i try to connect',
+    'can i ask what you\'re calling about', 'can i ask what you are calling about',
+    'what are you calling about', 'what you\'re calling about',
+    'the person you\'re calling cannot take your call', 'the person you are calling cannot take your call',
+    'person you\'re calling cannot take your call right now', 'person you are calling cannot take your call right now',
+    'unfortunately, the person you\'re calling', 'unfortunately the person you\'re calling',
+    'unfortunately, the person you are calling', 'unfortunately the person you are calling'
+  ];
   
   // Failed call patterns (in endedReason or summary)
   const failedPatterns = [
@@ -960,10 +1235,81 @@ function CallRow({
   // Special case: "Just leave your message after the tone" (even with "No" at the start)
   // This is a classic voicemail pattern - "No. Just leave your message after the tone."
   const hasJustLeaveMessageAfterTone = (userText.toLowerCase().includes('just leave') || 
-                                        userText.toLowerCase().includes('leave your message')) &&
+                                        userText.toLowerCase().includes('leave your message') ||
+                                        userText.toLowerCase().includes('leave a voice message') ||
+                                        userText.toLowerCase().includes('leave voice messages')) &&
                                        (userText.toLowerCase().includes('after the tone') ||
                                         userText.toLowerCase().includes('after the beep') ||
-                                        userText.toLowerCase().includes('at the tone'));
+                                        userText.toLowerCase().includes('at the tone') ||
+                                        userText.toLowerCase().includes('you can hang up') ||
+                                        userText.toLowerCase().includes('can hang up') ||
+                                        userText.toLowerCase().includes('hang up after'));
+
+  // Special case: "After leaving a message, you can hang up"
+  const hasAfterLeavingMessage = userText.toLowerCase().includes('after leaving a message') ||
+                                 userText.toLowerCase().includes('after leaving message');
+
+  // Special case: "Just leave a voice messages" (without "after the tone")
+  const hasJustLeaveVoiceMessage = (userText.toLowerCase().includes('just leave') && 
+                                    (userText.toLowerCase().includes('voice message') || 
+                                     userText.toLowerCase().includes('voice messages'))) ||
+                                   (userText.toLowerCase().includes('leave') && 
+                                    userText.toLowerCase().includes('voice message'));
+
+  // Special case: "press pound for more options"
+  const hasPressPound = userText.toLowerCase().includes('press pound') ||
+                        userText.toLowerCase().includes('press #');
+
+  // Special case: "Mailbox is full" / "To send an SMS notification, press 5"
+  const hasMailboxFull = userText.toLowerCase().includes('mailbox is full') ||
+                         userText.toLowerCase().includes('mailbox full') ||
+                         (userText.toLowerCase().includes('mailbox') && userText.toLowerCase().includes('full'));
+
+  const hasSmsNotification = userText.toLowerCase().includes('to send an sms notification') ||
+                             userText.toLowerCase().includes('send an sms notification') ||
+                             (userText.toLowerCase().includes('sms notification') && userText.toLowerCase().includes('press'));
+
+  const hasPressNumber = (userText.toLowerCase().includes('press 5') ||
+                          userText.toLowerCase().includes('press 1') ||
+                          userText.toLowerCase().includes('press 2') ||
+                          userText.toLowerCase().includes('press 3') ||
+                          userText.toLowerCase().includes('press 4')) &&
+                         (userText.toLowerCase().includes('notification') || 
+                          userText.toLowerCase().includes('sms') || 
+                          userText.toLowerCase().includes('message') ||
+                          userText.toLowerCase().includes('get through'));
+
+  const hasNotHereRightNow = userText.toLowerCase().includes('i\'m not here right now') ||
+                              userText.toLowerCase().includes('not here right now') ||
+                              (userText.toLowerCase().includes('sorry') && userText.toLowerCase().includes('not here'));
+
+  // Call control patterns
+  const hasCallControl = userText.toLowerCase().includes('call control') ||
+                         userText.toLowerCase().includes('has call control') ||
+                         userText.toLowerCase().includes('number has call control');
+
+  const hasToGetThrough = userText.toLowerCase().includes('to get through, please press') ||
+                          userText.toLowerCase().includes('to get through press') ||
+                          (userText.toLowerCase().includes('to get through') && userText.toLowerCase().includes('press'));
+
+  const hasNotAcceptingCalls = userText.toLowerCase().includes('not accepting calls') ||
+                                userText.toLowerCase().includes('not accepting calls at this time');
+
+  const hasNumberReached = userText.toLowerCase().includes('the number you have reached') ||
+                           userText.toLowerCase().includes('number you have reached');
+
+  // Operator/receptionist screening patterns (no word count limit - these are always voicemail)
+  const hasOperatorScreening = userText.toLowerCase().includes('before i try to connect you') ||
+                               userText.toLowerCase().includes('before i try to connect') ||
+                               (userText.toLowerCase().includes('can i ask what you') && userText.toLowerCase().includes('calling about')) ||
+                               userText.toLowerCase().includes('the person you\'re calling cannot take your call') ||
+                               userText.toLowerCase().includes('the person you are calling cannot take your call') ||
+                               userText.toLowerCase().includes('person you\'re calling cannot take your call right now') ||
+                               userText.toLowerCase().includes('person you are calling cannot take your call right now') ||
+                               userText.toLowerCase().includes('unfortunately, the person you\'re calling') ||
+                               userText.toLowerCase().includes('unfortunately the person you\'re calling') ||
+                               userText.toLowerCase().includes('unfortunately, the person you are calling') ||
+                               userText.toLowerCase().includes('unfortunately the person you are calling');
   
   // Determine if this is a voicemail
   // It's voicemail if: voicemail phrases exist AND user didn't say anything meaningful
@@ -986,7 +1332,19 @@ function CallRow({
                       isOnlyAvailable ||  // Single word "Available" is voicemail greeting
                       hasAvailableAndStayOnLine ||  // "Available" + "Please stay on the line" pattern
                       hasAnotherLineAndLeaveMessage ||  // "Is on another line. Just leave your message after the tone." pattern
-                      hasJustLeaveMessageAfterTone;  // "Just leave your message after the tone" pattern (even with "No" at start)
+                      hasJustLeaveMessageAfterTone ||  // "Just leave your message after the tone" pattern (even with "No" at start)
+                      hasAfterLeavingMessage ||  // "After leaving a message, you can hang up"
+                      hasJustLeaveVoiceMessage ||  // "Just leave a voice messages"
+                      hasPressPound ||  // "press pound for more options"
+                      hasMailboxFull ||  // "Mailbox is full"
+                      hasSmsNotification ||  // "To send an SMS notification"
+                      hasPressNumber ||  // "press 5" for SMS notification
+                      hasNotHereRightNow ||  // "I'm not here right now"
+                      hasCallControl ||  // "call control"
+                      hasToGetThrough ||  // "To get through, please press 5"
+                      hasNotAcceptingCalls ||  // "not accepting calls"
+                      hasNumberReached ||  // "The number you have reached"
+                      hasOperatorScreening;  // Operator/receptionist screening (e.g., "Before I try to connect you" + "person you're calling cannot take your call")
   
   // Silence timeout with short call = likely voicemail
   const isSilenceTimeout = endedReason === 'silence-timed-out';
@@ -1005,7 +1363,7 @@ function CallRow({
   const userNeverResponded = userWordCount === 0;
   
   // Determine call category
-  const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior;
+  const isVoicemailFinal = isVoicemail || likelyVoicemailByBehavior || hasIvrPattern;
   
   // Failed call: no score (null) OR explicit failure patterns
   // OR user never responded (no answer at all)
@@ -1046,7 +1404,18 @@ function CallRow({
     }
   }
   
-  const validSummary = getValidEvaluationSummary(call.evaluation_summary);
+  // Get effective values (override if exists, otherwise original)
+  const effectiveSummary = (overrides?.summary !== undefined) 
+    ? overrides.summary 
+    : call.summary;
+  const effectiveEvaluationSummary = (overrides?.evaluation_summary !== undefined)
+    ? overrides.evaluation_summary
+    : call.evaluation_summary;
+  const effectiveSentiment = (overrides?.sentiment !== undefined)
+    ? overrides.sentiment
+    : call.sentiment;
+  
+  const validSummary = getValidEvaluationSummary(effectiveEvaluationSummary);
   
   // Generate actionable sales advice based on score
   const salesAdvice = getSalesAdvice(
@@ -1176,12 +1545,12 @@ function CallRow({
         <div className="px-4 sm:px-6 pb-4 bg-gray-50 dark:bg-gray-800/50">
           <div className="sm:ml-12 space-y-4">
             {/* Summary */}
-            {call.summary && cleanCallSummary(call.summary) && (
+            {effectiveSummary && cleanCallSummary(effectiveSummary) && (
           <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
                   {currentLang === "tr" ? "Özet" : "Summary"}
                 </p>
-                <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(call.summary)}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(effectiveSummary)}</p>
           </div>
             )}
             
@@ -1220,14 +1589,14 @@ function CallRow({
                        Number(scoreDisplay) >= 6 ? callLabels.interested[currentLang] :
                        Number(scoreDisplay) >= 4 ? callLabels.neutral[currentLang] : callLabels.notInterested[currentLang]}
                     </span>
-                    {call.sentiment && call.sentiment !== 'neutral' && (
+                    {effectiveSentiment && effectiveSentiment !== 'neutral' && (
                       <span className={cn(
                         "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize",
-                        call.sentiment === 'positive' 
+                        effectiveSentiment === 'positive' 
                           ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
                           : "bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400"
                       )}>
-                        {call.sentiment}
+                        {effectiveSentiment}
                       </span>
                     )}
         </div>
