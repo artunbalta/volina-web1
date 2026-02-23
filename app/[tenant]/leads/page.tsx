@@ -160,7 +160,7 @@ const leadsTexts = {
     interested: { en: "Interested", tr: "İlgili" },
     appointment_set: { en: "Appointment", tr: "Randevu" },
     converted: { en: "Converted", tr: "Dönüştürüldü" },
-    unreachable: { en: "Unreachable", tr: "Ulaşılamaz" },
+    unreachable: { en: "Unreachable", tr: "Ulaşılamadi" },
     lost: { en: "Lost", tr: "Kayıp" },
   },
   priorityLabels: {
