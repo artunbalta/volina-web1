@@ -1,5 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import { filterVisibleDashboardCalls, getUserAssistantId } from "@/lib/dashboard/visible-calls";
+import { computeCallScore } from "@/lib/dashboard/call-scoring";
+
+function normalizePhone(phone: string | null | undefined): string {
+  if (!phone || typeof phone !== "string") return "";
+  const digits = phone.replace(/\D/g, "");
+  return digits ? `+${digits}` : "";
+}
+
+function addPhoneKeysForEval(map: Map<string, string>, norm: string, leadId: string) {
+  if (!norm) return;
+  const digits = norm.replace(/\D/g, "");
+  map.set(norm, leadId);
+  map.set(digits, leadId);
+  if (digits.length === 11 && digits.startsWith("1")) {
+    map.set("+" + digits.slice(1), leadId);
+    map.set(digits.slice(1), leadId);
+  }
+  if (digits.length === 10) {
+    map.set("+1" + digits, leadId);
+    map.set("1" + digits, leadId);
+  }
+}
 
 interface LeadRecord {
   id: string;
@@ -92,6 +115,14 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search");
     const sortBy = searchParams.get("sortBy") || "created_at"; // Default sort by created_at
     const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc"; // Default desc
+    const evalFilter = searchParams.get("evalFilter") || null; // "6plus" | "1-6" | "v-or-f"
+    let cachedAssistantId: string | null | undefined;
+    const getScopedAssistantId = async () => {
+      if (cachedAssistantId === undefined) {
+        cachedAssistantId = await getUserAssistantId(supabase, userId);
+      }
+      return cachedAssistantId;
+    };
 
     // Build base query for filtering - MUST filter by user_id for security
     const selectFields = idsOnly ? "id" : "*";
@@ -110,10 +141,155 @@ export async function GET(request: NextRequest) {
       baseQuery = baseQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
+    let matchingIds: string[] | null = null;
+
+    // Eval filter: use only calls table (calls.evaluation_score + metadata) — same source as Calls screen, no Vapi API
+    if (evalFilter === "6plus" || evalFilter === "1-6" || evalFilter === "v-or-f") {
+      // Candidate leads: same filters as baseQuery, created_at desc so we get the same 10k "most recent" set
+      let candidateQuery = supabase.from("leads").select("id, phone").eq("user_id", userId);
+      if (status && status !== "all") candidateQuery = candidateQuery.eq("status", status);
+      if (priority && priority !== "all") candidateQuery = candidateQuery.eq("priority", priority);
+      if (search) candidateQuery = candidateQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+      candidateQuery = candidateQuery.order("created_at", { ascending: false }).limit(10000);
+      const { data: candidateLeads } = await candidateQuery as { data: { id: string; phone: string | null }[] | null };
+      const candidateIdSet = new Set((candidateLeads || []).map((l) => l.id));
+      const phoneToLeadId = new Map<string, string>();
+      for (const l of candidateLeads || []) {
+        const norm = normalizePhone(l.phone);
+        if (norm) addPhoneKeysForEval(phoneToLeadId, norm, l.id);
+      }
+
+      const since = new Date();
+      since.setDate(since.getDate() - 365);
+      const { data: calls } = await supabase
+        .from("calls")
+        .select("assistant_id, metadata, transcript, summary, evaluation_score, evaluation_summary, caller_phone, duration, sentiment")
+        .eq("user_id", userId)
+        .gte("created_at", since.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(10000) as {
+        data: { assistant_id: string | null; metadata: Record<string, unknown> | null; transcript: string | null; summary: string | null; evaluation_score: number | string | null; evaluation_summary: string | null; caller_phone: string | null; duration: number | null; sentiment: string | null }[] | null;
+      };
+      const visibleCalls = filterVisibleDashboardCalls(calls || [], await getScopedAssistantId());
+      const byLead: Record<string, ("V" | "F" | number)[]> = {};
+      for (const call of visibleCalls) {
+        const meta = (call.metadata || {}) as Record<string, unknown>;
+        let lid: string | undefined;
+        if (call.caller_phone) {
+          const normCall = normalizePhone(call.caller_phone);
+          const digits = normCall.replace(/\D/g, "");
+          lid = phoneToLeadId.get(normCall) ?? phoneToLeadId.get(digits)
+            ?? (digits.length === 11 && digits.startsWith("1") ? phoneToLeadId.get("+" + digits.slice(1)) ?? phoneToLeadId.get(digits.slice(1)) : undefined)
+            ?? (digits.length === 10 ? phoneToLeadId.get("+1" + digits) ?? phoneToLeadId.get("1" + digits) : undefined);
+        }
+        if (!lid && meta.lead_id && candidateIdSet.has(meta.lead_id as string)) lid = meta.lead_id as string;
+        if (!lid) continue;
+        if (!byLead[lid]) byLead[lid] = [];
+        const scored = computeCallScore({
+          evaluation_score: call.evaluation_score,
+          transcript: call.transcript,
+          summary: call.summary,
+          evaluation_summary: call.evaluation_summary,
+          duration: call.duration,
+          sentiment: call.sentiment,
+          metadata: call.metadata,
+        });
+        if (scored.display === "V") byLead[lid]!.push("V");
+        else if (scored.display === "F") byLead[lid]!.push("F");
+        else byLead[lid]!.push(scored.numericScore ?? 5);
+      }
+      const ids: string[] = [];
+      for (const [leadId, outcomes] of Object.entries(byLead)) {
+        if (outcomes.length === 0) continue;
+        const nums = outcomes.filter((o): o is number => typeof o === "number");
+        const has6Plus = nums.some((n) => n >= 6);
+        const all1to6 = nums.length > 0 && nums.every((n) => n >= 1 && n <= 6) && !has6Plus;
+        const onlyVF = outcomes.every((o) => o === "V" || o === "F");
+        if (evalFilter === "6plus" && has6Plus) ids.push(leadId);
+        else if (evalFilter === "1-6" && all1to6) ids.push(leadId);
+        else if (evalFilter === "v-or-f" && onlyVF && outcomes.length > 0) ids.push(leadId);
+      }
+      if (ids.length === 0) {
+        return NextResponse.json({
+          success: true,
+          data: [],
+          pagination: { page: 1, pageSize, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+          stats: { total: 0, newLeads: 0, contacted: 0, interested: 0, appointmentSet: 0, converted: 0, unreachable: 0, conversionRate: 0 },
+        });
+      }
+      matchingIds = ids;
+      baseQuery = baseQuery.in("id", matchingIds);
+    }
+
     // Build sorting - add secondary sort by id for consistent pagination
     // Priority and status sorting need in-memory sort
-    const needsMemorySort = sortBy === "priority" || sortBy === "status";
-    
+    const needsMemorySort = sortBy === "priority" || sortBy === "status" || sortBy === "eval_score";
+
+    // Build per-lead eval sort key when sorting by eval_score (match calls by lead_id or phone)
+    let evalScoreMap: Record<string, number> = {};
+    if (sortBy === "eval_score") {
+      // Same filters as baseQuery so eval score map covers exactly the leads we will sort and display
+      let sortLeadsQuery = supabase.from("leads").select("id, phone").eq("user_id", userId);
+      if (status && status !== "all") sortLeadsQuery = sortLeadsQuery.eq("status", status);
+      if (priority && priority !== "all") sortLeadsQuery = sortLeadsQuery.eq("priority", priority);
+      if (search) sortLeadsQuery = sortLeadsQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+      if (matchingIds != null && matchingIds.length > 0) sortLeadsQuery = sortLeadsQuery.in("id", matchingIds);
+      sortLeadsQuery = sortLeadsQuery.order("created_at", { ascending: false }).limit(10000);
+      const { data: allLeadsForSort } = await sortLeadsQuery as { data: { id: string; phone: string | null }[] | null };
+      const phoneToLidSort = new Map<string, string>();
+      for (const l of allLeadsForSort || []) {
+        const n = normalizePhone(l.phone);
+        if (n) addPhoneKeysForEval(phoneToLidSort, n, l.id);
+      }
+      const since = new Date();
+      since.setDate(since.getDate() - 365);
+      const { data: callsForSort } = await supabase
+        .from("calls")
+        .select("assistant_id, metadata, transcript, summary, evaluation_score, evaluation_summary, caller_phone, duration, sentiment")
+        .eq("user_id", userId)
+        .gte("created_at", since.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(10000) as {
+        data: { assistant_id: string | null; metadata: Record<string, unknown> | null; transcript: string | null; summary: string | null; evaluation_score: number | string | null; evaluation_summary: string | null; caller_phone: string | null; duration: number | null; sentiment: string | null }[] | null;
+      };
+      const visibleCallsForSort = filterVisibleDashboardCalls(callsForSort || [], await getScopedAssistantId());
+      const byLead: Record<string, ("V" | "F" | number)[]> = {};
+      for (const call of visibleCallsForSort) {
+        const meta = (call.metadata || {}) as Record<string, unknown>;
+        let lid: string | undefined;
+        if (call.caller_phone) {
+          const n = normalizePhone(call.caller_phone);
+          const digits = n.replace(/\D/g, "");
+          lid = phoneToLidSort.get(n) ?? phoneToLidSort.get(digits)
+            ?? (digits.length === 11 && digits.startsWith("1") ? phoneToLidSort.get("+" + digits.slice(1)) ?? phoneToLidSort.get(digits.slice(1)) : undefined)
+            ?? (digits.length === 10 ? phoneToLidSort.get("+1" + digits) ?? phoneToLidSort.get("1" + digits) : undefined);
+        }
+        if (!lid && meta.lead_id) lid = meta.lead_id as string;
+        if (!lid) continue;
+        if (!byLead[lid]) byLead[lid] = [];
+        const scored = computeCallScore({
+          evaluation_score: call.evaluation_score,
+          transcript: call.transcript,
+          summary: call.summary,
+          evaluation_summary: call.evaluation_summary,
+          duration: call.duration,
+          sentiment: call.sentiment,
+          metadata: call.metadata,
+        });
+        if (scored.display === "V") byLead[lid]!.push("V");
+        else if (scored.display === "F") byLead[lid]!.push("F");
+        else byLead[lid]!.push(scored.numericScore ?? 5);
+      }
+      for (const [leadId, outcomes] of Object.entries(byLead)) {
+        const nums = outcomes.filter((o): o is number => typeof o === "number");
+        if (nums.length > 0) {
+          evalScoreMap[leadId] = Math.max(...nums);
+        } else {
+          evalScoreMap[leadId] = outcomes.some((o) => o === "V") ? 0.5 : 0;
+        }
+      }
+    }
+
     const buildSortedQuery = (query: typeof baseQuery) => {
       if (needsMemorySort) {
         return query
@@ -171,8 +347,8 @@ export async function GET(request: NextRequest) {
     };
 
     if (needsMemorySort) {
-      // For priority/status sorting, fetch ALL matching leads, sort in memory, then paginate
-      const { data: allLeads, count, error } = await buildSortedQuery(baseQuery) as { 
+      // For priority/status/eval_score sorting, fetch ALL matching leads (up to 10k; Supabase default is 1000), sort in memory, then paginate
+      const { data: allLeads, count, error } = await buildSortedQuery(baseQuery).limit(10000) as { 
         data: LeadRecord[] | null; 
         count: number | null; 
         error: { message: string } | null 
@@ -193,6 +369,10 @@ export async function GET(request: NextRequest) {
           const orderA = priorityOrderMap[a.priority || 'medium'] ?? 1;
           const orderB = priorityOrderMap[b.priority || 'medium'] ?? 1;
           return sortOrder === "asc" ? orderB - orderA : orderA - orderB;
+        } else if (sortBy === "eval_score") {
+          const scoreA = evalScoreMap[a.id] ?? -1;
+          const scoreB = evalScoreMap[b.id] ?? -1;
+          return sortOrder === "asc" ? scoreA - scoreB : scoreB - scoreA;
         } else {
           // status sorting
           const orderA = statusOrderMap[a.status || 'new'] ?? 3;

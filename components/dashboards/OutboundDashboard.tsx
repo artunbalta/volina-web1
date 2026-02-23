@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { Call } from "@/lib/types";
+import { computeCallScore } from "@/lib/dashboard/call-scoring";
 import { format, subDays, isAfter, startOfMonth, endOfMonth, subMonths, startOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n";
@@ -74,7 +75,7 @@ const dashboardTexts = {
   weeklyActivity: { en: "Weekly Activity", tr: "Haftalık Aktivite" },
   appointments: { en: "Appointments", tr: "Randevular" },
   importantRecentLeads: { en: "Important Recent Leads", tr: "Önemli Son Müşteriler" },
-  score7Plus: { en: "Score 7+ (last 7 days)", tr: "Puan 7+ (son 7 gün)" },
+  score6Plus: { en: "Score 6+ (last 7 days)", tr: "Puan 6+ (son 7 gün)" },
   noHighScoreLeads: { en: "No high-scoring leads in the last 7 days", tr: "Son 7 günde yüksek puanlı müşteri yok" },
 };
 
@@ -153,7 +154,7 @@ export default function OutboundDashboard() {
     appointments: number;
   }[]>([]);
 
-  // Important recent leads (7+ score in last 7 days)
+  // Important recent leads (6+ score in last 7 days, via computeCallScore)
   const [importantLeads, setImportantLeads] = useState<{
     id: string;
     name: string;
@@ -318,7 +319,7 @@ export default function OutboundDashboard() {
           
           // Conversion Rate & Trend
           const successfulCalls = calls.filter(c => 
-            c.evaluation_score !== null && c.evaluation_score >= 7
+            c.evaluation_score != null && Number(c.evaluation_score) >= 6
           ).length;
           const conversionRateValue = calls.length > 0
             ? Math.round((successfulCalls / calls.length) * 100)
@@ -328,7 +329,7 @@ export default function OutboundDashboard() {
           const thisMonthTotal = calls.filter(c => new Date(c.created_at) >= monthStart).length;
           const thisMonthSuccessful = calls.filter(c => {
             const callDate = new Date(c.created_at);
-            return callDate >= monthStart && c.evaluation_score !== null && c.evaluation_score >= 7;
+            return callDate >= monthStart && c.evaluation_score != null && Number(c.evaluation_score) >= 6;
           }).length;
           const lastMonthTotal = calls.filter(c => {
             const callDate = new Date(c.created_at);
@@ -336,7 +337,7 @@ export default function OutboundDashboard() {
           }).length;
           const lastMonthSuccessful = calls.filter(c => {
             const callDate = new Date(c.created_at);
-            return callDate >= lastMonthStart && callDate <= lastMonthEnd && c.evaluation_score !== null && c.evaluation_score >= 7;
+            return callDate >= lastMonthStart && callDate <= lastMonthEnd && c.evaluation_score != null && Number(c.evaluation_score) >= 6;
           }).length;
           
           const thisMonthRate = thisMonthTotal > 0 ? (thisMonthSuccessful / thisMonthTotal) * 100 : 0;
@@ -385,22 +386,30 @@ export default function OutboundDashboard() {
           }
           setWeeklyActivity(weeklyData);
 
-          // Important Recent Leads: 7+ score from last 7 days
+          // Important Recent Leads: 6+ score from last 7 days (computeCallScore – same as Calls page)
           const oneWeekAgo = subDays(now, 7);
           const highScoreCalls = calls
-            .filter(c => {
-              const callDate = new Date(c.created_at);
-              return isAfter(callDate, oneWeekAgo) &&
-                c.evaluation_score !== null &&
-                c.evaluation_score >= 7;
+            .filter(c => isAfter(new Date(c.created_at), oneWeekAgo))
+            .map(c => {
+              const scored = computeCallScore({
+                evaluation_score: c.evaluation_score,
+                transcript: c.transcript ?? null,
+                summary: c.summary ?? null,
+                evaluation_summary: c.evaluation_summary ?? null,
+                duration: c.duration ?? null,
+                sentiment: c.sentiment ?? null,
+                metadata: c.metadata ?? null,
+              });
+              return { call: c, scored };
             })
-            .sort((a, b) => (b.evaluation_score || 0) - (a.evaluation_score || 0))
+            .filter(({ scored }) => scored.numericScore !== null && scored.numericScore >= 6)
+            .sort((a, b) => (b.scored.numericScore ?? 0) - (a.scored.numericScore ?? 0) || new Date(b.call.created_at).getTime() - new Date(a.call.created_at).getTime())
             .slice(0, 10)
-            .map(c => ({
+            .map(({ call: c, scored }) => ({
               id: c.id,
               name: c.caller_name || "Unknown",
               phone: c.caller_phone || "—",
-              score: c.evaluation_score || 0,
+              score: scored.numericScore ?? 6,
               date: c.created_at,
               summary: c.summary || "No summary available",
             }));
@@ -569,7 +578,7 @@ export default function OutboundDashboard() {
       : 0;
   })();
   const filteredConversionRate = (() => {
-    const successful = filteredCalls.filter(c => c.evaluation_score !== null && c.evaluation_score >= 7).length;
+    const successful = filteredCalls.filter(c => c.evaluation_score != null && Number(c.evaluation_score) >= 6).length;
     return filteredCallsCount > 0 ? Math.round((successful / filteredCallsCount) * 100) : 0;
   })();
 
@@ -1000,7 +1009,7 @@ export default function OutboundDashboard() {
         <div className="flex items-center gap-2 mb-4 sm:mb-6">
           <Star className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
           <h3 className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">{t("importantRecentLeads")}</h3>
-          <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{t("score7Plus")}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{t("score6Plus")}</span>
         </div>
 
         {importantLeads.length === 0 ? (

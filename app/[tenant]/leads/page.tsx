@@ -72,6 +72,7 @@ const leadsTexts = {
   priorityLowHigh: { en: "Priority: Low→High", tr: "Öncelik: Düşük→Yüksek" },
   lastActivity: { en: "Last Activity", tr: "Son Aktivite" },
   statusPriority: { en: "Status Priority", tr: "Durum Önceliği" },
+  evalScore: { en: "Evaluation score", tr: "Puan" },
   quick: { en: "Quick:", tr: "Hızlı:" },
   new: { en: "New", tr: "Yeni" },
   contacted: { en: "Contacted", tr: "İletişime Geçildi" },
@@ -86,6 +87,11 @@ const leadsTexts = {
   customer: { en: "Customer", tr: "Müşteri" },
   phone: { en: "Phone", tr: "Telefon" },
   calls: { en: "Calls", tr: "Aramalar" },
+  eval: { en: "Eval", tr: "Puan" },
+  evalFilterAll: { en: "All", tr: "Tümü" },
+  evalFilter6Plus: { en: "Score 6+", tr: "Puan 6+" },
+  evalFilter1to6: { en: "Score 1–6", tr: "Puan 1–6" },
+  evalFilterVOrF: { en: "V or F", tr: "V veya F" },
   priority: { en: "Priority", tr: "Öncelik" },
   lastContact: { en: "Last Contact", tr: "Son İletişim" },
   noPhone: { en: "No phone", tr: "Telefon yok" },
@@ -130,6 +136,7 @@ const leadsTexts = {
   updateLeads: { en: "Update {count} Lead(s)", tr: "{count} Adayı Güncelle" },
   duplicatePhones: { en: "Duplicate Phone Numbers", tr: "Yinelenen Telefon Numaraları" },
   duplicateDesc: { en: "The following phone numbers appear more than once in your leads.", tr: "Aşağıdaki telefon numaraları adaylarınızda birden fazla kez görünüyor." },
+  removeDuplicate: { en: "Remove duplicate", tr: "Yineleneni kaldır" },
   close: { en: "Close", tr: "Kapat" },
   leadDetails: { en: "Lead Details", tr: "Aday Detayları" },
   leadInfo: { en: "Lead Information", tr: "Aday Bilgileri" },
@@ -206,8 +213,9 @@ export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalLeads, setTotalLeads] = useState(0);
-  const [sortBy, setSortBy] = useState<"created_at" | "priority" | "last_contact_date" | "status">("created_at");
+  const [sortBy, setSortBy] = useState<"created_at" | "priority" | "last_contact_date" | "status" | "eval_score">("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [evalFilter, setEvalFilter] = useState<"all" | "6plus" | "1-6" | "v-or-f">("all");
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -229,8 +237,10 @@ export default function LeadsPage() {
   const [callSuccess, setCallSuccess] = useState<{ show: boolean; leadName?: string; count?: number }>({ show: false });
   const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
   const [bulkStatusValue, setBulkStatusValue] = useState<LeadStatus>("contacted");
-  const [duplicateWarnings, setDuplicateWarnings] = useState<{ phone: string; count: number; names: string[] }[]>([]);
+  const [duplicateWarnings, setDuplicateWarnings] = useState<{ phone: string; count: number; names: string[]; leadIds: string[] }[]>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
+  const [evaluationHistory, setEvaluationHistory] = useState<Record<string, string[]>>({});
+  const [callCountsFromApi, setCallCountsFromApi] = useState<Record<string, number>>({});
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -265,6 +275,7 @@ export default function LeadsPage() {
         sortBy: sortBy,
         sortOrder: sortOrder,
         ...(statusFilter !== "all" && { status: statusFilter }),
+        ...(evalFilter !== "all" && { evalFilter }),
         ...(debouncedSearch && { search: debouncedSearch }),
       });
       
@@ -296,7 +307,34 @@ export default function LeadsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id, currentPage, statusFilter, debouncedSearch, sortBy, sortOrder]);
+  }, [user?.id, currentPage, statusFilter, evalFilter, debouncedSearch, sortBy, sortOrder]);
+
+  // EVAL and call counts: from calls table only (same source as Calls screen), not Vapi evaluation API
+  useEffect(() => {
+    if (!user?.id || leads.length === 0) {
+      setEvaluationHistory({});
+      setCallCountsFromApi({});
+      return;
+    }
+    const leadIds = leads.map((l) => l.id).join(",");
+    fetch(`/api/dashboard/leads/evaluation-history?userId=${user.id}&leadIds=${encodeURIComponent(leadIds)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          if (data.data) setEvaluationHistory(data.data);
+          else setEvaluationHistory({});
+          if (data.callCounts && typeof data.callCounts === "object") setCallCountsFromApi(data.callCounts);
+          else setCallCountsFromApi({});
+        } else {
+          setEvaluationHistory({});
+          setCallCountsFromApi({});
+        }
+      })
+      .catch(() => {
+        setEvaluationHistory({});
+        setCallCountsFromApi({});
+      });
+  }, [user?.id, leads]);
 
   // Separate effect for initial load and auth changes
   useEffect(() => {
@@ -328,7 +366,7 @@ export default function LeadsPage() {
       loadLeads();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, statusFilter, debouncedSearch, sortBy, sortOrder]); // Reload when any of these change
+  }, [currentPage, statusFilter, evalFilter, debouncedSearch, sortBy, sortOrder]); // Reload when any of these change
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -339,13 +377,13 @@ export default function LeadsPage() {
   // Filter leads (client-side filtering is now minimal since server handles it)
   const filteredLeads = leads;
 
-  // When search, status filter, or sort changes, reset to page 1
+  // When search, status filter, eval filter, or sort changes, reset to page 1
   useEffect(() => {
     if (user?.id && !authLoading && currentPage !== 1) {
       setCurrentPage(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, sortBy, sortOrder]);
+  }, [debouncedSearch, statusFilter, evalFilter, sortBy, sortOrder]);
 
   // Reset form
   const resetForm = () => {
@@ -647,7 +685,7 @@ export default function LeadsPage() {
 
   // Check for duplicate phone numbers
   const checkDuplicates = useCallback(() => {
-    const phoneMap = new Map<string, { count: number; names: string[] }>();
+    const phoneMap = new Map<string, { count: number; names: string[]; leadIds: string[] }>();
     for (const lead of leads) {
       if (!lead.phone) continue;
       const normalized = lead.phone.replace(/\s/g, "");
@@ -655,19 +693,38 @@ export default function LeadsPage() {
       if (existing) {
         existing.count++;
         existing.names.push(lead.full_name || "Unknown");
+        existing.leadIds.push(lead.id);
       } else {
-        phoneMap.set(normalized, { count: 1, names: [lead.full_name || "Unknown"] });
+        phoneMap.set(normalized, { count: 1, names: [lead.full_name || "Unknown"], leadIds: [lead.id] });
       }
     }
     const dupes = Array.from(phoneMap.entries())
       .filter(([, v]) => v.count > 1)
-      .map(([phone, v]) => ({ phone, count: v.count, names: v.names }));
+      .map(([phone, v]) => ({ phone, count: v.count, names: v.names, leadIds: v.leadIds }));
     setDuplicateWarnings(dupes);
   }, [leads]);
 
   useEffect(() => {
     checkDuplicates();
   }, [checkDuplicates]);
+
+  const handleRemoveDuplicateLead = useCallback(async (leadId: string, name: string) => {
+    if (!user?.id) return;
+    if (!confirm(t("deleteConfirm").replace("{name}", name || "this lead"))) return;
+    try {
+      const response = await fetch(`/api/dashboard/leads?id=${leadId}&userId=${user.id}`, { method: "DELETE" });
+      if (response.ok) {
+        await loadLeads();
+        checkDuplicates();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        alert(data?.error || "Failed to delete lead.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred while deleting the lead.");
+    }
+  }, [user?.id, loadLeads, checkDuplicates]);
 
   // Toggle select all - fetches ALL lead IDs from API, not just current page
   const toggleSelectAll = async () => {
@@ -1230,6 +1287,19 @@ export default function LeadsPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            <Select value={evalFilter} onValueChange={(v) => setEvalFilter(v as "all" | "6plus" | "1-6" | "v-or-f")}>
+              <SelectTrigger className="w-28 sm:w-36 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
+                <Tag className="w-4 h-4 mr-1 text-gray-400 dark:text-gray-500" />
+                <SelectValue placeholder={t("eval")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("evalFilterAll")}</SelectItem>
+                <SelectItem value="6plus">{t("evalFilter6Plus")}</SelectItem>
+                <SelectItem value="1-6">{t("evalFilter1to6")}</SelectItem>
+                <SelectItem value="v-or-f">{t("evalFilterVOrF")}</SelectItem>
+              </SelectContent>
+            </Select>
           
             {/* Sort Options */}
             <Select
@@ -1251,6 +1321,8 @@ export default function LeadsPage() {
                 <SelectItem value="priority|asc">{t("priorityLowHigh")}</SelectItem>
                 <SelectItem value="last_contact_date|desc">{t("lastActivity")}</SelectItem>
                 <SelectItem value="status|asc">{t("statusPriority")}</SelectItem>
+                <SelectItem value="eval_score|desc">{t("evalScore")} ↓</SelectItem>
+                <SelectItem value="eval_score|asc">{t("evalScore")} ↑</SelectItem>
               </SelectContent>
             </Select>
           
@@ -1336,6 +1408,16 @@ export default function LeadsPage() {
                 <Button 
                   variant="outline" 
                   size="sm"
+                  onClick={() => setSelectedLeadIds(new Set())}
+                  className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
+                >
+                  <X className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">{t("deselect")}</span>
+                  <span className="sm:hidden">{t("deselect")}</span>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
                   onClick={() => setShowBulkStatusDialog(true)}
                   disabled={isSaving}
                   className="border-gray-200 dark:border-gray-700 text-xs sm:text-sm"
@@ -1382,6 +1464,7 @@ export default function LeadsPage() {
             <div className="w-32">{t("phone")}</div>
             <div className="w-24">{t("status")}</div>
             <div className="w-16 text-center">{t("calls")}</div>
+            <div className="w-20 text-center">{t("eval")}</div>
             <div className="w-24">{t("priority")}</div>
             <div className="w-32">{t("lastContact")}</div>
             <div className="w-24"></div>
@@ -1442,21 +1525,26 @@ export default function LeadsPage() {
                         </div>
                       </div>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{lead.phone || t("noPhone")}</p>
-                      {(lead.last_contact_date || (lead.contact_attempts && lead.contact_attempts > 0)) && (
-                        <div className="flex items-center gap-2 mt-1">
-                          {lead.contact_attempts > 0 && (
-                            <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
-                              {lead.contact_attempts}{t("called")}
-                            </span>
-                          )}
-                          {lead.last_contact_date && (
-                            <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {format(new Date(lead.last_contact_date), "MMM d, HH:mm")}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {(callCountsFromApi[lead.id] ?? lead.contact_attempts ?? 0) > 0 ? (
+                          <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                            {(callCountsFromApi[lead.id] ?? lead.contact_attempts ?? 0)}{t("called")}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                        )}
+                        {(evaluationHistory[lead.id]?.length ?? 0) > 0 && (
+                          <span className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                            {evaluationHistory[lead.id]?.join(", ") ?? "—"}
+                          </span>
+                        )}
+                        {lead.last_contact_date && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {format(new Date(lead.last_contact_date), "MMM d, HH:mm")}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-gray-400 dark:text-gray-500">
                           {format(new Date(lead.created_at), "MMM d, yyyy")}
@@ -1538,9 +1626,19 @@ export default function LeadsPage() {
                   </div>
 
                   <div className="w-16 text-center">
-                    {lead.contact_attempts > 0 ? (
+                    {(callCountsFromApi[lead.id] ?? lead.contact_attempts ?? 0) > 0 ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">
-                        {lead.contact_attempts}x
+                        {(callCountsFromApi[lead.id] ?? lead.contact_attempts ?? 0)}x
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                    )}
+                  </div>
+
+                  <div className="w-20 text-center">
+                    {(evaluationHistory[lead.id]?.length ?? 0) > 0 ? (
+                      <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                        {evaluationHistory[lead.id]?.join(", ") ?? "—"}
                       </span>
                     ) : (
                       <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
@@ -1975,9 +2073,22 @@ export default function LeadsPage() {
             {duplicateWarnings.map((dup, i) => (
               <div key={i} className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
                 <p className="font-medium text-amber-800 dark:text-amber-300 text-sm">{dup.phone} ({dup.count}x)</p>
-                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                  {dup.names.join(", ")}
-                </p>
+                <div className="mt-2 space-y-1">
+                  {(dup.leadIds || []).map((leadId, j) => (
+                    <div key={leadId} className="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-400">
+                      <span>{dup.names[j] ?? "—"}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 h-7 text-xs"
+                        onClick={() => handleRemoveDuplicateLead(leadId, dup.names[j] ?? "—")}
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        {t("removeDuplicate")}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

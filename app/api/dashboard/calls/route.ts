@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { createClient } from "@supabase/supabase-js";
+import { filterVisibleDashboardCalls, getUserAssistantId } from "@/lib/dashboard/visible-calls";
 
 interface CallRecord {
   id: string;
@@ -38,14 +38,7 @@ export async function GET(request: NextRequest) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Get user's vapi_assistant_id from profile for filtering
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("vapi_assistant_id")
-      .eq("id", userId)
-      .single() as { data: { vapi_assistant_id?: string | null } | null };
-    
-    const userAssistantId = profile?.vapi_assistant_id;
+    const userAssistantId = await getUserAssistantId(supabase, userId);
 
     // Build query - MUST filter by user_id for security
     let query = supabase
@@ -53,54 +46,12 @@ export async function GET(request: NextRequest) {
       .select("*")
       .eq("user_id", userId)
       .gte("created_at", startDate.toISOString())
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(10000);
     
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
     
-    // Filter by assistant_id if user has one set
-    // Include calls that match the assistantId OR have no assistantId (legacy calls)
-    let filteredCalls = allCalls || [];
-    if (userAssistantId && filteredCalls.length > 0) {
-      filteredCalls = filteredCalls.filter(call => {
-        const callAssistantId = (call as Record<string, unknown>).assistant_id as string | undefined;
-        const metadataAssistantId = call.metadata?.assistantId as string | undefined;
-        const hasAssistantId = callAssistantId || metadataAssistantId;
-        
-        // Include if: matches target assistant OR has no assistantId (older calls)
-        if (!hasAssistantId) return true; // Include legacy calls without assistantId
-        return callAssistantId === userAssistantId || metadataAssistantId === userAssistantId;
-      });
-    }
-    
-    // Filter out test calls (webCalls from VAPI dashboard)
-    // Only include outboundPhoneCall and inboundPhoneCall
-    filteredCalls = filteredCalls.filter(call => {
-      const callType = call.metadata?.callType as string | undefined;
-      // Exclude webCalls (test calls from VAPI dashboard)
-      // Include if: not a webCall, or if callType is not set (legacy calls)
-      return callType !== 'webCall';
-    });
-    
-    // Filter out calls from wrong assistants (e.g., GOP Dentel)
-    filteredCalls = filteredCalls.filter(call => {
-      const transcript = String(call.transcript || '').toLowerCase();
-      const summary = String(call.summary || '').toLowerCase();
-      const textToCheck = `${transcript} ${summary}`;
-      
-      const wrongAssistantPatterns = [
-        'gop dentel',
-        'özel gop dentel',
-        'gop dentel diş polikliniği',
-        'eda ben',
-        'turkcell sekreter servisi'
-      ];
-      
-      const isWrongAssistant = wrongAssistantPatterns.some(pattern => 
-        textToCheck.includes(pattern.toLowerCase())
-      );
-      
-      return !isWrongAssistant;
-    });
+    const filteredCalls = filterVisibleDashboardCalls(allCalls || [], userAssistantId);
 
     // Show ALL calls - don't filter by caller_name
     // Calls without caller_name will display phone number or "Unknown" in UI
