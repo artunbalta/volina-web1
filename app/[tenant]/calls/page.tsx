@@ -568,6 +568,21 @@ function getCallSortKey(call: Call): number {
     'is on another line', 'on another line', // "Is on another line. Just leave your message after the tone."
     'after leaving a message', 'after leaving message', 'press pound for more options',
     'i\'m not here right now', 'not here right now', 'sorry i got you',
+    // "I missed your call" + "leave me" patterns
+    'i missed your call', 'missed your call', 'missed the call',
+    'please leave me your name', 'leave me your name', 'leave me your number',
+    'leave me your name, number', 'leave me your name number',
+    'leave me your name, number, and a brief message', 'leave me your name number and a brief message',
+    'i will call you back', 'will call you back', 'call you back as soon as possible',
+    // Spanish voicemail patterns
+    'déjeme su nombre', 'dejame su nombre', 'déjeme su número', 'dejame su número',
+    'déjeme su nombre, número', 'dejame su nombre, numero',
+    'déjeme su nombre, número de teléfono', 'dejame su nombre, numero de telefono',
+    'déjeme su nombre, número de teléfono y un breve mensaje', 'dejame su nombre, numero de telefono y un breve mensaje',
+    'le regreso la llamada', 'regreso la llamada', 'le regresaré la llamada', 'regresare la llamada',
+    'le regreso la llamada lo más pronto posible', 'regreso la llamada lo mas pronto posible',
+    'si prefiere envíeme un texto', 'si prefiere envie un texto', 'envíeme un texto', 'envie un texto',
+    'no va transferir su llamada', 'no va a transferir su llamada',
     // Hold/connecting patterns (telephone system automated messages)
     'please hold while we try to connect you', 'please hold while we try to connect',
     'please hold while we connect you', 'please hold while we connect',
@@ -651,7 +666,22 @@ function getCallSortKey(call: Call): number {
            userText.includes(noApostrophe) ||
            userTextRaw.includes(normalized) ||
            userTextRaw.includes(noApostrophe);
-  });
+  }) ||
+    // "I missed your call" + "leave me" + "I will call you back" pattern
+    ((userText.includes('missed your call') || userText.includes('missed the call')) &&
+      (userText.includes('leave me') || userText.includes('leave your')) &&
+      (userText.includes('call you back') || userText.includes('call back') || userText.includes('get back to you'))) ||
+    // "Please leave me your name, number, and a brief message" pattern
+    (userText.includes('leave me your name') && 
+      (userText.includes('number') || userText.includes('numero')) &&
+      (userText.includes('brief message') || userText.includes('mensaje'))) ||
+    // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada"
+    ((userText.includes('déjeme su nombre') || userText.includes('dejame su nombre')) &&
+      (userText.includes('número') || userText.includes('numero')) &&
+      (userText.includes('mensaje') || userText.includes('regreso la llamada'))) ||
+    // "I will call you back as soon as possible" pattern
+    (userText.includes('will call you back') && 
+      (userText.includes('as soon as possible') || userText.includes('soon as possible')));
   
   const userOnlyVoicemailPhrases = (hasVoicemailInUserText || isPhoneNumberVoicemail) && !userSaidMeaningful;
   
@@ -769,11 +799,44 @@ function getCallSortKey(call: Call): number {
   // Key change: even if userResponses >= 2, if user ONLY said voicemail phrases, it's still voicemail
   const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
   
+  // "I missed your call" + "leave me" pattern (NO word count limit - always voicemail)
+  const hasMissedCallAndLeaveMe = (userText.toLowerCase().includes('missed your call') || userText.toLowerCase().includes('missed the call')) &&
+    (userText.toLowerCase().includes('leave me') || userText.toLowerCase().includes('leave your')) &&
+    (userText.toLowerCase().includes('call you back') || userText.toLowerCase().includes('call back') || userText.toLowerCase().includes('get back to you') || userText.toLowerCase().includes('regreso la llamada'));
+
+  // "Please leave me your name, number, and a brief message" pattern (NO word count limit - always voicemail)
+  const hasLeaveMeNameNumber = (userText.toLowerCase().includes('leave me your name') || userText.toLowerCase().includes('dejame su nombre') || userText.toLowerCase().includes('déjeme su nombre')) &&
+    (userText.toLowerCase().includes('number') || userText.toLowerCase().includes('numero') || userText.toLowerCase().includes('número')) &&
+    (userText.toLowerCase().includes('brief message') || userText.toLowerCase().includes('mensaje') || userText.toLowerCase().includes('breve mensaje'));
+
+  // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada" (NO word count limit - always voicemail)
+  const hasSpanishVoicemailPattern = (userText.toLowerCase().includes('déjeme su nombre') || userText.toLowerCase().includes('dejame su nombre')) &&
+    (userText.toLowerCase().includes('número') || userText.toLowerCase().includes('numero')) &&
+    (userText.toLowerCase().includes('mensaje') || userText.toLowerCase().includes('regreso la llamada'));
+
+  // "Please give me a callback" + short message + "bye" pattern (NO word count limit - always voicemail)
+  // This is a voicemail message, not a real conversation
+  const hasGiveMeCallbackAndBye = (userText.toLowerCase().includes('give me a callback') || userText.toLowerCase().includes('give me callback') || userText.toLowerCase().includes('give me a call back')) &&
+    (userText.toLowerCase().includes('when you get a chance') || userText.toLowerCase().includes('when you get chance') || userText.toLowerCase().includes('get a chance')) &&
+    (userText.toLowerCase().includes('bye') || userText.toLowerCase().includes('good day') || userText.toLowerCase().includes('have a good day'));
+
+  // Short message + "callback" + "bye" pattern (voicemail, not real conversation)
+  // Note: userWordCount is already defined above (line 691)
+  const hasShortCallbackAndBye = userWordCount <= 15 &&
+    (userText.toLowerCase().includes('callback') || userText.toLowerCase().includes('call back')) &&
+    (userText.toLowerCase().includes('bye') || userText.toLowerCase().includes('good day') || userText.toLowerCase().includes('have a good day')) &&
+    !userText.toLowerCase().includes('interested') && !userText.toLowerCase().includes('tell me') && !userText.toLowerCase().includes('how much');
+  
   // Voicemail detection - MUST match display logic EXACTLY
   // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
   // Also catch "Is on another line. Just leave your message after the tone." pattern
   // Also catch "Just leave your message after the tone" pattern (even with "No" at start)
   const isVoicemail = isPhoneNumberVoicemail ||  // Highest priority - phone number + voicemail phrase
+                      hasMissedCallAndLeaveMe ||  // "I missed your call" + "leave me" pattern (NO word count limit)
+                      hasLeaveMeNameNumber ||  // "Please leave me your name, number" pattern (NO word count limit)
+                      hasSpanishVoicemailPattern ||  // Spanish voicemail pattern (NO word count limit)
+                      hasGiveMeCallbackAndBye ||  // "Please give me a callback" + "bye" pattern (NO word count limit)
+                      hasShortCallbackAndBye ||  // Short callback + "bye" pattern
                       (hasVoicemailInUserText && !userSaidMeaningful) ||  // User said voicemail phrase but nothing meaningful
                       (hasVoicemailPhrases && !isRealConversation) || 
                       (userOnlyVoicemailPhrases) ||
@@ -1106,6 +1169,21 @@ function CallRow({
     'is on another line', 'on another line', // "Is on another line. Just leave your message after the tone."
     'after leaving a message', 'after leaving message', 'press pound for more options',
     'i\'m not here right now', 'not here right now', 'sorry i got you',
+    // "I missed your call" + "leave me" patterns
+    'i missed your call', 'missed your call', 'missed the call',
+    'please leave me your name', 'leave me your name', 'leave me your number',
+    'leave me your name, number', 'leave me your name number',
+    'leave me your name, number, and a brief message', 'leave me your name number and a brief message',
+    'i will call you back', 'will call you back', 'call you back as soon as possible',
+    // Spanish voicemail patterns
+    'déjeme su nombre', 'dejame su nombre', 'déjeme su número', 'dejame su número',
+    'déjeme su nombre, número', 'dejame su nombre, numero',
+    'déjeme su nombre, número de teléfono', 'dejame su nombre, numero de telefono',
+    'déjeme su nombre, número de teléfono y un breve mensaje', 'dejame su nombre, numero de telefono y un breve mensaje',
+    'le regreso la llamada', 'regreso la llamada', 'le regresaré la llamada', 'regresare la llamada',
+    'le regreso la llamada lo más pronto posible', 'regreso la llamada lo mas pronto posible',
+    'si prefiere envíeme un texto', 'si prefiere envie un texto', 'envíeme un texto', 'envie un texto',
+    'no va transferir su llamada', 'no va a transferir su llamada',
     // Hold/connecting patterns (telephone system automated messages)
     'please hold while we try to connect you', 'please hold while we try to connect',
     'please hold while we connect you', 'please hold while we connect',
@@ -1199,7 +1277,22 @@ function CallRow({
            userText.includes(noApostrophe) ||
            userTextRaw.includes(normalized) ||
            userTextRaw.includes(noApostrophe);
-  });
+  }) ||
+    // "I missed your call" + "leave me" + "I will call you back" pattern
+    ((userText.includes('missed your call') || userText.includes('missed the call')) &&
+      (userText.includes('leave me') || userText.includes('leave your')) &&
+      (userText.includes('call you back') || userText.includes('call back') || userText.includes('get back to you'))) ||
+    // "Please leave me your name, number, and a brief message" pattern
+    (userText.includes('leave me your name') && 
+      (userText.includes('number') || userText.includes('numero')) &&
+      (userText.includes('brief message') || userText.includes('mensaje'))) ||
+    // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada"
+    ((userText.includes('déjeme su nombre') || userText.includes('dejame su nombre')) &&
+      (userText.includes('número') || userText.includes('numero')) &&
+      (userText.includes('mensaje') || userText.includes('regreso la llamada'))) ||
+    // "I will call you back as soon as possible" pattern
+    (userText.includes('will call you back') && 
+      (userText.includes('as soon as possible') || userText.includes('soon as possible')));
   
   const userOnlyVoicemailPhrases = (hasVoicemailInUserText || isPhoneNumberVoicemail) && !userSaidMeaningful;
   
@@ -1319,6 +1412,34 @@ function CallRow({
   // Key insight: Even if user responded multiple times, if they ONLY said voicemail phrases, it's still voicemail
   const isRealConversation = userSaidMeaningful; // Simplified - must say something meaningful
   
+  // "I missed your call" + "leave me" pattern (NO word count limit - always voicemail)
+  const hasMissedCallAndLeaveMe = (userText.toLowerCase().includes('missed your call') || userText.toLowerCase().includes('missed the call')) &&
+    (userText.toLowerCase().includes('leave me') || userText.toLowerCase().includes('leave your')) &&
+    (userText.toLowerCase().includes('call you back') || userText.toLowerCase().includes('call back') || userText.toLowerCase().includes('get back to you') || userText.toLowerCase().includes('regreso la llamada'));
+
+  // "Please leave me your name, number, and a brief message" pattern (NO word count limit - always voicemail)
+  const hasLeaveMeNameNumber = (userText.toLowerCase().includes('leave me your name') || userText.toLowerCase().includes('dejame su nombre') || userText.toLowerCase().includes('déjeme su nombre')) &&
+    (userText.toLowerCase().includes('number') || userText.toLowerCase().includes('numero') || userText.toLowerCase().includes('número')) &&
+    (userText.toLowerCase().includes('brief message') || userText.toLowerCase().includes('mensaje') || userText.toLowerCase().includes('breve mensaje'));
+
+  // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada" (NO word count limit - always voicemail)
+  const hasSpanishVoicemailPattern = (userText.toLowerCase().includes('déjeme su nombre') || userText.toLowerCase().includes('dejame su nombre')) &&
+    (userText.toLowerCase().includes('número') || userText.toLowerCase().includes('numero')) &&
+    (userText.toLowerCase().includes('mensaje') || userText.toLowerCase().includes('regreso la llamada'));
+
+  // "Please give me a callback" + short message + "bye" pattern (NO word count limit - always voicemail)
+  // This is a voicemail message, not a real conversation
+  const hasGiveMeCallbackAndBye = (userText.toLowerCase().includes('give me a callback') || userText.toLowerCase().includes('give me callback') || userText.toLowerCase().includes('give me a call back')) &&
+    (userText.toLowerCase().includes('when you get a chance') || userText.toLowerCase().includes('when you get chance') || userText.toLowerCase().includes('get a chance')) &&
+    (userText.toLowerCase().includes('bye') || userText.toLowerCase().includes('good day') || userText.toLowerCase().includes('have a good day'));
+
+  // Short message + "callback" + "bye" pattern (voicemail, not real conversation)
+  // Note: userWordCount is already defined above (line 1078)
+  const hasShortCallbackAndBye = userWordCount <= 15 &&
+    (userText.toLowerCase().includes('callback') || userText.toLowerCase().includes('call back')) &&
+    (userText.toLowerCase().includes('bye') || userText.toLowerCase().includes('good day') || userText.toLowerCase().includes('have a good day')) &&
+    !userText.toLowerCase().includes('interested') && !userText.toLowerCase().includes('tell me') && !userText.toLowerCase().includes('how much');
+  
   // If phone number + voicemail pattern detected, it's definitely voicemail (highest priority)
   // This catches cases like "3 7 0 8 4 9 3 can't take your call right now"
   // Also catch "Available" + "Please stay on the line" pattern (Lewis Brown case)
@@ -1326,6 +1447,11 @@ function CallRow({
   // Also catch "Just leave your message after the tone" pattern (even with "No" at start)
   // Otherwise check other voicemail indicators
   const isVoicemail = isPhoneNumberVoicemail ||  // Highest priority - phone number + voicemail phrase
+                      hasMissedCallAndLeaveMe ||  // "I missed your call" + "leave me" pattern (NO word count limit)
+                      hasLeaveMeNameNumber ||  // "Please leave me your name, number" pattern (NO word count limit)
+                      hasSpanishVoicemailPattern ||  // Spanish voicemail pattern (NO word count limit)
+                      hasGiveMeCallbackAndBye ||  // "Please give me a callback" + "bye" pattern (NO word count limit)
+                      hasShortCallbackAndBye ||  // Short callback + "bye" pattern
                       (hasVoicemailInUserText && !userSaidMeaningful) ||  // User said voicemail phrase but nothing meaningful
                       (hasVoicemailPhrases && !isRealConversation) || 
                       (userOnlyVoicemailPhrases) ||

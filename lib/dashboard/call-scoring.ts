@@ -358,7 +358,8 @@ export function adjustScoreBasedOnContent(
     'please stay on the line', 'stay on the line',
     'is on another line', 'on another line',
     'available',
-    'get back to you', 'i\'ll get back to you',
+    'get back to you', 'i\'ll get back to you', 'i will call you back', 'will call you back',
+    'call you back as soon as possible', 'call you back', 'i\'ll call you back',
     'after leaving a message', 'after leaving message',
     'press pound for more options', 'press pound',
     'you can hang up', 'can hang up', 'hang up after',
@@ -369,6 +370,26 @@ export function adjustScoreBasedOnContent(
     'call control', 'has call control', 'number has call control',
     'not accepting calls', 'not accepting calls at this time',
     'the number you have reached', 'number you have reached',
+    // "I missed your call" + "leave me" patterns
+    'i missed your call', 'missed your call', 'missed the call',
+    'please leave me your name', 'leave me your name', 'leave me your number',
+    'leave me your name, number', 'leave me your name number',
+    'leave me your name, number, and a brief message', 'leave me your name number and a brief message',
+    'leave me your name, number and a brief message',
+    // Spanish voicemail patterns
+    'déjeme su nombre', 'dejame su nombre', 'déjeme su número', 'dejame su número',
+    'déjeme su nombre, número', 'dejame su nombre, numero',
+    'déjeme su nombre, número de teléfono', 'dejame su nombre, numero de telefono',
+    'déjeme su nombre, número de teléfono y un breve mensaje', 'dejame su nombre, numero de telefono y un breve mensaje',
+    'le regreso la llamada', 'regreso la llamada', 'le regresaré la llamada', 'regresare la llamada',
+    'le regreso la llamada lo más pronto posible', 'regreso la llamada lo mas pronto posible',
+    'si prefiere envíeme un texto', 'si prefiere envie un texto', 'envíeme un texto', 'envie un texto',
+    'no va transferir su llamada', 'no va a transferir su llamada',
+    // Spanish voicemail system messages
+    'tu mensaje después del tono', 'mensaje después del tono', 'después del tono',
+    'puedes colgar', 'puede colgar', 'colgar cuando', 'colgar cuando hayas terminado',
+    'terminado de grabarlo', 'terminado de grabar', 'cuando hayas terminado',
+    'dejé tu mensaje', 'deje tu mensaje', 'dejar tu mensaje',
     // Hold/connecting patterns (telephone system automated messages)
     'please hold while we try to connect you', 'please hold while we try to connect',
     'please hold while we connect you', 'please hold while we connect',
@@ -405,7 +426,27 @@ export function adjustScoreBasedOnContent(
     (lowerUserText.includes('after leaving') && (lowerUserText.includes('message') || lowerUserText.includes('hang up'))) ||
     // "press pound for more options"
     lowerUserText.includes('press pound') ||
-    lowerUserText.includes('press #');
+    lowerUserText.includes('press #') ||
+    // "I missed your call" + "leave me" + "I will call you back" pattern
+    ((lowerUserText.includes('missed your call') || lowerUserText.includes('missed the call')) &&
+      (lowerUserText.includes('leave me') || lowerUserText.includes('leave your')) &&
+      (lowerUserText.includes('call you back') || lowerUserText.includes('call back') || lowerUserText.includes('get back to you'))) ||
+    // "Please leave me your name, number, and a brief message" pattern
+    (lowerUserText.includes('leave me your name') && 
+      (lowerUserText.includes('number') || lowerUserText.includes('numero')) &&
+      (lowerUserText.includes('brief message') || lowerUserText.includes('mensaje'))) ||
+    // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada"
+    ((lowerUserText.includes('déjeme su nombre') || lowerUserText.includes('dejame su nombre')) &&
+      (lowerUserText.includes('número') || lowerUserText.includes('numero')) &&
+      (lowerUserText.includes('mensaje') || lowerUserText.includes('regreso la llamada'))) ||
+    // "I will call you back as soon as possible" pattern
+    (lowerUserText.includes('will call you back') && 
+      (lowerUserText.includes('as soon as possible') || lowerUserText.includes('soon as possible'))) ||
+    // Spanish: "tu mensaje después del tono" + "puedes colgar" pattern
+    ((lowerUserText.includes('mensaje después del tono') || lowerUserText.includes('después del tono') || lowerUserText.includes('despues del tono')) &&
+      (lowerUserText.includes('puedes colgar') || lowerUserText.includes('puede colgar') || lowerUserText.includes('colgar cuando') || lowerUserText.includes('terminado de grabar'))) ||
+    // Spanish: "puedes colgar cuando hayas terminado" pattern
+    (lowerUserText.includes('puedes colgar') && (lowerUserText.includes('terminado') || lowerUserText.includes('grabarlo') || lowerUserText.includes('grabar')));
 
   const isOnlyAvailable = userWordCount === 1 && lowerUserText.trim() === 'available';
 
@@ -493,7 +534,39 @@ export function adjustScoreBasedOnContent(
     lowerUserText.includes('unfortunately, the person you are calling') ||
     lowerUserText.includes('unfortunately the person you are calling');
 
+  // "I missed your call" + "leave me" pattern (NO word count limit - always voicemail)
+  const hasMissedCallAndLeaveMe = (lowerUserText.includes('missed your call') || lowerUserText.includes('missed the call')) &&
+    (lowerUserText.includes('leave me') || lowerUserText.includes('leave your')) &&
+    (lowerUserText.includes('call you back') || lowerUserText.includes('call back') || lowerUserText.includes('get back to you') || lowerUserText.includes('regreso la llamada'));
+
+  // "Please leave me your name, number, and a brief message" pattern (NO word count limit - always voicemail)
+  const hasLeaveMeNameNumber = (lowerUserText.includes('leave me your name') || lowerUserText.includes('dejame su nombre') || lowerUserText.includes('déjeme su nombre')) &&
+    (lowerUserText.includes('number') || lowerUserText.includes('numero') || lowerUserText.includes('número')) &&
+    (lowerUserText.includes('brief message') || lowerUserText.includes('mensaje') || lowerUserText.includes('breve mensaje'));
+
+  // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada" (NO word count limit - always voicemail)
+  const hasSpanishVoicemailPattern = (lowerUserText.includes('déjeme su nombre') || lowerUserText.includes('dejame su nombre')) &&
+    (lowerUserText.includes('número') || lowerUserText.includes('numero')) &&
+    (lowerUserText.includes('mensaje') || lowerUserText.includes('regreso la llamada'));
+
+  // "Please give me a callback" + short message + "bye" pattern (NO word count limit - always voicemail)
+  // This is a voicemail message, not a real conversation
+  const hasGiveMeCallbackAndBye = (lowerUserText.includes('give me a callback') || lowerUserText.includes('give me callback') || lowerUserText.includes('give me a call back')) &&
+    (lowerUserText.includes('when you get a chance') || lowerUserText.includes('when you get chance') || lowerUserText.includes('get a chance')) &&
+    (lowerUserText.includes('bye') || lowerUserText.includes('good day') || lowerUserText.includes('have a good day'));
+
+  // Short message + "callback" + "bye" pattern (voicemail, not real conversation)
+  const hasShortCallbackAndBye = userWordCount <= 15 &&
+    (lowerUserText.includes('callback') || lowerUserText.includes('call back')) &&
+    (lowerUserText.includes('bye') || lowerUserText.includes('good day') || lowerUserText.includes('have a good day')) &&
+    !lowerUserText.includes('interested') && !lowerUserText.includes('tell me') && !lowerUserText.includes('how much');
+
   if (!hasCallbackRequest && (isPhoneNumberPattern ||
+    hasMissedCallAndLeaveMe ||
+    hasLeaveMeNameNumber ||
+    hasSpanishVoicemailPattern ||
+    hasGiveMeCallbackAndBye ||
+    hasShortCallbackAndBye ||
     (hasVoicemailPhrase && userWordCount <= 25) ||
     isOnlyAvailable ||
     hasAvailableAndStayOnLine ||
@@ -544,7 +617,10 @@ export function adjustScoreBasedOnContent(
     'can\'t afford', 'cant afford', 'can t afford', 'cannot afford',
     'can\'t pay', 'cant pay', 'can t pay', 'cannot pay',
     'too expensive', 'too much', 'afford', 'expensive',
-    'param yok', 'karşılayamam', 'pahalı', 'çok pahalı'
+    'param yok', 'karşılayamam', 'pahalı', 'çok pahalı',
+    // "I've never even talked about" + rejection patterns
+    'never even talked', 'never even talk', 'never talked about',
+    'never even discussed', 'never even mentioned'
   ];
   
   // "not right now" and "maybe later" are only negative if there's no positive context
@@ -563,7 +639,15 @@ export function adjustScoreBasedOnContent(
     !hasPositiveAfterNotRightNow &&
     !lowerUserText.includes('at some point');
   
-  const userDeclined = strongNegativePatterns.some(p => lowerUserText.includes(p)) || notRightNowIsNegative;
+  // "I've never even talked about" + "no thank you" pattern (strong rejection)
+  const hasNeverEvenTalkedAbout = (lowerUserText.includes('never even talked') || 
+    lowerUserText.includes('never even talk') || 
+    lowerUserText.includes('never talked about') ||
+    lowerUserText.includes('never even discussed') ||
+    lowerUserText.includes('never even mentioned')) &&
+    (lowerUserText.includes('no') || lowerUserText.includes('thank you') || lowerUserText.includes('thanks') || lowerUserText.includes('no thank'));
+  
+  const userDeclined = strongNegativePatterns.some(p => lowerUserText.includes(p)) || notRightNowIsNegative || hasNeverEvenTalkedAbout;
   const hasFinancialRejection = hasFinancialRejectionEarly;
 
   // === RULE 4.5: Aggressive/hostile language ===
@@ -686,6 +770,10 @@ export function adjustScoreBasedOnContent(
   }
 
   if ((userDeclined || summaryIndicatesNotInterested) && !hasCallbackRequest) {
+    // "I've never even talked about" + "no thank you" is a very strong rejection
+    if (hasNeverEvenTalkedAbout) {
+      return Math.min(originalScore, 3);
+    }
     if (lowerSummary.includes('not interested') && lowerSummary.includes('explicitly')) {
       return Math.min(originalScore, 3);
     }
@@ -1004,7 +1092,27 @@ export function computeCallScore(call: CallScoringInput): CallScoreResult {
     'press hash', 'hang up', 'just hang up', 'when you re done', 'when you\'re done',
     'please stay on the line', 'stay on the line',
     'is on another line', 'on another line',
-    'after leaving a message', 'after leaving message', 'press pound for more options'
+    'after leaving a message', 'after leaving message', 'press pound for more options',
+    // "I missed your call" + "leave me" patterns
+    'i missed your call', 'missed your call', 'missed the call',
+    'please leave me your name', 'leave me your name', 'leave me your number',
+    'leave me your name, number', 'leave me your name number',
+    'leave me your name, number, and a brief message', 'leave me your name number and a brief message',
+    'i will call you back', 'will call you back', 'call you back as soon as possible',
+    // Spanish voicemail patterns
+    'déjeme su nombre', 'dejame su nombre', 'déjeme su número', 'dejame su número',
+    'déjeme su nombre, número', 'dejame su nombre, numero',
+    'déjeme su nombre, número de teléfono', 'dejame su nombre, numero de telefono',
+    'déjeme su nombre, número de teléfono y un breve mensaje', 'dejame su nombre, numero de telefono y un breve mensaje',
+    'le regreso la llamada', 'regreso la llamada', 'le regresaré la llamada', 'regresare la llamada',
+    'le regreso la llamada lo más pronto posible', 'regreso la llamada lo mas pronto posible',
+    'si prefiere envíeme un texto', 'si prefiere envie un texto', 'envíeme un texto', 'envie un texto',
+    'no va transferir su llamada', 'no va a transferir su llamada',
+    // Spanish voicemail system messages
+    'tu mensaje después del tono', 'mensaje después del tono', 'después del tono', 'despues del tono',
+    'puedes colgar', 'puede colgar', 'colgar cuando', 'colgar cuando hayas terminado',
+    'terminado de grabarlo', 'terminado de grabar', 'cuando hayas terminado',
+    'dejé tu mensaje', 'deje tu mensaje', 'dejar tu mensaje'
   ];
 
   const meaningfulUserPatterns = [
@@ -1036,7 +1144,27 @@ export function computeCallScore(call: CallScoringInput): CallScoreResult {
       userText.includes(noApostrophe) ||
       userTextRaw.includes(normalized) ||
       userTextRaw.includes(noApostrophe);
-  });
+  }) ||
+    // "I missed your call" + "leave me" + "I will call you back" pattern
+    ((userText.includes('missed your call') || userText.includes('missed the call')) &&
+      (userText.includes('leave me') || userText.includes('leave your')) &&
+      (userText.includes('call you back') || userText.includes('call back') || userText.includes('get back to you'))) ||
+    // "Please leave me your name, number, and a brief message" pattern
+    (userText.includes('leave me your name') && 
+      (userText.includes('number') || userText.includes('numero')) &&
+      (userText.includes('brief message') || userText.includes('mensaje'))) ||
+    // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada"
+    ((userText.includes('déjeme su nombre') || userText.includes('dejame su nombre')) &&
+      (userText.includes('número') || userText.includes('numero')) &&
+      (userText.includes('mensaje') || userText.includes('regreso la llamada'))) ||
+    // "I will call you back as soon as possible" pattern
+    (userText.includes('will call you back') && 
+      (userText.includes('as soon as possible') || userText.includes('soon as possible'))) ||
+    // Spanish: "tu mensaje después del tono" + "puedes colgar" pattern
+    ((userText.includes('mensaje después del tono') || userText.includes('después del tono') || userText.includes('despues del tono')) &&
+      (userText.includes('puedes colgar') || userText.includes('puede colgar') || userText.includes('colgar cuando') || userText.includes('terminado de grabar'))) ||
+    // Spanish: "puedes colgar cuando hayas terminado" pattern
+    (userText.includes('puedes colgar') && (userText.includes('terminado') || userText.includes('grabarlo') || userText.includes('grabar')));
 
   const userOnlyVoicemailPhrases = (hasVoicemailInUserText || isPhoneNumberVoicemail) && !userSaidMeaningful;
 
@@ -1071,7 +1199,39 @@ export function computeCallScore(call: CallScoringInput): CallScoreResult {
   const hasVoicemailPhrases = voicemailSystemPhrases.some(p => transcript.includes(p));
   const isRealConversation = userSaidMeaningful;
 
+  // "I missed your call" + "leave me" pattern (NO word count limit - always voicemail)
+  const hasMissedCallAndLeaveMe = (userText.includes('missed your call') || userText.includes('missed the call')) &&
+    (userText.includes('leave me') || userText.includes('leave your')) &&
+    (userText.includes('call you back') || userText.includes('call back') || userText.includes('get back to you') || userText.includes('regreso la llamada'));
+
+  // "Please leave me your name, number, and a brief message" pattern (NO word count limit - always voicemail)
+  const hasLeaveMeNameNumber = (userText.includes('leave me your name') || userText.includes('dejame su nombre') || userText.includes('déjeme su nombre')) &&
+    (userText.includes('number') || userText.includes('numero') || userText.includes('número')) &&
+    (userText.includes('brief message') || userText.includes('mensaje') || userText.includes('breve mensaje'));
+
+  // Spanish: "déjeme su nombre, número de teléfono y un breve mensaje" + "le regreso la llamada" (NO word count limit - always voicemail)
+  const hasSpanishVoicemailPattern = (userText.includes('déjeme su nombre') || userText.includes('dejame su nombre')) &&
+    (userText.includes('número') || userText.includes('numero')) &&
+    (userText.includes('mensaje') || userText.includes('regreso la llamada'));
+
+  // "Please give me a callback" + short message + "bye" pattern (NO word count limit - always voicemail)
+  // This is a voicemail message, not a real conversation
+  const hasGiveMeCallbackAndBye = (userText.includes('give me a callback') || userText.includes('give me callback') || userText.includes('give me a call back')) &&
+    (userText.includes('when you get a chance') || userText.includes('when you get chance') || userText.includes('get a chance')) &&
+    (userText.includes('bye') || userText.includes('good day') || userText.includes('have a good day'));
+
+  // Short message + "callback" + "bye" pattern (voicemail, not real conversation)
+  const hasShortCallbackAndBye = userWordCount <= 15 &&
+    (userText.includes('callback') || userText.includes('call back')) &&
+    (userText.includes('bye') || userText.includes('good day') || userText.includes('have a good day')) &&
+    !userText.includes('interested') && !userText.includes('tell me') && !userText.includes('how much');
+
   const isVoicemail = isPhoneNumberVoicemail ||
+    hasMissedCallAndLeaveMe ||
+    hasLeaveMeNameNumber ||
+    hasSpanishVoicemailPattern ||
+    hasGiveMeCallbackAndBye ||
+    hasShortCallbackAndBye ||
     (hasVoicemailInUserText && !userSaidMeaningful) ||
     (hasVoicemailPhrases && !isRealConversation) ||
     (userOnlyVoicemailPhrases) ||

@@ -50,7 +50,7 @@ CRITICAL RULES FOR SCORING (1-10 scale) - APPLY IN ORDER:
 
 PRIORITY 1 - FAILED CONNECTIONS (Score 1-2, outcome "voicemail", "no_answer", or "busy"):
 1. If caller NEVER responded or only AI spoke → score 1, outcome "no_answer"
-2. If voicemail system answered OR customer said "leave me a message", "you can leave me a brief message", "leave a message", "I'll get back to you" → score 1, outcome "voicemail" (CRITICAL: "leave me a message" = voicemail, NOT a conversation)
+2. If voicemail system answered OR customer said "leave me a message", "you can leave me a brief message", "leave a message", "I'll get back to you", "I will call you back", "I missed your call. Please leave me your name, number, and a brief message, and I will call you back" → score 1, outcome "voicemail" (CRITICAL: "leave me a message" = voicemail, NOT a conversation. Also: "I missed your call" + "leave me your name/number" + "I will call you back" = voicemail)
 3. If customer said "can't take your call", "can't talk", "unavailable", "busy right now", "in a meeting" → score 1-2, outcome "busy" (this is NOT a successful call, user is not available to engage)
 4. If call lasted <15 seconds with no real conversation → score 1 or 2, outcome "no_answer" or "not_interested"
 
