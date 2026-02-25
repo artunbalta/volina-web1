@@ -55,7 +55,7 @@ const dashboardTexts = {
   interested: { en: "Interested", tr: "İlgili" },
   appointment: { en: "Appointment", tr: "Randevu" },
   converted: { en: "Converted", tr: "Dönüştürüldü" },
-  unreachable: { en: "Unreachable", tr: "Ulaşılamaz" },
+  unreachable: { en: "Unreachable", tr: "Ulaşılamadı" },
   lost: { en: "Lost", tr: "Kayıp" },
   monthlyTarget: { en: "Monthly Target", tr: "Aylık Hedef" },
   edit: { en: "Edit", tr: "Düzenle" },
