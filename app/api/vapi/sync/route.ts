@@ -33,11 +33,58 @@ export async function POST(request: NextRequest) {
     startDate.setDate(startDate.getDate() - days);
 
     // Fetch calls from VAPI using tenant-specific key if available
-    const vapiCalls = await getVapiCalls({
-      limit: 100,
-      createdAtGe: startDate.toISOString(),
-      assistantId: userProfile?.vapi_assistant_id || undefined,
-    }, tenantApiKey);
+    // VAPI allows max 1000 per request, so we need to make multiple requests if there are more calls
+    let vapiCalls: any[] = [];
+    try {
+      // Strategy: Fetch in batches by splitting date range into 1-day chunks
+      // This is faster than recursive splitting and ensures we get all calls
+      let allCalls: any[] = [];
+      const endDate = new Date();
+      let currentStart = new Date(startDate);
+      const callIds = new Set<string>(); // Track unique call IDs to avoid duplicates
+      
+      // Fetch in 1-day chunks to avoid missing calls when there are more than 1000 in a period
+      while (currentStart < endDate) {
+        const chunkEnd = new Date(currentStart);
+        chunkEnd.setDate(chunkEnd.getDate() + 1); // 1 day chunk
+        if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
+        
+        const batch = await getVapiCalls({
+          limit: 1000,
+          createdAtGe: currentStart.toISOString(),
+          createdAtLe: chunkEnd.toISOString(),
+          assistantId: userProfile?.vapi_assistant_id || undefined,
+        }, tenantApiKey);
+        
+        // Add only new calls (deduplicate)
+        for (const call of batch) {
+          if (!callIds.has(call.id)) {
+            callIds.add(call.id);
+            allCalls.push(call);
+          }
+        }
+        
+        console.log(`[VAPI Sync] Fetched ${batch.length} calls from ${currentStart.toISOString().split('T')[0]} (total: ${allCalls.length})`);
+        
+        // Move to next day
+        currentStart = new Date(chunkEnd);
+        currentStart.setMilliseconds(currentStart.getMilliseconds() + 1);
+      }
+      
+      vapiCalls = allCalls;
+      console.log(`[VAPI Sync] Total unique calls fetched: ${vapiCalls.length}`);
+    } catch (vapiError) {
+      console.error("Error fetching calls from VAPI:", vapiError);
+      const errorMessage = vapiError instanceof Error ? vapiError.message : String(vapiError);
+      return NextResponse.json(
+        { 
+          success: false,
+          error: "Failed to fetch calls from VAPI", 
+          details: errorMessage 
+        },
+        { status: 500 }
+      );
+    }
 
     if (vapiCalls.length === 0) {
       return NextResponse.json({
@@ -45,6 +92,7 @@ export async function POST(request: NextRequest) {
         message: "No calls to sync",
         synced: 0,
         skipped: 0,
+        total: 0,
       });
     }
 
@@ -157,18 +205,24 @@ export async function POST(request: NextRequest) {
           originalStartedAt: vapiCall.startedAt,
           originalEndedAt: vapiCall.endedAt,
           tags: parsedEvaluation.tags,
-          assistantId: assistantId,
+          assistantId: assistantId, // Also store in metadata for filtering
         },
       };
 
-      const { error } = await supabase
+      const { error, data: insertedCall } = await supabase
         .from("calls")
-        .insert(insertData as never);
+        .insert(insertData as never)
+        .select()
+        .single();
 
       if (error) {
-        console.error("Error inserting call:", error);
+        console.error("Error inserting call:", error, "VAPI Call ID:", vapiCall.id);
       } else {
         synced++;
+        // Log first few successful inserts for debugging
+        if (synced <= 3) {
+          console.log(`[VAPI Sync] Inserted call ${synced}: VAPI ID=${vapiCall.id}, Assistant ID=${assistantId}, User ID=${userId}`);
+        }
       }
     }
 
@@ -181,8 +235,15 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("VAPI sync error:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
-      { error: "Failed to sync VAPI calls", details: String(error) },
+      { 
+        success: false,
+        error: "Failed to sync VAPI calls", 
+        details: errorMessage,
+        stack: errorStack 
+      },
       { status: 500 }
     );
   }

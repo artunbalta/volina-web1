@@ -51,7 +51,13 @@ export async function GET(request: NextRequest) {
     
     const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
     
+    // Log for debugging
+    console.log(`[Dashboard Calls] Total calls from DB: ${allCalls?.length || 0}, User ID: ${userId}, Assistant ID: ${userAssistantId}`);
+    
     const filteredCalls = filterVisibleDashboardCalls(allCalls || [], userAssistantId);
+    
+    // Log filtered count
+    console.log(`[Dashboard Calls] Filtered calls: ${filteredCalls.length}, Removed: ${(allCalls?.length || 0) - filteredCalls.length}`);
 
     // Show ALL calls - don't filter by caller_name
     // Calls without caller_name will display phone number or "Unknown" in UI

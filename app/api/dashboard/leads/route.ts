@@ -127,7 +127,8 @@ export async function GET(request: NextRequest) {
     
     const idsOnly = searchParams.get("idsOnly") === "true";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
-    const pageSize = 100;
+    const requestedPageSize = parseInt(searchParams.get("pageSize") || "100");
+    const pageSize = Math.min(Math.max(1, requestedPageSize), 10000); // Allow up to 10000, minimum 1
     const limit = pageSize;
     const offset = (page - 1) * pageSize;
     
