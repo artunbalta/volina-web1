@@ -76,11 +76,13 @@ export async function POST(request: NextRequest) {
     } catch (vapiError) {
       console.error("Error fetching calls from VAPI:", vapiError);
       const errorMessage = vapiError instanceof Error ? vapiError.message : String(vapiError);
+      const errorStack = vapiError instanceof Error ? vapiError.stack : undefined;
       return NextResponse.json(
         { 
           success: false,
           error: "Failed to fetch calls from VAPI", 
-          details: errorMessage 
+          details: errorMessage,
+          stack: errorStack 
         },
         { status: 500 }
       );
@@ -146,25 +148,39 @@ export async function POST(request: NextRequest) {
       
       // 2. If no name yet, try to match by phone number
       if (!callerName && vapiCall.customer?.number) {
-        const callerPhone = vapiCall.customer.number;
-        // Try different phone formats (with/without country code, etc.)
-        const phoneVariants = [
-          callerPhone,
-          callerPhone.replace(/^\+/, ''),  // Remove leading +
-          callerPhone.replace(/^\+90/, '0'),  // +90... -> 0...
-          callerPhone.replace(/^90/, '0'),  // 90... -> 0...
-          '+' + callerPhone,  // Add + prefix
-        ];
-        
-        const { data: matchedLead } = await supabase
-          .from("leads")
-          .select("full_name")
-          .or(phoneVariants.map(p => `phone.eq.${p}`).join(','))
-          .limit(1)
-          .single() as { data: { full_name: string | null } | null };
-        
-        if (matchedLead?.full_name) {
-          callerName = matchedLead.full_name;
+        try {
+          const callerPhone = vapiCall.customer.number;
+          // Try different phone formats (with/without country code, etc.)
+          const phoneVariants = [
+            callerPhone,
+            callerPhone.replace(/^\+/, ''),  // Remove leading +
+            callerPhone.replace(/^\+90/, '0'),  // +90... -> 0...
+            callerPhone.replace(/^90/, '0'),  // 90... -> 0...
+            '+' + callerPhone,  // Add + prefix
+          ];
+          
+          // Try each phone variant one by one (more reliable than OR query)
+          for (const phoneVariant of phoneVariants) {
+            try {
+              const { data: matchedLead, error: leadError } = await supabase
+                .from("leads")
+                .select("full_name")
+                .eq("phone", phoneVariant)
+                .limit(1)
+                .maybeSingle() as { data: { full_name: string | null } | null; error: unknown };
+              
+              if (!leadError && matchedLead?.full_name) {
+                callerName = matchedLead.full_name;
+                break; // Found a match, stop searching
+              }
+            } catch (leadQueryError) {
+              // Continue to next phone variant if query fails
+              continue;
+            }
+          }
+        } catch (phoneMatchError) {
+          // Log but don't fail the sync if phone matching fails
+          console.warn(`[VAPI Sync] Error matching phone for call ${vapiCall.id}:`, phoneMatchError);
         }
       }
 
@@ -209,20 +225,26 @@ export async function POST(request: NextRequest) {
         },
       };
 
-      const { error, data: insertedCall } = await supabase
-        .from("calls")
-        .insert(insertData as never)
-        .select()
-        .single();
+      try {
+        const { error, data: insertedCall } = await supabase
+          .from("calls")
+          .insert(insertData as never)
+          .select()
+          .single();
 
-      if (error) {
-        console.error("Error inserting call:", error, "VAPI Call ID:", vapiCall.id);
-      } else {
-        synced++;
-        // Log first few successful inserts for debugging
-        if (synced <= 3) {
-          console.log(`[VAPI Sync] Inserted call ${synced}: VAPI ID=${vapiCall.id}, Assistant ID=${assistantId}, User ID=${userId}`);
+        if (error) {
+          console.error("Error inserting call:", error, "VAPI Call ID:", vapiCall.id, "Insert Data:", JSON.stringify(insertData, null, 2));
+          // Continue with next call instead of failing entire sync
+        } else {
+          synced++;
+          // Log first few successful inserts for debugging
+          if (synced <= 3) {
+            console.log(`[VAPI Sync] Inserted call ${synced}: VAPI ID=${vapiCall.id}, Assistant ID=${assistantId}, User ID=${userId}`);
+          }
         }
+      } catch (insertError) {
+        console.error("Exception inserting call:", insertError, "VAPI Call ID:", vapiCall.id);
+        // Continue with next call instead of failing entire sync
       }
     }
 

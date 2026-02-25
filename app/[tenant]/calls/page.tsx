@@ -1771,6 +1771,21 @@ export default function CallsPage() {
       const response = await fetch(`/api/dashboard/calls?days=365&userId=${user.id}`);
       if (response.ok) {
         const data = await response.json();
+        
+        // Log debug info in browser console
+        if (data.debug) {
+          console.group('📊 [Calls Dashboard] Debug Info');
+          console.log('📥 Total calls from DB:', data.debug.totalFromDB);
+          console.log('✅ Filtered calls (visible):', data.debug.filteredCount);
+          console.log('❌ Removed by filters:', data.debug.removedCount);
+          if (data.debug.assistantIdCounts) {
+            console.log('🔍 Calls by assistant_id:', data.debug.assistantIdCounts.byAssistantId);
+            console.log('📞 Calls without assistant_id (legacy):', data.debug.assistantIdCounts.withoutAssistantId);
+            console.log('🎯 Expected assistant_id:', data.debug.assistantIdCounts.expectedAssistantId);
+          }
+          console.groupEnd();
+        }
+        
         if (data.success && data.data) {
           const transformedCalls: Call[] = data.data.map((call: {
             id: string;
