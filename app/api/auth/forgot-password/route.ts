@@ -16,10 +16,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      request.nextUrl.origin;
-    const redirectTo = `${baseUrl}/reset-password`;
+    // Use the request origin so the reset link points to where the user is (production vs localhost)
+    const baseUrl = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || "";
+    const redirectTo = baseUrl ? `${baseUrl}/reset-password` : "";
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
