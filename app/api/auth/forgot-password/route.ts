@@ -16,16 +16,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use the request origin so the reset link points to where the user is (production vs localhost)
-    const baseUrl = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || "";
-    const redirectTo = baseUrl ? `${baseUrl}/reset-password` : "";
+    // Prefer NEXT_PUBLIC_APP_URL in production (set to your live URL in Vercel env).
+    // Fallback to request origin so localhost works without env.
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+      request.nextUrl.origin ||
+      "";
+    const redirectTo = baseUrl ? `${baseUrl.replace(/\/$/, "")}/reset-password` : undefined;
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
 
-    await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    await supabase.auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : {});
   } catch {
     // Intentionally not exposing errors (e.g. user not found) to avoid email enumeration
   }
