@@ -22,7 +22,7 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  // Check for OAuth errors in URL
+  // Check for OAuth errors and success message in URL
   useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam) {
@@ -37,6 +37,7 @@ function LoginContent() {
       setError(errorMessage);
     }
   }, [searchParams]);
+  const passwordUpdatedMessage = searchParams.get("message") === "PasswordUpdated";
 
   // Redirect if already authenticated (e.g., returning to login page while logged in)
   useEffect(() => {
@@ -144,6 +145,14 @@ function LoginContent() {
             </p>
           </div>
 
+          {/* Success message (e.g. after password reset) */}
+          {passwordUpdatedMessage && !error && (
+            <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-start gap-3">
+              <p className="text-sm text-green-700 dark:text-green-300">
+                Your password has been updated. You can sign in with your new password.
+              </p>
+            </div>
+          )}
           {/* Error message */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
@@ -200,6 +209,14 @@ function LoginContent() {
                     <Eye className="w-5 h-5" />
                   )}
                 </button>
+              </div>
+              <div className="flex justify-end">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-primary hover:underline"
+                >
+                  Forgot password?
+                </Link>
               </div>
             </div>
 
